@@ -12,6 +12,7 @@ import ForcePasswordChange from './pages/ForcePasswordChange';
 import Dashboard from './pages/Dashboard';
 import Servers from './pages/Servers';
 import Agents from './pages/Agents';
+import HermesAssistant from './pages/HermesAssistant';
 import ToolApprovals from './pages/ToolApprovals';
 import Workflows from './pages/Workflows';
 import WorkflowEditor from './pages/WorkflowEditor';
@@ -84,6 +85,7 @@ function App() {
               <Route path="ssh-keys" element={<ProtectedRoute><SSHKeys /></ProtectedRoute>} />
               <Route path="network-devices" element={<ProtectedRoute><NetworkDevices /></ProtectedRoute>} />
               <Route path="agents" element={<ProtectedRoute><Agents /></ProtectedRoute>} />
+              <Route path="hermes" element={<ProtectedRoute><HermesAssistant /></ProtectedRoute>} />
               <Route path="tool-approvals" element={<ProtectedRoute><ToolApprovals /></ProtectedRoute>} />
               <Route path="workflows" element={<ProtectedRoute><Workflows /></ProtectedRoute>} />
               <Route path="workflows/:id" element={<ProtectedRoute><WorkflowEditor /></ProtectedRoute>} />

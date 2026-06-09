@@ -85,6 +85,7 @@ const navigationGroups: Array<{
     icon: Zap,
     items: [
       { labelKey: 'nav.agents', href: '/agents', icon: Bot },
+      { labelKey: 'nav.hermes', href: '/hermes', icon: Brain },
       { labelKey: 'nav.toolApprovals', href: '/tool-approvals', icon: ShieldAlert },
       { labelKey: 'nav.workflows', href: '/workflows', icon: GitBranch },
       { labelKey: 'nav.tasks', href: '/tasks', icon: Play },
