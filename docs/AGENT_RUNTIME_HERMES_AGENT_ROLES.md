@@ -1,10 +1,11 @@
 # Hermes Agent Roles
 
-当前平台已经落地两个 Hermes 角色：
+当前平台已经落地三个 Hermes 角色：
 
 ```text
 Hermes 诊断修复 Agent
 Hermes 修复编排 Agent
+Hermes 复盘进化 Agent
 ```
 
 ## Hermes 诊断修复 Agent
@@ -31,12 +32,33 @@ Hermes 修复编排 Agent
 
 它不能绕过审批，也不能直接执行 destructive 操作。
 
-## 目标三角色形态
+## Hermes 复盘进化 Agent
 
-后续建议补第三个 Hermes 角色：
+定位：
 
-```text
-Hermes Evolution / Reviewer Agent
-```
+- 读取 persisted trace
+- 读取 tool approval 记录
+- 读取 correlation chain
+- 复盘任务执行和验证结果
+- 生成 prompt / tool / workflow / policy / knowledge proposal
 
 它只负责复盘 trace、失败任务、审批反馈和执行结果，生成改进 proposal。它不直接改生产配置，也不直接执行修复。
+
+允许工具：
+
+```text
+list_agent_executions
+list_tool_approvals
+get_correlation_trace
+get_task_status
+verify_remediation
+list_workflows
+search_knowledge_base
+```
+
+明确不允许：
+
+```text
+run_workflow
+submit_remediation_for_approval
+```

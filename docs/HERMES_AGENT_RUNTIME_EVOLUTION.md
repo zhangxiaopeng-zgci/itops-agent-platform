@@ -341,7 +341,11 @@ Implemented additions:
 ```text
 Hermes 诊断修复 Agent
 Hermes 修复编排 Agent
+Hermes 复盘进化 Agent
 list_workflows
+list_agent_executions
+list_tool_approvals
+get_correlation_trace
 ```
 
 Default loop:
@@ -355,6 +359,10 @@ Hermes 修复编排 Agent
   -> run_workflow approval
   -> get_task_status
   -> verify_remediation
+Hermes 复盘进化 Agent
+  -> get_correlation_trace / list_agent_executions / list_tool_approvals
+  -> review failed or delayed executions
+  -> propose prompt / workflow / policy / knowledge improvements
 ```
 
 Detailed stage notes:
@@ -487,6 +495,8 @@ Objectives:
 
 - Generate improvement proposals from execution history, failed tasks, and
   operator feedback.
+- Use the read-only `Hermes 复盘进化 Agent` as the proposal author, not as a
+  production change executor.
 - Evaluate proposals offline before approval.
 - Publish versioned changes with rollback.
 

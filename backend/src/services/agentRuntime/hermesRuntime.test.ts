@@ -36,6 +36,18 @@ describe('HermesAgentRuntime', () => {
     expect(orchestrator?.runtime).toBe('hermes');
     expect(JSON.parse(orchestrator?.runtime_config || '{}').allowedTools).toContain('run_workflow');
 
+    const reviewer = db.prepare(`
+      SELECT id, runtime, runtime_config, autonomy_level
+      FROM agents
+      WHERE name = ?
+    `).get('Hermes 复盘进化 Agent') as { id: string; runtime: string; runtime_config: string; autonomy_level: string } | undefined;
+
+    const reviewerConfig = JSON.parse(reviewer?.runtime_config || '{}') as { allowedTools?: string[] };
+    expect(reviewer?.runtime).toBe('hermes');
+    expect(reviewer?.autonomy_level).toBe('read_only');
+    expect(reviewerConfig.allowedTools).toContain('get_correlation_trace');
+    expect(reviewerConfig.allowedTools).not.toContain('run_workflow');
+
     vi.spyOn(axios, 'post')
       .mockResolvedValueOnce({
         data: {

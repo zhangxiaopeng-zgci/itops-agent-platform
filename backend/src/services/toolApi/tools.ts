@@ -8,6 +8,8 @@ import { WorkflowParsed } from '../../types';
 
 const VALID_ALERT_STATUSES = new Set(['new', 'acknowledged', 'resolved']);
 const VALID_ALERT_SEVERITIES = new Set(['critical', 'high', 'medium', 'low']);
+const VALID_APPROVAL_STATUSES = new Set(['pending', 'approved', 'rejected', 'executed', 'failed']);
+const VALID_AGENT_EXECUTION_STATUSES = new Set(['success', 'error']);
 
 type ParsedTaskRow = Record<string, unknown> & {
   node_results: unknown;
@@ -46,6 +48,15 @@ function requireString(input: Record<string, unknown>, key: string): string {
   return value.trim();
 }
 
+function optionalString(input: Record<string, unknown>, key: string): string | null {
+  const value = input[key];
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
+}
+
+function escapeLike(value: string): string {
+  return value.replace(/[\\%_]/g, (match) => `\\${match}`);
+}
+
 function parseTask(row: Record<string, unknown>): ParsedTaskRow {
   return {
     ...row,
@@ -54,6 +65,28 @@ function parseTask(row: Record<string, unknown>): ParsedTaskRow {
     metrics: parseJsonField(row.metrics, null),
     context: parseJsonField(row.context, null),
     execution_order: parseJsonField(row.execution_order, [])
+  };
+}
+
+function parseAgentExecution(row: Record<string, unknown>): Record<string, unknown> {
+  return {
+    ...row,
+    metadata: parseJsonField(row.metadata, {})
+  };
+}
+
+function parseToolApproval(row: Record<string, unknown>): Record<string, unknown> {
+  return {
+    ...row,
+    input: parseJsonField(row.input, {}),
+    execution_result: parseJsonField(row.execution_result, null)
+  };
+}
+
+function parseAuditLog(row: Record<string, unknown>): Record<string, unknown> {
+  return {
+    ...row,
+    details: parseJsonField(row.details, null)
   };
 }
 
@@ -464,6 +497,169 @@ export const verifyRemediationTool: ToolDefinition = {
   }
 };
 
+export const listAgentExecutionsTool: ToolDefinition = {
+  name: 'list_agent_executions',
+  description: 'List recent agent executions and persisted trace metadata for retrospective review.',
+  riskLevel: 'read_only',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      agentName: { type: 'string' },
+      status: { type: 'string', enum: Array.from(VALID_AGENT_EXECUTION_STATUSES) },
+      correlationId: { type: 'string' },
+      limit: { type: 'number', minimum: 1, maximum: 100 }
+    }
+  },
+  execute(input: Record<string, unknown>) {
+    const params: unknown[] = [];
+    const conditions: string[] = [];
+
+    const agentName = optionalString(input, 'agentName');
+    if (agentName) {
+      conditions.push('agent_name = ?');
+      params.push(agentName);
+    }
+
+    if (typeof input.status === 'string' && VALID_AGENT_EXECUTION_STATUSES.has(input.status)) {
+      conditions.push('status = ?');
+      params.push(input.status);
+    }
+
+    const correlationId = optionalString(input, 'correlationId');
+    if (correlationId) {
+      conditions.push("IFNULL(metadata, '') LIKE ? ESCAPE '\\'");
+      params.push(`%${escapeLike(correlationId)}%`);
+    }
+
+    let query = `
+      SELECT id, agent_id, agent_name, input_text, output_text, status, error_message,
+             execution_time_ms, token_count, metadata, created_at
+      FROM agent_executions
+    `;
+    if (conditions.length > 0) {
+      query += ` WHERE ${conditions.join(' AND ')}`;
+    }
+    query += ' ORDER BY created_at DESC LIMIT ?';
+    params.push(clampLimit(input.limit, 20, 100));
+
+    const rows = db.prepare(query).all(...params) as Array<Record<string, unknown>>;
+    return rows.map(parseAgentExecution);
+  }
+};
+
+export const listToolApprovalsTool: ToolDefinition = {
+  name: 'list_tool_approvals',
+  description: 'List tool approval records for review, including approval status, input, execution result, and correlation id.',
+  riskLevel: 'read_only',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      status: { type: 'string', enum: Array.from(VALID_APPROVAL_STATUSES) },
+      toolName: { type: 'string' },
+      correlationId: { type: 'string' },
+      limit: { type: 'number', minimum: 1, maximum: 100 }
+    }
+  },
+  execute(input: Record<string, unknown>) {
+    const params: unknown[] = [];
+    const conditions: string[] = [];
+
+    if (typeof input.status === 'string' && VALID_APPROVAL_STATUSES.has(input.status)) {
+      conditions.push('status = ?');
+      params.push(input.status);
+    }
+
+    const toolName = optionalString(input, 'toolName');
+    if (toolName) {
+      conditions.push('tool_name = ?');
+      params.push(toolName);
+    }
+
+    const correlationId = optionalString(input, 'correlationId');
+    if (correlationId) {
+      conditions.push('correlation_id = ?');
+      params.push(correlationId);
+    }
+
+    let query = `
+      SELECT *
+      FROM tool_approvals
+    `;
+    if (conditions.length > 0) {
+      query += ` WHERE ${conditions.join(' AND ')}`;
+    }
+    query += ' ORDER BY requested_at DESC LIMIT ?';
+    params.push(clampLimit(input.limit, 20, 100));
+
+    const rows = db.prepare(query).all(...params) as Array<Record<string, unknown>>;
+    return rows.map(parseToolApproval);
+  }
+};
+
+export const getCorrelationTraceTool: ToolDefinition = {
+  name: 'get_correlation_trace',
+  description: 'Read the correlated agent executions, tool approvals, tasks, and audit logs for a correlation id.',
+  riskLevel: 'read_only',
+  inputSchema: {
+    type: 'object',
+    required: ['correlationId'],
+    properties: {
+      correlationId: { type: 'string' }
+    }
+  },
+  execute(input: Record<string, unknown>) {
+    const correlationId = requireString(input, 'correlationId');
+    if (!/^[a-zA-Z0-9._:-]{8,128}$/.test(correlationId)) {
+      throw new Error('Invalid correlation id');
+    }
+
+    const pattern = `%${escapeLike(correlationId)}%`;
+    const likeSql = "LIKE ? ESCAPE '\\'";
+
+    const agentExecutions = db.prepare(`
+      SELECT *
+      FROM agent_executions
+      WHERE IFNULL(metadata, '') ${likeSql}
+      ORDER BY created_at DESC
+      LIMIT 50
+    `).all(pattern).map((row) => parseAgentExecution(row as Record<string, unknown>));
+
+    const approvals = db.prepare(`
+      SELECT *
+      FROM tool_approvals
+      WHERE correlation_id = ?
+         OR input ${likeSql}
+         OR IFNULL(execution_result, '') ${likeSql}
+      ORDER BY requested_at DESC
+      LIMIT 50
+    `).all(correlationId, pattern, pattern).map((row) => parseToolApproval(row as Record<string, unknown>));
+
+    const tasks = db.prepare(`
+      SELECT *
+      FROM tasks
+      WHERE IFNULL(context, '') ${likeSql}
+      ORDER BY created_at DESC
+      LIMIT 50
+    `).all(pattern).map((row) => parseTask(row as Record<string, unknown>));
+
+    const auditLogs = db.prepare(`
+      SELECT *
+      FROM audit_logs
+      WHERE IFNULL(details, '') ${likeSql}
+      ORDER BY created_at DESC
+      LIMIT 100
+    `).all(pattern).map((row) => parseAuditLog(row as Record<string, unknown>));
+
+    return {
+      correlationId,
+      agentExecutions,
+      approvals,
+      tasks,
+      auditLogs
+    };
+  }
+};
+
 export const toolDefinitions = [
   listServersTool,
   queryAlertsTool,
@@ -473,5 +669,8 @@ export const toolDefinitions = [
   submitRemediationForApprovalTool,
   runWorkflowTool,
   getTaskStatusTool,
-  verifyRemediationTool
+  verifyRemediationTool,
+  listAgentExecutionsTool,
+  listToolApprovalsTool,
+  getCorrelationTraceTool
 ];

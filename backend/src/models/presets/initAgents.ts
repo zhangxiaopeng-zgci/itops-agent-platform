@@ -23,6 +23,7 @@ interface PresetAgent {
 
 const HERMES_OPS_AGENT_NAME = 'Hermes 诊断修复 Agent';
 const HERMES_REMEDIATION_ORCHESTRATOR_AGENT_NAME = 'Hermes 修复编排 Agent';
+const HERMES_EVOLUTION_REVIEWER_AGENT_NAME = 'Hermes 复盘进化 Agent';
 const HERMES_OPS_ALLOWED_TOOLS = [
   'list_servers',
   'query_alerts',
@@ -43,6 +44,15 @@ const HERMES_REMEDIATION_ORCHESTRATOR_ALLOWED_TOOLS = [
   'run_workflow',
   'get_task_status',
   'verify_remediation'
+];
+const HERMES_EVOLUTION_REVIEWER_ALLOWED_TOOLS = [
+  'list_agent_executions',
+  'list_tool_approvals',
+  'get_correlation_trace',
+  'get_task_status',
+  'verify_remediation',
+  'list_workflows',
+  'search_knowledge_base'
 ];
 
 function getUserConfiguredModel(): string | null {
@@ -160,6 +170,53 @@ function buildHermesRemediationOrchestratorAgent(): PresetAgent {
   };
 }
 
+function buildHermesEvolutionReviewerAgent(): PresetAgent {
+  return {
+    id: randomUUID(),
+    name: HERMES_EVOLUTION_REVIEWER_AGENT_NAME,
+    avatar: '🧭',
+    role: 'Hermes 运行复盘与进化建议专家',
+    category: '复盘进化',
+    description: '复盘 Agent trace、审批、任务和验证结果，生成可审批的改进建议',
+    system_prompt: `你是 ITOps 平台中的 Hermes 运行复盘与进化建议专家。
+
+你的职责：
+1. 复盘 Agent 执行 trace、审批记录、任务执行状态、验证结果和审计线索。
+2. 使用 get_correlation_trace 查看同一 correlation id 下的 Agent、审批、任务和审计链路。
+3. 使用 list_agent_executions 和 list_tool_approvals 查找失败、拒绝、等待审批、执行失败或高耗时案例。
+4. 使用 get_task_status、verify_remediation、list_workflows 和 search_knowledge_base 补齐复盘证据。
+5. 输出改进 proposal，包括提示词、工具边界、工作流模板、审批策略、验证策略或知识库条目的改进建议。
+
+安全边界：
+- 你只做复盘、评审和建议，不提交审批，不执行修复，不触发工作流。
+- 不调用 run_workflow，不调用 submit_remediation_for_approval，不请求生产变更权限。
+- 不读取密钥、私钥或敏感凭据。
+- 不能把“建议”描述成“已修改”或“已执行”。
+
+输出要求：
+- 使用中文。
+- 先给“复盘结论”，再列证据、问题分类、改进 proposal、验证方式和风险。
+- 每条 proposal 标注优先级：P0 / P1 / P2 / P3。
+- 当证据不足时，明确列出还需要的 correlationId、taskId、approvalId 或 Agent execution id。`,
+    model: 'smart-router',
+    temperature: 0.15,
+    is_preset: 1,
+    enabled: 1,
+    api_provider: 'openai',
+    runtime: 'hermes',
+    runtime_config: {
+      model: 'smart-router',
+      apiKeyEnv: 'HERMES_API_KEY',
+      timeoutMs: 300000,
+      maxToolRounds: 6,
+      temperature: 0.15,
+      allowedTools: HERMES_EVOLUTION_REVIEWER_ALLOWED_TOOLS
+    },
+    autonomy_level: 'read_only',
+    tool_policy_id: null
+  };
+}
+
 function insertPresetAgent(agent: PresetAgent): boolean {
   const existing = db.prepare('SELECT id FROM agents WHERE name = ?').get(agent.name) as { id: string } | undefined;
   if (existing) {
@@ -203,7 +260,8 @@ export function ensureHermesOpsAgent(): void {
 export function ensureHermesRuntimeAgents(): void {
   const agents = [
     buildHermesOpsAgent(),
-    buildHermesRemediationOrchestratorAgent()
+    buildHermesRemediationOrchestratorAgent(),
+    buildHermesEvolutionReviewerAgent()
   ];
 
   agents.forEach(agent => {
@@ -404,7 +462,8 @@ export function initializePresetAgents() {
       enabled: 1
     },
     buildHermesOpsAgent(),
-    buildHermesRemediationOrchestratorAgent()
+    buildHermesRemediationOrchestratorAgent(),
+    buildHermesEvolutionReviewerAgent()
   ];
 
   let createdCount = 0;

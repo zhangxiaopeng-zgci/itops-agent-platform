@@ -68,6 +68,82 @@ describe('toolRegistry', () => {
     expect(runtimeConfig.allowedTools).toContain('verify_remediation');
   });
 
+  it('seeds a read-only Hermes evolution reviewer agent', async () => {
+    const agent = db.prepare(`
+      SELECT name, runtime, runtime_config, autonomy_level, category, tool_policy_id
+      FROM agents
+      WHERE name = ?
+    `).get('Hermes 复盘进化 Agent') as
+      | {
+        name: string;
+        runtime: string;
+        runtime_config: string;
+        autonomy_level: string;
+        category: string;
+        tool_policy_id: string | null;
+      }
+      | undefined;
+
+    expect(agent).toBeTruthy();
+    expect(agent?.runtime).toBe('hermes');
+    expect(agent?.category).toBe('复盘进化');
+    expect(agent?.autonomy_level).toBe('read_only');
+    expect(agent?.tool_policy_id).toBeNull();
+
+    const runtimeConfig = JSON.parse(agent?.runtime_config || '{}') as { allowedTools?: string[]; temperature?: number };
+    expect(runtimeConfig.temperature).toBe(0.15);
+    expect(runtimeConfig.allowedTools).toContain('get_correlation_trace');
+    expect(runtimeConfig.allowedTools).toContain('list_tool_approvals');
+    expect(runtimeConfig.allowedTools).toContain('list_agent_executions');
+    expect(runtimeConfig.allowedTools).not.toContain('run_workflow');
+    expect(runtimeConfig.allowedTools).not.toContain('submit_remediation_for_approval');
+  });
+
+  it('reads correlated execution evidence for retrospective review', async () => {
+    const agent = db.prepare('SELECT id FROM agents WHERE name = ?').get('Hermes 诊断修复 Agent') as { id: string } | undefined;
+    expect(agent).toBeTruthy();
+
+    db.prepare(`
+      INSERT OR REPLACE INTO agent_executions (
+        id, agent_id, agent_name, input_text, output_text, status, execution_time_ms, metadata, created_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+    `).run(
+      'agent-execution-corr-review-test',
+      agent!.id,
+      'Hermes 诊断修复 Agent',
+      'diagnose',
+      'needs approval',
+      'success',
+      123,
+      JSON.stringify({ correlationId: 'corr-review-test-1234', trace: [{ type: 'tool_call_result' }] })
+    );
+
+    const queued = await invokeTool(
+      'run_workflow',
+      { workflowId: 'workflow-for-correlation-review-test' },
+      { userId: 'test-operator', userRole: 'operator', source: 'api', correlationId: 'corr-review-test-1234' }
+    );
+    expect(queued.decision.status).toBe('approval_required');
+
+    const result = await invokeTool(
+      'get_correlation_trace',
+      { correlationId: 'corr-review-test-1234' },
+      { userId: 'test-viewer', userRole: 'viewer', source: 'api' }
+    );
+
+    expect(result.success).toBe(true);
+    expect(result.decision.status).toBe('allowed');
+
+    const data = result.data as {
+      agentExecutions: Array<{ id: string; metadata: { correlationId?: string } }>;
+      approvals: Array<{ id: string; correlation_id: string | null }>;
+    };
+    expect(data.agentExecutions.some((item) => item.id === 'agent-execution-corr-review-test')).toBe(true);
+    expect(data.agentExecutions[0].metadata).toEqual(expect.objectContaining({ correlationId: expect.any(String) }));
+    expect(data.approvals.some((item) => item.id === queued.approvalId && item.correlation_id === 'corr-review-test-1234')).toBe(true);
+  });
+
   it('queues medium-risk workflow execution for approval before touching workflows', async () => {
     const result = await invokeTool(
       'run_workflow',

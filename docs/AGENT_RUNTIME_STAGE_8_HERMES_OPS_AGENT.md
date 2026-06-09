@@ -73,6 +73,28 @@ verify_remediation
 
 其中 `run_workflow` 仍必须进入工具审批队列。
 
+### Hermes 复盘进化 Agent
+
+平台还会确保存在一个只读复盘 Agent：
+
+```text
+Hermes 复盘进化 Agent
+```
+
+它负责复盘 persisted trace、审批记录、任务状态、验证结果和审计链路，输出可评审的改进 proposal。它不允许提交审批或执行修复。
+
+允许工具：
+
+```text
+list_agent_executions
+list_tool_approvals
+get_correlation_trace
+get_task_status
+verify_remediation
+list_workflows
+search_knowledge_base
+```
+
 ### list_workflows 工具
 
 阶段 7 的 `run_workflow` 需要 `workflowId`。阶段 8 增加只读工具：
@@ -97,17 +119,27 @@ Hermes 诊断修复 Agent / Hermes 修复编排 Agent
   -> verify_remediation
 ```
 
+`Hermes 复盘进化 Agent` 的闭环是：
+
+```text
+get_correlation_trace / list_agent_executions / list_tool_approvals
+  -> get_task_status / verify_remediation
+  -> improvement proposals
+  -> human review
+```
+
 ## 安全边界
 
 - Hermes 默认不能直接执行修复。
 - `run_workflow` 是 `medium_risk`，即使暴露给 Hermes，也必须经过 Tool API 审批。
 - `destructive` 工具仍不暴露。
+- `Hermes 复盘进化 Agent` 是 `read_only`，不暴露 `run_workflow` 和 `submit_remediation_for_approval`。
 - Agent prompt 要求：不能声称修复完成，除非 `get_task_status` 或 `verify_remediation` 已证明通过。
 
 ## 使用建议
 
 1. 配置服务端环境变量 `HERMES_API_BASE` 和 `HERMES_API_KEY`。
-2. 在 Agent 管理中找到 `Hermes 诊断修复 Agent` 或 `Hermes 修复编排 Agent`。
+2. 在 Agent 管理中找到 `Hermes 诊断修复 Agent`、`Hermes 修复编排 Agent` 或 `Hermes 复盘进化 Agent`。
 3. 用连接测试确认 Hermes endpoint 可用。
 4. 输入告警、服务器或故障现象，让 Agent 先诊断。
 5. 当 Agent 返回审批单时，在工具审批页面批准或拒绝。
