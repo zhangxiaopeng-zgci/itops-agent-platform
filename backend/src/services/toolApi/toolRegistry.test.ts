@@ -50,19 +50,20 @@ describe('toolRegistry', () => {
     const result = await invokeTool(
       'run_workflow',
       { workflowId: 'missing-workflow-for-approval-test' },
-      { userId: 'test-operator', userRole: 'operator', source: 'api' }
+      { userId: 'test-operator', userRole: 'operator', source: 'api', correlationId: 'corr-approval-test' }
     );
 
     expect(result.success).toBe(false);
     expect(result.decision.status).toBe('approval_required');
     expect(result.approvalId).toBeTruthy();
 
-    const approval = db.prepare('SELECT tool_name, status FROM tool_approvals WHERE id = ?').get(result.approvalId) as
-      | { tool_name: string; status: string }
+    const approval = db.prepare('SELECT tool_name, status, correlation_id FROM tool_approvals WHERE id = ?').get(result.approvalId) as
+      | { tool_name: string; status: string; correlation_id: string | null }
       | undefined;
     expect(approval).toEqual({
       tool_name: 'run_workflow',
-      status: 'pending'
+      status: 'pending',
+      correlation_id: 'corr-approval-test'
     });
   });
 

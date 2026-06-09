@@ -99,6 +99,7 @@ export class HermesAgentRuntime implements AgentRuntime {
     const tools = getHermesTools(listTools, config.allowedTools);
     const messages = buildInitialMessages(agent, request);
     const maxToolRounds = config.maxToolRounds ?? DEFAULT_MAX_TOOL_ROUNDS;
+    const correlationId = typeof request.context?.correlationId === 'string' ? request.context.correlationId : undefined;
 
     logger.info(`🧠 Calling Hermes runtime for agent ${agent.name}`, {
       baseUrl,
@@ -137,8 +138,10 @@ export class HermesAgentRuntime implements AgentRuntime {
         content: message.content || '',
         timestamp: new Date().toISOString(),
         metadata: {
+          correlationId,
           finishReason: choice?.finish_reason,
-          toolCalls: toolCalls.map(call => call.function.name)
+          toolCalls: toolCalls.map(call => call.function.name),
+          toolCallIds: toolCalls.map(call => call.id)
         }
       });
 
@@ -151,6 +154,7 @@ export class HermesAgentRuntime implements AgentRuntime {
             runtime: this.type,
             model,
             agentName: agent.name,
+            correlationId,
             usage: lastUsage,
             toolRounds: round
           }
@@ -172,6 +176,8 @@ export class HermesAgentRuntime implements AgentRuntime {
             tool: toolCall.function.name,
             success: result.success,
             decision: result.decision,
+            correlationId,
+            toolCallId: toolCall.id,
             approvalId: result.approvalId,
             data: result.data,
             error: result.error
@@ -179,6 +185,8 @@ export class HermesAgentRuntime implements AgentRuntime {
           timestamp: new Date().toISOString(),
           metadata: {
             tool: toolCall.function.name,
+            correlationId,
+            toolCallId: toolCall.id,
             approvalId: result.approvalId,
             auditId: result.auditId
           }
@@ -376,6 +384,8 @@ function buildToolContext(context?: Record<string, unknown>): ToolContext {
     userId: typeof context?.userId === 'string' ? context.userId : undefined,
     userRole: typeof context?.userRole === 'string' ? context.userRole : 'viewer',
     ipAddress: typeof context?.ipAddress === 'string' ? context.ipAddress : undefined,
+    correlationId: typeof context?.correlationId === 'string' ? context.correlationId : undefined,
+    agentExecutionId: typeof context?.agentExecutionId === 'string' ? context.agentExecutionId : undefined,
     source: 'agent_runtime'
   };
 }

@@ -66,7 +66,8 @@ router.post('/:id/approve', requireRole('admin', 'operator'), async (req: Authen
       userId: reviewerId,
       userRole: req.user?.role || 'viewer',
       ipAddress: req.ip,
-      source: 'api'
+      source: 'api',
+      correlationId: approval.correlation_id || undefined
     };
 
     const result = await invokeTool(approval.tool_name, approval.input, context, { skipApproval: true });

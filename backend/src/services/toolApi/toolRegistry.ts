@@ -33,6 +33,8 @@ function auditToolInvocation(
     ip_address: context.ipAddress,
     details: {
       source: context.source || 'api',
+      correlationId: context.correlationId,
+      agentExecutionId: context.agentExecutionId,
       input,
       decision: result.decision,
       success: result.success,

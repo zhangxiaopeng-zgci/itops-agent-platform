@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { CheckCircle2, Clock, ShieldAlert, XCircle, RefreshCw, ExternalLink } from 'lucide-react';
 import clsx from 'clsx';
 import api from '../lib/api';
@@ -19,6 +19,7 @@ interface ToolApproval {
   reviewed_by?: string | null;
   reviewed_at?: string | null;
   review_comment?: string | null;
+  correlation_id?: string | null;
   execution_result?: {
     success?: boolean;
     error?: string;
@@ -37,6 +38,7 @@ const statusLabels: Record<ToolApproval['status'], string> = {
 export default function ToolApprovals() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [status, setStatus] = useState('pending');
   const [selectedApproval, setSelectedApproval] = useState<ToolApproval | null>(null);
   const [comment, setComment] = useState('');
@@ -77,6 +79,20 @@ export default function ToolApprovals() {
 
   const approvals = data?.approvals || [];
   const selectedTaskId = selectedApproval ? extractTaskId(selectedApproval) : null;
+
+  useEffect(() => {
+    const approvalId = searchParams.get('approvalId');
+    if (!approvalId || selectedApproval?.id === approvalId) {
+      return;
+    }
+
+    setStatus('');
+    api.get(`/api/tool-approvals/${approvalId}`)
+      .then((res) => setSelectedApproval(res.data.data as ToolApproval))
+      .catch(() => {
+        // Keep the current list view if the deep link target is unavailable.
+      });
+  }, [searchParams, selectedApproval?.id]);
 
   return (
     <div className="h-full overflow-auto p-6">
@@ -179,6 +195,7 @@ export default function ToolApprovals() {
 
 	                <DetailRow label="来源" value={selectedApproval.source || '-'} />
 	                <DetailRow label="请求角色" value={selectedApproval.requester_role || '-'} />
+	                <DetailRow label="Correlation" value={selectedApproval.correlation_id || '-'} />
 	                <DetailRow label="原因" value={selectedApproval.reason || '-'} />
 	                {selectedTaskId && (
 	                  <div className="rounded-lg border border-primary/20 bg-primary/5 p-3">

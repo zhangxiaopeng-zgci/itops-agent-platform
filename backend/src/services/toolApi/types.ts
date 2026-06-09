@@ -13,6 +13,8 @@ export interface ToolContext {
   userRole: string;
   ipAddress?: string;
   source?: 'api' | 'agent_runtime';
+  correlationId?: string;
+  agentExecutionId?: string;
 }
 
 export interface ToolDefinition<TInput = Record<string, unknown>, TOutput = unknown> {

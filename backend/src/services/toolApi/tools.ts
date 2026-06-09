@@ -360,8 +360,12 @@ export const runWorkflowTool: ToolDefinition = {
       toolInvocation: {
         source: context.source || 'api',
         approvedBy: context.userId || null,
-        toolName: 'run_workflow'
-      }
+        toolName: 'run_workflow',
+        correlationId: context.correlationId || null,
+        agentExecutionId: context.agentExecutionId || null
+      },
+      correlationId: context.correlationId || null,
+      agentExecutionId: context.agentExecutionId || null
     };
 
     db.prepare(`

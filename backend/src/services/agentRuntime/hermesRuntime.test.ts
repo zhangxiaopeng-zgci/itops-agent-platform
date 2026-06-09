@@ -63,7 +63,7 @@ describe('HermesAgentRuntime', () => {
     const result = await runtime.run({
       agentId: agent!.id,
       input: 'Run the remediation workflow.',
-      context: { userId: 'agent-user', userRole: 'operator' }
+      context: { userId: 'agent-user', userRole: 'operator', correlationId: 'corr-hermes-test' }
     });
 
     const toolTrace = result.trace?.find((event) => event.type === 'tool_call_result');
@@ -71,11 +71,14 @@ describe('HermesAgentRuntime', () => {
 
     const content = JSON.parse(toolTrace!.content) as {
       approvalId?: string;
+      correlationId?: string;
       data?: { approval?: { id?: string } };
     };
 
     expect(content.approvalId).toEqual(expect.any(String));
+    expect(content.correlationId).toBe('corr-hermes-test');
     expect(content.data?.approval?.id).toBe(content.approvalId);
     expect(toolTrace?.metadata?.approvalId).toBe(content.approvalId);
+    expect(toolTrace?.metadata?.correlationId).toBe('corr-hermes-test');
   });
 });

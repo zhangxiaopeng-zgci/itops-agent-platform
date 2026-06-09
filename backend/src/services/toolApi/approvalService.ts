@@ -20,6 +20,7 @@ export interface ToolApprovalRecord {
   review_comment?: string | null;
   execution_result?: ToolInvocationResult | null;
   execution_audit_id?: string | null;
+  correlation_id?: string | null;
   ip_address?: string | null;
 }
 
@@ -39,6 +40,7 @@ interface RawToolApprovalRecord {
   review_comment?: string | null;
   execution_result?: string | null;
   execution_audit_id?: string | null;
+  correlation_id?: string | null;
   ip_address?: string | null;
 }
 
@@ -53,9 +55,9 @@ export function createToolApproval(data: {
   db.prepare(`
     INSERT INTO tool_approvals (
       id, tool_name, input, requester_user_id, requester_role, source,
-      risk_level, reason, status, ip_address
+      risk_level, reason, status, correlation_id, ip_address
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
   `).run(
     id,
     data.toolName,
@@ -65,6 +67,7 @@ export function createToolApproval(data: {
     data.context.source || 'api',
     data.decision.riskLevel,
     data.decision.reason || null,
+    data.context.correlationId || null,
     data.context.ipAddress || null
   );
 

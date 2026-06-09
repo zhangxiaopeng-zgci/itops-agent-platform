@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
 import { 
   Plus, Edit, Trash2, Play, Clock, Search, 
-  ChevronLeft, BookOpen, Server, BrainCircuit, Cable, CheckCircle2, AlertTriangle, Wrench, MessageSquare
+  ChevronLeft, BookOpen, Server, BrainCircuit, Cable, CheckCircle2, AlertTriangle, Wrench, MessageSquare, ExternalLink
 } from 'lucide-react';
 import clsx from 'clsx';
 import api from '../lib/api';
@@ -77,6 +78,8 @@ interface TraceSummary {
   decisionStatus?: string;
   approvalId?: string;
   taskId?: string;
+  correlationId?: string;
+  toolCallId?: string;
   error?: string;
 }
 
@@ -114,6 +117,8 @@ function parseTraceSummary(content?: string): TraceSummary | null {
       decisionStatus: readNestedString(parsed, ['decision', 'status']),
       approvalId: readString(parsed.approvalId) || readNestedString(parsed, ['data', 'approval', 'id']),
       taskId: findStringField(parsed, 'taskId'),
+      correlationId: readString(parsed.correlationId),
+      toolCallId: readString(parsed.toolCallId),
       error: readString(parsed.error)
     };
   } catch {
@@ -172,6 +177,7 @@ function shortTraceId(value: string): string {
 
 export default function Agents() {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const [showModal, setShowModal] = useState(false);
   const [editingAgent, setEditingAgent] = useState<Agent | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
@@ -681,6 +687,7 @@ interface AgentDetailInnerProps {
 }
 
 function AgentDetailInner({ agentId, onBack, deleteMutation }: AgentDetailInnerProps) {
+  const navigate = useNavigate();
   const { data: agent, isLoading: agentLoading } = useQuery({
     queryKey: ['agents', agentId],
     queryFn: async () => {
@@ -895,6 +902,8 @@ function AgentDetailInner({ agentId, onBack, deleteMutation }: AgentDetailInnerP
 	                            const traceEvent = event as { type?: string; content?: string; timestamp?: string; metadata?: Record<string, unknown> };
 	                            const summary = parseTraceSummary(traceEvent.content);
 	                            const toolName = typeof traceEvent.metadata?.tool === 'string' ? traceEvent.metadata.tool : null;
+	                            const correlationId = summary?.correlationId || (typeof traceEvent.metadata?.correlationId === 'string' ? traceEvent.metadata.correlationId : undefined);
+	                            const toolCallId = summary?.toolCallId || (typeof traceEvent.metadata?.toolCallId === 'string' ? traceEvent.metadata.toolCallId : undefined);
 	                            const toolCalls = Array.isArray(traceEvent.metadata?.toolCalls) ? traceEvent.metadata.toolCalls as string[] : [];
 	                            const isToolEvent = traceEvent.type?.startsWith('tool_call');
 	                            return (
@@ -944,13 +953,33 @@ function AgentDetailInner({ agentId, onBack, deleteMutation }: AgentDetailInnerP
 	                                      </span>
 	                                    )}
 	                                    {summary.approvalId && (
-	                                      <span className="px-2 py-1 rounded bg-amber-500/10 text-amber-300 border border-amber-500/20">
+	                                      <button
+	                                        type="button"
+	                                        onClick={() => navigate(`/tool-approvals?approvalId=${encodeURIComponent(summary.approvalId!)}`)}
+	                                        className="inline-flex items-center gap-1 px-2 py-1 rounded bg-amber-500/10 text-amber-300 border border-amber-500/20 hover:bg-amber-500/20"
+	                                      >
 	                                        approval {shortTraceId(summary.approvalId)}
-	                                      </span>
+	                                        <ExternalLink className="w-3 h-3" />
+	                                      </button>
 	                                    )}
 	                                    {summary.taskId && (
-	                                      <span className="px-2 py-1 rounded bg-green-500/10 text-green-300 border border-green-500/20">
+	                                      <button
+	                                        type="button"
+	                                        onClick={() => navigate(`/tasks?taskId=${encodeURIComponent(summary.taskId!)}`)}
+	                                        className="inline-flex items-center gap-1 px-2 py-1 rounded bg-green-500/10 text-green-300 border border-green-500/20 hover:bg-green-500/20"
+	                                      >
 	                                        task {shortTraceId(summary.taskId)}
+	                                        <ExternalLink className="w-3 h-3" />
+	                                      </button>
+	                                    )}
+	                                    {correlationId && (
+	                                      <span className="px-2 py-1 rounded bg-blue-500/10 text-blue-300 border border-blue-500/20">
+	                                        corr {shortTraceId(correlationId)}
+	                                      </span>
+	                                    )}
+	                                    {toolCallId && (
+	                                      <span className="px-2 py-1 rounded bg-slate-800/80 text-slate-300 border border-slate-700/50">
+	                                        call {shortTraceId(toolCallId)}
 	                                      </span>
 	                                    )}
 	                                  </div>

@@ -242,6 +242,9 @@ router.post('/:id/test', async (req: Request, res: Response) => {
     }
     
     const executionId = randomUUID();
+    const correlationId = typeof context?.correlationId === 'string' && context.correlationId.length > 0
+      ? context.correlationId
+      : randomUUID();
     const startTime = Date.now();
     const agentName = (agent as { name: string }).name;
     
@@ -256,6 +259,8 @@ router.post('/:id/test', async (req: Request, res: Response) => {
       userId: authUser?.id,
       userRole: authUser?.role,
       ipAddress: req.ip,
+      correlationId,
+      agentExecutionId: executionId,
       serverIds: serverIds && serverIds.length > 0 ? serverIds : (serverId ? [serverId] : undefined)
     };
     
@@ -285,6 +290,7 @@ router.post('/:id/test', async (req: Request, res: Response) => {
       executionTime,
       JSON.stringify({
         test: true,
+        correlationId,
         context: executionContext,
         serverId,
         serverIds,
@@ -312,6 +318,7 @@ router.post('/:id/test', async (req: Request, res: Response) => {
         executionTime,
         metadata: {
           serverId,
+          correlationId,
           runtime: runResult?.metadata?.runtime || (agent as { runtime?: string }).runtime || null,
           runtimeMetadata: runResult?.metadata || {},
           trace: runResult?.trace || []

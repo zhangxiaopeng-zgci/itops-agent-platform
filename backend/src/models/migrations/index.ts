@@ -7,6 +7,7 @@ import v005SSHKeyPasswordSupport from './v005_ssh_key_password_support';
 import v006NetworkDeviceCredentials from './v006_network_device_credentials';
 import v007AddAgentRuntimeFields from './v007_add_agent_runtime_fields';
 import v008AddToolApprovals from './v008_add_tool_approvals';
+import v009AddToolApprovalCorrelation from './v009_add_tool_approval_correlation';
 
 export const ALL_MIGRATIONS: Migration[] = [
   v001InitialSchema,
@@ -17,6 +18,7 @@ export const ALL_MIGRATIONS: Migration[] = [
   v006NetworkDeviceCredentials,
   v007AddAgentRuntimeFields,
   v008AddToolApprovals,
+  v009AddToolApprovalCorrelation,
 ];
 
 export function createMigrationManager(db: any): MigrationManager {

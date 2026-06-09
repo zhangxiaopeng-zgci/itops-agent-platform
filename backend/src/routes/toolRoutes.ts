@@ -20,7 +20,8 @@ router.post('/:name/invoke', async (req: AuthenticatedRequest, res: Response) =>
     userId: req.user?.id,
     userRole: req.user?.role || 'viewer',
     ipAddress: req.ip,
-    source: req.body?.source === 'agent_runtime' ? 'agent_runtime' : 'api'
+    source: req.body?.source === 'agent_runtime' ? 'agent_runtime' : 'api',
+    correlationId: typeof req.body?.correlationId === 'string' ? req.body.correlationId : undefined
   };
 
   const input = isPlainObject(req.body?.input) ? req.body.input : {};
@@ -43,7 +44,8 @@ router.post('/invoke', async (req: AuthenticatedRequest, res: Response) => {
     userId: req.user?.id,
     userRole: req.user?.role || 'viewer',
     ipAddress: req.ip,
-    source: req.body?.source === 'agent_runtime' ? 'agent_runtime' : 'api'
+    source: req.body?.source === 'agent_runtime' ? 'agent_runtime' : 'api',
+    correlationId: typeof req.body?.correlationId === 'string' ? req.body.correlationId : undefined
   };
 
   const input = isPlainObject(req.body?.input) ? req.body.input : {};

@@ -382,6 +382,30 @@ Detailed stage notes:
 docs/AGENT_RUNTIME_STAGE_9_APPROVAL_TASK_TRACE_UX.md
 ```
 
+## Phase 10: Correlated Observability
+
+Objectives:
+
+- Assign a stable correlation id to each Agent runtime execution chain.
+- Propagate the correlation id through Hermes trace events, tool approvals,
+  workflow tasks, and audit logs.
+- Add a backend query API for retrieving the full chain.
+- Make Agent trace approval/task references navigable from the UI.
+
+Implemented additions:
+
+```text
+correlationId
+GET /api/correlations/:id
+/tool-approvals?approvalId=<approval-id>
+```
+
+Detailed stage notes:
+
+```text
+docs/AGENT_RUNTIME_STAGE_10_CORRELATED_OBSERVABILITY.md
+```
+
 Suggested backend structure:
 
 ```text
