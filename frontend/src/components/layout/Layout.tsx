@@ -312,6 +312,7 @@ export default function Layout() {
                 )}>{t('common.language')}</span>
               </div>
               <button
+                data-i18n-skip="true"
                 onClick={() => setLocale(locale === 'zh-CN' ? 'en-US' : 'zh-CN')}
                 className={clsx('px-2 py-1 rounded-md text-[11px] font-semibold transition-colors',
                   theme === 'dark'

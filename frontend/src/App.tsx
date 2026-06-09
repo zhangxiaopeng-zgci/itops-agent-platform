@@ -7,6 +7,7 @@ import { LocaleProvider } from './contexts/LocaleContext';
 import ErrorBoundary from './components/ErrorBoundary';
 import ProtectedRoute from './components/ProtectedRoute';
 import Layout from './components/layout/Layout';
+import LocaleDomTranslator from './components/i18n/LocaleDomTranslator';
 import Login from './pages/Login';
 import ForcePasswordChange from './pages/ForcePasswordChange';
 import Dashboard from './pages/Dashboard';
@@ -59,6 +60,7 @@ function App() {
     <ErrorBoundary>
       <ThemeProvider>
       <LocaleProvider>
+        <LocaleDomTranslator />
         <AuthProvider>
           <ToastProvider>
           <QueryClientProvider client={queryClient}>
