@@ -193,6 +193,67 @@ export const searchKnowledgeBaseTool: ToolDefinition = {
   }
 };
 
+export const listWorkflowsTool: ToolDefinition = {
+  name: 'list_workflows',
+  description: 'List workflow templates and workflow ids that can be referenced by approved execution tools.',
+  riskLevel: 'read_only',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      isTemplate: { type: 'boolean' },
+      search: { type: 'string' },
+      limit: { type: 'number', minimum: 1, maximum: 100 }
+    }
+  },
+  execute(input: Record<string, unknown>) {
+    const params: unknown[] = [];
+    const conditions: string[] = [];
+
+    if (typeof input.isTemplate === 'boolean') {
+      conditions.push('is_template = ?');
+      params.push(input.isTemplate ? 1 : 0);
+    }
+
+    if (typeof input.search === 'string' && input.search.trim().length > 0) {
+      conditions.push('(name LIKE ? OR description LIKE ?)');
+      const searchTerm = `%${input.search.trim()}%`;
+      params.push(searchTerm, searchTerm);
+    }
+
+    let query = `
+      SELECT id, name, description, nodes, is_template, created_at, updated_at
+      FROM workflows
+    `;
+    if (conditions.length > 0) {
+      query += ` WHERE ${conditions.join(' AND ')}`;
+    }
+    query += ' ORDER BY is_template DESC, updated_at DESC LIMIT ?';
+    params.push(clampLimit(input.limit, 20, 100));
+
+    const workflows = db.prepare(query).all(...params) as Array<{
+      nodes?: string;
+      [key: string]: unknown;
+    }>;
+
+    return workflows.map((workflow) => {
+      const nodes = parseJsonField<Array<{ data?: { label?: string; agentId?: string } }>>(workflow.nodes, []);
+      return {
+        id: workflow.id,
+        name: workflow.name,
+        description: workflow.description,
+        is_template: workflow.is_template,
+        created_at: workflow.created_at,
+        updated_at: workflow.updated_at,
+        nodeCount: nodes.length,
+        agents: nodes.map((node) => ({
+          label: node.data?.label || null,
+          agentId: node.data?.agentId || null
+        }))
+      };
+    });
+  }
+};
+
 export const runReadOnlyCommandTool: ToolDefinition = {
   name: 'run_readonly_command',
   description: 'Run a command from a strict read-only allowlist against a managed server.',
@@ -403,6 +464,7 @@ export const toolDefinitions = [
   listServersTool,
   queryAlertsTool,
   searchKnowledgeBaseTool,
+  listWorkflowsTool,
   runReadOnlyCommandTool,
   submitRemediationForApprovalTool,
   runWorkflowTool,

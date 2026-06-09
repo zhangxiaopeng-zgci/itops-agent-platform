@@ -327,6 +327,38 @@ Detailed stage notes:
 docs/AGENT_RUNTIME_STAGE_7_EXECUTION_TOOLS.md
 ```
 
+## Phase 8: Hermes Ops Agent
+
+Objectives:
+
+- Provide a first end-to-end Hermes-powered operations agent.
+- Let Hermes discover workflow ids through a read-only tool before requesting execution.
+- Keep remediation execution behind the existing approval queue.
+- Seed the agent for both fresh and existing installations without storing endpoint secrets.
+
+Implemented additions:
+
+```text
+Hermes 诊断修复 Agent
+list_workflows
+```
+
+Default loop:
+
+```text
+read-only diagnosis
+  -> list_workflows
+  -> run_workflow approval
+  -> get_task_status
+  -> verify_remediation
+```
+
+Detailed stage notes:
+
+```text
+docs/AGENT_RUNTIME_STAGE_8_HERMES_OPS_AGENT.md
+```
+
 Suggested backend structure:
 
 ```text

@@ -2,6 +2,38 @@ import { db } from '../database';
 import { randomUUID } from 'crypto';
 import { logger } from '../../utils/logger';
 
+interface PresetAgent {
+  id: string;
+  name: string;
+  avatar: string;
+  role: string;
+  category: string;
+  description: string;
+  system_prompt: string;
+  model: string | null;
+  temperature: number;
+  is_preset: number;
+  enabled: number;
+  api_provider?: string;
+  runtime?: string;
+  runtime_config?: Record<string, unknown>;
+  autonomy_level?: string;
+  tool_policy_id?: string | null;
+}
+
+const HERMES_OPS_AGENT_NAME = 'Hermes 诊断修复 Agent';
+const HERMES_OPS_ALLOWED_TOOLS = [
+  'list_servers',
+  'query_alerts',
+  'search_knowledge_base',
+  'list_workflows',
+  'run_readonly_command',
+  'submit_remediation_for_approval',
+  'run_workflow',
+  'get_task_status',
+  'verify_remediation'
+];
+
 function getUserConfiguredModel(): string | null {
   try {
     const doubaoKeyResult = db.prepare('SELECT value FROM settings WHERE key = ?').get('DOUBAO_API_KEY') as { value: string } | undefined;
@@ -26,11 +58,96 @@ function getUserConfiguredModel(): string | null {
   return null;
 }
 
+function buildHermesOpsAgent(): PresetAgent {
+  return {
+    id: randomUUID(),
+    name: HERMES_OPS_AGENT_NAME,
+    avatar: '🧠',
+    role: 'Hermes 运维诊断与审批修复编排专家',
+    category: '智能诊断',
+    description: '通过 Hermes Runtime 执行只读诊断，并在需要修复时提交受控工作流审批',
+    system_prompt: `你是 ITOps 平台中的 Hermes 运维诊断与审批修复编排专家。
+
+你的职责：
+1. 优先使用只读工具收集事实，包括告警、服务器、知识库、工作流模板和只读命令结果。
+2. 需要修复时，先用 list_workflows 找到合适的工作流模板，再调用 run_workflow 提交审批。
+3. run_workflow 返回 approval_required 时，必须明确告诉用户审批单 id、目标工作流和等待人工审批的原因。
+4. 不要声称已经完成修复，除非 get_task_status 或 verify_remediation 的工具结果证明任务已经完成并验证通过。
+5. 如果缺少 workflowId、serverId、taskId 或其他必要上下文，先说明缺口并给出下一步。
+
+安全边界：
+- 默认只做诊断和建议。
+- 任何 medium_risk 工具都会进入人工审批，不能绕过审批。
+- 不要构造 destructive 操作，不要请求读取密钥、私钥或敏感凭据。
+
+回答要求：
+- 使用中文。
+- 先给结论，再列证据、风险和下一步。
+- 对审批型动作，明确写出审批状态和后续如何追踪。`,
+    model: 'smart-router',
+    temperature: 0.2,
+    is_preset: 1,
+    enabled: 1,
+    api_provider: 'openai',
+    runtime: 'hermes',
+    runtime_config: {
+      model: 'smart-router',
+      apiKeyEnv: 'HERMES_API_KEY',
+      timeoutMs: 300000,
+      maxToolRounds: 5,
+      temperature: 0.2,
+      allowedTools: HERMES_OPS_ALLOWED_TOOLS
+    },
+    autonomy_level: 'approval_required',
+    tool_policy_id: 'default-human-approval'
+  };
+}
+
+function insertPresetAgent(agent: PresetAgent): boolean {
+  const existing = db.prepare('SELECT id FROM agents WHERE name = ?').get(agent.name) as { id: string } | undefined;
+  if (existing) {
+    return false;
+  }
+
+  db.prepare(`
+    INSERT INTO agents (
+      id, name, avatar, role, system_prompt, model, temperature, is_preset, enabled,
+      category, description, api_provider, runtime, runtime_config, autonomy_level, tool_policy_id
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    agent.id,
+    agent.name,
+    agent.avatar,
+    agent.role,
+    agent.system_prompt,
+    agent.model,
+    agent.temperature,
+    agent.is_preset,
+    agent.enabled,
+    agent.category,
+    agent.description,
+    agent.api_provider || 'doubao',
+    agent.runtime || null,
+    agent.runtime_config ? JSON.stringify(agent.runtime_config) : null,
+    agent.autonomy_level || 'suggest',
+    agent.tool_policy_id || null
+  );
+
+  return true;
+}
+
+export function ensureHermesOpsAgent(): void {
+  if (insertPresetAgent(buildHermesOpsAgent())) {
+    logger.info(`✅ 成功创建预设 Agent: ${HERMES_OPS_AGENT_NAME}`);
+  }
+}
+
 export function initializePresetAgents() {
   const configuredModel = getUserConfiguredModel();
   logger.info(`📝 预设Agent将使用模型: ${configuredModel || '（未配置，留空）'}`);
 
-  const presetAgents = [
+  const presetAgents: PresetAgent[] = [
     {
       id: randomUUID(),
       name: '告警处理 Agent',
@@ -215,17 +332,16 @@ export function initializePresetAgents() {
       temperature: 0.3,
       is_preset: 1,
       enabled: 1
-    }
+    },
+    buildHermesOpsAgent()
   ];
 
-  const insertAgent = db.prepare(`
-    INSERT INTO agents (id, name, avatar, role, system_prompt, model, temperature, is_preset, enabled, category, description, api_provider)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-
+  let createdCount = 0;
   presetAgents.forEach(agent => {
-    insertAgent.run(agent.id, agent.name, agent.avatar, agent.role, agent.system_prompt, agent.model, agent.temperature, agent.is_preset, agent.enabled, agent.category, agent.description, 'doubao');
+    if (insertPresetAgent(agent)) {
+      createdCount += 1;
+    }
   });
 
-  logger.info(`✅ 成功创建 ${presetAgents.length} 个预设 Agent`);
+  logger.info(`✅ 成功创建 ${createdCount} 个预设 Agent`);
 }

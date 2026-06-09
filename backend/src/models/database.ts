@@ -6,7 +6,7 @@ import bcrypt from 'bcryptjs';
 import { env } from '../utils/env';
 import { logger } from '../utils/logger';
 import { runMigrations } from './migrations';
-import { initializePresetAgents } from './presets/initAgents';
+import { ensureHermesOpsAgent, initializePresetAgents } from './presets/initAgents';
 import { initializePresetWorkflows } from './presets/initWorkflows';
 import { initializePresetReportTemplates } from './presets/initReports';
 import { initializePresetKnowledge } from './presets/initKnowledge';
@@ -373,6 +373,7 @@ function initializeDefaultData(): void {
   if (presetCount.count === 0) {
     initializePresetAgents();
   }
+  ensureHermesOpsAgent();
   
   logger.info('🔄 Updating preset agent model configurations...');
   
@@ -504,7 +505,7 @@ function initializeDefaultUsers() {
   const initialPassword = process.env.ADMIN_INITIAL_PASSWORD || 'admin';
   const hashedPassword = bcrypt.hashSync(initialPassword, 12);
   db.prepare(`
-    INSERT INTO users (username, password, email, role, enabled, password_must_change)
+    INSERT OR IGNORE INTO users (username, password, email, role, enabled, password_must_change)
     VALUES (?, ?, ?, ?, ?, ?)
   `).run('admin', hashedPassword, 'admin@example.com', 'admin', 1, 1);
 

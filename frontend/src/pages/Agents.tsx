@@ -72,7 +72,7 @@ interface HermesRuntimeConfig {
   allowedTools?: string[];
 }
 
-const DEFAULT_HERMES_TOOLS = 'list_servers, query_alerts, search_knowledge_base, run_readonly_command';
+const DEFAULT_HERMES_TOOLS = 'list_servers, query_alerts, search_knowledge_base, list_workflows, run_readonly_command, get_task_status, verify_remediation';
 
 function parseRuntimeConfig(value: Agent['runtime_config']): HermesRuntimeConfig {
   if (!value) return {};

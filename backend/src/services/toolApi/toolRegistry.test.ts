@@ -8,6 +8,43 @@ describe('toolRegistry', () => {
     await initializeDatabase();
   });
 
+  it('lists workflow ids for approved execution planning', async () => {
+    const result = await invokeTool(
+      'list_workflows',
+      { isTemplate: true, limit: 5 },
+      { userId: 'test-viewer', userRole: 'viewer', source: 'api' }
+    );
+
+    expect(result.success).toBe(true);
+    expect(result.decision.status).toBe('allowed');
+    expect(Array.isArray(result.data)).toBe(true);
+    expect((result.data as Array<{ id?: string; name?: string }>)[0]).toEqual(
+      expect.objectContaining({
+        id: expect.any(String),
+        name: expect.any(String)
+      })
+    );
+  });
+
+  it('seeds a Hermes diagnosis and remediation agent with approval-loop tools', async () => {
+    const agent = db.prepare(`
+      SELECT name, runtime, runtime_config, autonomy_level
+      FROM agents
+      WHERE name = ?
+    `).get('Hermes 诊断修复 Agent') as
+      | { name: string; runtime: string; runtime_config: string; autonomy_level: string }
+      | undefined;
+
+    expect(agent).toBeTruthy();
+    expect(agent?.runtime).toBe('hermes');
+    expect(agent?.autonomy_level).toBe('approval_required');
+
+    const runtimeConfig = JSON.parse(agent?.runtime_config || '{}') as { allowedTools?: string[] };
+    expect(runtimeConfig.allowedTools).toContain('list_workflows');
+    expect(runtimeConfig.allowedTools).toContain('run_workflow');
+    expect(runtimeConfig.allowedTools).toContain('verify_remediation');
+  });
+
   it('queues medium-risk workflow execution for approval before touching workflows', async () => {
     const result = await invokeTool(
       'run_workflow',
