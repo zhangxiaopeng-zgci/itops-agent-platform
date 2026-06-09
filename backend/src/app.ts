@@ -44,6 +44,7 @@ import sshKeyRoutes from './routes/sshKeyRoutes';
 import topologyRoutes from './routes/topologyRoutes';
 import changeRoutes from './routes/changeRoutes';
 import aiModelRoutes from './routes/aiModelRoutes';
+import toolRoutes from './routes/toolRoutes';
 import { schedulerService } from './services/schedulerService';
 import { reportService } from './services/reportService';
 import { copilotService } from './services/copilotService';
@@ -197,6 +198,7 @@ app.use('/api/ssh-keys', rateLimiter, sshKeyRoutes);
 app.use('/api/topology', rateLimiter, topologyRoutes);
 app.use('/api/changes', rateLimiter, changeRoutes);
 app.use('/api/ai-models', rateLimiter, aiModelRoutes);
+app.use('/api/tools', rateLimiter, toolRoutes);
 
 app.use(notFoundHandler);
 app.use(errorHandler);
