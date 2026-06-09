@@ -333,8 +333,7 @@ function buildInitialMessages(agent: RuntimeAgentRecord, request: AgentRunReques
 function getHermesTools(allowedTools?: string[]): ChatTool[] {
   const allowed = allowedTools && allowedTools.length > 0 ? new Set(allowedTools) : null;
   return listTools()
-    .filter(tool => tool.riskLevel === 'read_only')
-    .filter(tool => !allowed || allowed.has(tool.name))
+    .filter(tool => allowed ? allowed.has(tool.name) && tool.riskLevel !== 'destructive' : tool.riskLevel === 'read_only')
     .map(toChatTool);
 }
 

@@ -1,10 +1,23 @@
+import { randomUUID } from 'crypto';
 import db from '../../models/database';
 import { executeCommand } from '../sshService';
+import { executeWorkflow } from '../workflowExecutor';
 import { evaluateReadOnlyCommand } from './policyGuard';
 import { ToolContext, ToolDefinition, ToolInvocationResult } from './types';
+import { WorkflowParsed } from '../../types';
 
 const VALID_ALERT_STATUSES = new Set(['new', 'acknowledged', 'resolved']);
 const VALID_ALERT_SEVERITIES = new Set(['critical', 'high', 'medium', 'low']);
+
+type ParsedTaskRow = Record<string, unknown> & {
+  node_results: unknown;
+  logs: unknown[];
+  metrics: unknown;
+  context: unknown;
+  execution_order: unknown[];
+  status?: unknown;
+  end_time?: unknown;
+};
 
 function clampLimit(value: unknown, defaultValue: number, maxValue: number): number {
   const parsed = typeof value === 'number' ? value : parseInt(String(value || ''), 10);
@@ -31,6 +44,31 @@ function requireString(input: Record<string, unknown>, key: string): string {
     throw new Error(`${key} is required`);
   }
   return value.trim();
+}
+
+function parseTask(row: Record<string, unknown>): ParsedTaskRow {
+  return {
+    ...row,
+    node_results: parseJsonField(row.node_results, null),
+    logs: parseJsonField(row.logs, []),
+    metrics: parseJsonField(row.metrics, null),
+    context: parseJsonField(row.context, null),
+    execution_order: parseJsonField(row.execution_order, [])
+  };
+}
+
+function toWorkflowParsed(row: Record<string, unknown>): WorkflowParsed {
+  return {
+    id: row.id as string,
+    name: row.name as string,
+    description: row.description as string,
+    nodes: parseJsonField(row.nodes, []),
+    edges: parseJsonField(row.edges, []),
+    agent_configs: parseJsonField(row.agent_configs, {}),
+    is_template: row.is_template as number,
+    created_at: row.created_at as string,
+    updated_at: row.updated_at as string
+  };
 }
 
 export const listServersTool: ToolDefinition = {
@@ -233,10 +271,141 @@ export const submitRemediationForApprovalTool: ToolDefinition = {
   }
 };
 
+export const runWorkflowTool: ToolDefinition = {
+  name: 'run_workflow',
+  description: 'Start an ITOps workflow after human approval and return the created task id.',
+  riskLevel: 'medium_risk',
+  inputSchema: {
+    type: 'object',
+    required: ['workflowId'],
+    properties: {
+      workflowId: { type: 'string' },
+      name: { type: 'string' },
+      input: { type: 'string' },
+      context: { type: 'object' }
+    }
+  },
+  execute(input: Record<string, unknown>, context: ToolContext) {
+    const workflowId = requireString(input, 'workflowId');
+    const workflow = db.prepare('SELECT * FROM workflows WHERE id = ?').get(workflowId) as Record<string, unknown> | undefined;
+
+    if (!workflow) {
+      throw new Error(`Workflow not found: ${workflowId}`);
+    }
+
+    const taskId = randomUUID();
+    const taskContext = {
+      ...(input.context && typeof input.context === 'object' && !Array.isArray(input.context) ? input.context as Record<string, unknown> : {}),
+      toolInvocation: {
+        source: context.source || 'api',
+        approvedBy: context.userId || null,
+        toolName: 'run_workflow'
+      }
+    };
+
+    db.prepare(`
+      INSERT INTO tasks (id, workflow_id, name, status, context)
+      VALUES (?, ?, ?, 'pending', ?)
+    `).run(
+      taskId,
+      workflowId,
+      typeof input.name === 'string' && input.name.trim() ? input.name.trim() : `Tool workflow: ${workflow.name}`,
+      JSON.stringify(taskContext)
+    );
+
+    const parsedWorkflow = toWorkflowParsed(workflow);
+    setImmediate(() => {
+      executeWorkflow(
+        taskId,
+        parsedWorkflow,
+        typeof input.input === 'string' ? input.input : undefined,
+        taskContext
+      ).catch(() => {
+        // executeWorkflow already records failure state and logs details.
+      });
+    });
+
+    return {
+      taskId,
+      workflowId,
+      workflowName: workflow.name,
+      status: 'pending',
+      message: 'Workflow task created and execution scheduled'
+    };
+  }
+};
+
+export const getTaskStatusTool: ToolDefinition = {
+  name: 'get_task_status',
+  description: 'Read task status and execution details by task id.',
+  riskLevel: 'read_only',
+  inputSchema: {
+    type: 'object',
+    required: ['taskId'],
+    properties: {
+      taskId: { type: 'string' }
+    }
+  },
+  execute(input: Record<string, unknown>) {
+    const taskId = requireString(input, 'taskId');
+    const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(taskId) as { [key: string]: unknown } | undefined;
+    if (!task) {
+      throw new Error(`Task not found: ${taskId}`);
+    }
+    return parseTask(task);
+  }
+};
+
+export const verifyRemediationTool: ToolDefinition = {
+  name: 'verify_remediation',
+  description: 'Verify a workflow-backed remediation task by checking task completion and failed nodes.',
+  riskLevel: 'read_only',
+  inputSchema: {
+    type: 'object',
+    required: ['taskId'],
+    properties: {
+      taskId: { type: 'string' },
+      expectedStatus: { type: 'string' }
+    }
+  },
+  execute(input: Record<string, unknown>) {
+    const taskId = requireString(input, 'taskId');
+    const expectedStatus = typeof input.expectedStatus === 'string' ? input.expectedStatus : 'completed';
+    const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(taskId) as { [key: string]: unknown } | undefined;
+    if (!task) {
+      throw new Error(`Task not found: ${taskId}`);
+    }
+
+    const parsedTask = parseTask(task);
+    const nodeResults = parsedTask.node_results && typeof parsedTask.node_results === 'object'
+      ? parsedTask.node_results as Record<string, { status?: string; error?: string }>
+      : {};
+    const failedNodes = Object.entries(nodeResults)
+      .filter(([, result]) => result.status === 'failed')
+      .map(([nodeId, result]) => ({ nodeId, error: result.error || 'Node failed' }));
+    const actualStatus = String(parsedTask.status || '');
+
+    return {
+      taskId,
+      verified: actualStatus === expectedStatus && failedNodes.length === 0,
+      expectedStatus,
+      actualStatus,
+      failedNodes,
+      completedAt: parsedTask.end_time || null,
+      message: actualStatus === expectedStatus && failedNodes.length === 0
+        ? 'Remediation task verification passed'
+        : 'Remediation task verification did not pass'
+    };
+  }
+};
+
 export const toolDefinitions = [
   listServersTool,
   queryAlertsTool,
   searchKnowledgeBaseTool,
   runReadOnlyCommandTool,
-  submitRemediationForApprovalTool
+  submitRemediationForApprovalTool,
+  runWorkflowTool,
+  getTaskStatusTool,
+  verifyRemediationTool
 ];

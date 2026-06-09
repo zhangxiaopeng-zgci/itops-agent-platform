@@ -87,7 +87,7 @@ export async function invokeTool(
     return { ...result, auditId: auditToolInvocation(context, name, result, input) };
   }
 
-  if (decision.status !== 'allowed' && !options.skipApproval) {
+  if (decision.status === 'denied') {
     const result: Omit<ToolInvocationResult, 'auditId'> = {
       success: false,
       tool: name,

@@ -304,6 +304,29 @@ Initial approval-only tool:
 submit_remediation_for_approval
 ```
 
+## Phase 7: Approved Execution Tools
+
+Objectives:
+
+- Add real execution tools behind approval.
+- Reuse the existing workflow task engine.
+- Let Hermes request approved actions without direct execution rights.
+- Add read-only task observation and remediation verification tools.
+
+Implemented tools:
+
+```text
+run_workflow                 medium_risk, approval required
+get_task_status              read_only
+verify_remediation           read_only
+```
+
+Detailed stage notes:
+
+```text
+docs/AGENT_RUNTIME_STAGE_7_EXECUTION_TOOLS.md
+```
+
 Suggested backend structure:
 
 ```text
