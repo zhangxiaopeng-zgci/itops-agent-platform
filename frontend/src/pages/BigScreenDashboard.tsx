@@ -619,7 +619,7 @@ export default function BigScreenDashboard() {
   return (
     <div
       ref={containerRef}
-      className={`relative ${isFullscreen ? 'fixed inset-0 z-50 bg-background' : 'h-screen'} overflow-y-auto bg-background ${criticalAlertCount > 0 ? 'before:content-[""] before:absolute before:inset-0 before:z-5 before:pointer-events-none before:border-4 before:border-red-500/40 before:rounded-lg before:animate-pulse' : ''}`}
+      className={`relative ${isFullscreen ? 'fixed inset-0 z-50 bg-[#0b0f14]' : 'h-screen'} overflow-y-auto bg-[#0b0f14] ${criticalAlertCount > 0 ? 'before:content-[""] before:absolute before:inset-0 before:z-5 before:pointer-events-none before:border-4 before:border-red-500/40 before:rounded-lg before:animate-pulse' : ''}`}
     >
       <ParticleBackground />
 

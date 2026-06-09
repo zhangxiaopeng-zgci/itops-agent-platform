@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Bell, Database, Shield, Loader2, CheckCircle2, AlertCircle, Sun, Moon, Lock, BookOpen, Upload, FileText, Globe, Wifi, Brain } from 'lucide-react';
+import { Bell, Database, Shield, Loader2, CheckCircle2, AlertCircle, Sun, Moon, Lock, BookOpen, Upload, FileText, Globe, Wifi, Brain, Palette, Monitor } from 'lucide-react';
 import clsx from 'clsx';
-import { BackgroundStyle, useTheme } from '../contexts/ThemeContext';
+import { BackgroundStyle, ThemeMode, useTheme } from '../contexts/ThemeContext';
 import api from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
 import { validatePassword, getPasswordStrength } from '../utils/passwordValidator';
@@ -20,7 +20,7 @@ export default function Settings() {
   const [searchParams] = useSearchParams();
   const [activeTab, setActiveTab] = useState('models');
   const queryClient = useQueryClient();
-  const { theme, backgroundStyle, toggleTheme, setBackgroundStyle } = useTheme();
+  const { theme, themeMode, backgroundStyle, setThemeMode, setBackgroundStyle } = useTheme();
   const { user, login, updateUser } = useAuth();
   const navigate = useNavigate();
 
@@ -419,25 +419,31 @@ export default function Settings() {
     { id: 'notifications', name: '通知设置', icon: Bell },
     { id: 'database', name: '数据库', icon: Database },
     { id: 'security', name: '安全设置', icon: Shield },
+    { id: 'appearance', name: '外观设置', icon: Palette },
+  ];
+  const themeOptions: Array<{ id: ThemeMode; name: string; description: string; icon: typeof Monitor }> = [
+    { id: 'system', name: '跟随系统', description: '自动使用操作系统明暗模式', icon: Monitor },
+    { id: 'dark', name: '深色', description: '适合夜间值守和监控大屏', icon: Moon },
+    { id: 'light', name: '浅色', description: '适合日间办公和普通浏览', icon: Sun },
   ];
   const backgroundOptions: Array<{ id: BackgroundStyle; name: string; description: string; swatches: string[] }> = [
     {
-      id: 'graphite',
-      name: '石墨绿',
-      description: '克制、稳定，适合长时间运维值守',
-      swatches: ['#10130f', '#1b211d', '#0f766e']
+      id: 'carbon',
+      name: '碳黑灰',
+      description: '中性低饱和，最接近专业控制台',
+      swatches: ['#111312', '#1b1f1d', '#4f766b']
     },
     {
-      id: 'steel',
-      name: '钢蓝灰',
-      description: '冷静、技术感，适合监控和网络场景',
-      swatches: ['#111827', '#1f2937', '#0e7490']
+      id: 'slate',
+      name: '冷灰蓝',
+      description: '偏冷静、理性，适合网络和监控场景',
+      swatches: ['#101418', '#1a2027', '#587083']
     },
     {
-      id: 'amber',
-      name: '暖琥珀',
-      description: '低刺激、偏暖，适合弱光环境',
-      swatches: ['#14120e', '#211d17', '#b45309']
+      id: 'moss',
+      name: '墨绿灰',
+      description: '偏自然、耐看，适合长时间使用',
+      swatches: ['#11140f', '#1b2118', '#62745a']
     }
   ];
 
@@ -1259,73 +1265,94 @@ export default function Settings() {
                     </div>
                   </div>
 
-                  <div className="space-y-4">
-                    <div className="flex items-center justify-between p-4 bg-background rounded-lg">
-                      <div>
-                        <h4 className="font-medium text-text-primary">主题设置</h4>
-                        <p className="text-sm text-text-secondary">
-                          选择深色或浅色主题
-                        </p>
-                      </div>
-                      <button
-                        onClick={toggleTheme}
-                        className="flex items-center gap-2 px-4 py-2 bg-surface border border-border rounded-lg hover:bg-surface/80 transition-colors"
-                      >
-                        {theme === 'dark' ? (
-                          <Moon className="w-5 h-5" />
-                        ) : (
-                          <Sun className="w-5 h-5" />
-                        )}
-                        <span className="text-sm text-text-primary">
-                          {theme === 'dark' ? '深色主题' : '浅色主题'}
-                        </span>
-                      </button>
-                    </div>
+                  <div className="bg-background rounded-lg p-4">
+                    <h4 className="font-medium text-text-primary mb-2">CORS配置</h4>
+                    <p className="text-sm text-text-secondary mb-3">
+                      允许的前端域名
+                    </p>
+                    <input
+                      type="text"
+                      defaultValue="http://localhost:3000"
+                      className="w-full px-4 py-2 bg-surface border border-border rounded-lg text-text-primary focus:outline-none focus:border-primary"
+                    />
+                  </div>
+                </div>
+              )}
 
-                    <div className="bg-background rounded-lg p-4">
-                      <h4 className="font-medium text-text-primary mb-2">背景风格</h4>
-                      <p className="text-sm text-text-secondary mb-4">
-                        选择适合当前使用环境的界面基调
-                      </p>
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                        {backgroundOptions.map((option) => (
+              {activeTab === 'appearance' && (
+                <div className="space-y-6">
+                  <div>
+                    <h3 className="text-lg font-semibold text-text-primary mb-4 flex items-center gap-2">
+                      <Palette className="w-5 h-5" />
+                      外观设置
+                    </h3>
+                    <p className="text-sm text-text-secondary mb-6">
+                      调整界面明暗模式和背景风格
+                    </p>
+                  </div>
+
+                  <div className="bg-background rounded-lg p-6">
+                    <h4 className="font-medium text-text-primary mb-2">主题模式</h4>
+                    <p className="text-sm text-text-secondary mb-4">
+                      当前实际显示为：{theme === 'dark' ? '深色' : '浅色'}
+                    </p>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                      {themeOptions.map((option) => {
+                        const Icon = option.icon;
+                        return (
                           <button
                             key={option.id}
                             type="button"
-                            onClick={() => setBackgroundStyle(option.id)}
+                            onClick={() => setThemeMode(option.id)}
                             className={clsx(
-                              'text-left rounded-lg border p-3 transition-all',
-                              backgroundStyle === option.id
+                              'text-left rounded-lg border p-4 transition-all',
+                              themeMode === option.id
                                 ? 'border-primary bg-primary/10'
                                 : 'border-border bg-surface hover:border-primary/50'
                             )}
                           >
-                            <div className="flex items-center gap-2 mb-3">
-                              {option.swatches.map((color) => (
-                                <span
-                                  key={color}
-                                  className="w-5 h-5 rounded-full border border-white/10"
-                                  style={{ backgroundColor: color }}
-                                />
-                              ))}
+                            <div className="flex items-center gap-2 mb-2">
+                              <Icon className="w-5 h-5 text-primary" />
+                              <span className="font-medium text-text-primary">{option.name}</span>
                             </div>
-                            <div className="font-medium text-text-primary">{option.name}</div>
-                            <div className="text-xs text-text-secondary mt-1">{option.description}</div>
+                            <p className="text-xs text-text-secondary">{option.description}</p>
                           </button>
-                        ))}
-                      </div>
+                        );
+                      })}
                     </div>
+                  </div>
 
-                    <div className="bg-background rounded-lg p-4">
-                      <h4 className="font-medium text-text-primary mb-2">CORS配置</h4>
-                      <p className="text-sm text-text-secondary mb-3">
-                        允许的前端域名
-                      </p>
-                      <input
-                        type="text"
-                        defaultValue="http://localhost:3000"
-                        className="w-full px-4 py-2 bg-surface border border-border rounded-lg text-text-primary focus:outline-none focus:border-primary"
-                      />
+                  <div className="bg-background rounded-lg p-6">
+                    <h4 className="font-medium text-text-primary mb-2">背景风格</h4>
+                    <p className="text-sm text-text-secondary mb-4">
+                      背景风格仅影响深色主题，浅色主题保持清爽办公风格
+                    </p>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                      {backgroundOptions.map((option) => (
+                        <button
+                          key={option.id}
+                          type="button"
+                          onClick={() => setBackgroundStyle(option.id)}
+                          className={clsx(
+                            'text-left rounded-lg border p-4 transition-all',
+                            backgroundStyle === option.id
+                              ? 'border-primary bg-primary/10'
+                              : 'border-border bg-surface hover:border-primary/50'
+                          )}
+                        >
+                          <div className="flex items-center gap-2 mb-3">
+                            {option.swatches.map((color) => (
+                              <span
+                                key={color}
+                                className="w-6 h-6 rounded-full border border-white/10"
+                                style={{ backgroundColor: color }}
+                              />
+                            ))}
+                          </div>
+                          <div className="font-medium text-text-primary">{option.name}</div>
+                          <div className="text-xs text-text-secondary mt-1">{option.description}</div>
+                        </button>
+                      ))}
                     </div>
                   </div>
                 </div>

@@ -52,13 +52,13 @@ export default function ForcePasswordChange() {
 
   return (
     <div className="min-h-screen relative flex items-center justify-center overflow-hidden">
-      <div className="absolute inset-0 bg-background">
-        <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-primary/40 to-transparent" />
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,var(--color-primary)_0%,transparent_34%)] opacity-10" />
+      <div className="absolute inset-0 bg-[#111312]">
+        <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-[#6fa08f]/40 to-transparent" />
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,#6fa08f_0%,transparent_34%)] opacity-10" />
       </div>
 
       <div className="relative z-10 w-full max-w-md px-4">
-        <div className="bg-surface/95 backdrop-blur-2xl rounded-3xl p-8 border border-border shadow-2xl">
+        <div className="bg-[#1b1f1d]/95 backdrop-blur-2xl rounded-3xl p-8 border border-[#343a36] shadow-2xl">
           <div className="text-center mb-8">
             <div className="w-16 h-16 bg-gradient-to-br from-yellow-500 to-orange-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-yellow-500/30">
               <Lock className="w-8 h-8 text-white" />
@@ -84,7 +84,7 @@ export default function ForcePasswordChange() {
                 value={currentPassword}
                 onChange={(e) => setCurrentPassword(e.target.value)}
                 placeholder="请输入当前密码"
-                className="w-full px-4 py-3 bg-background border border-border rounded-xl text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-yellow-500/35 focus:border-yellow-500/45 transition-all"
+                className="w-full px-4 py-3 bg-[#111312] border border-[#343a36] rounded-xl text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-yellow-500/35 focus:border-yellow-500/45 transition-all"
                 required
               />
             </div>
@@ -98,7 +98,7 @@ export default function ForcePasswordChange() {
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
                 placeholder="请输入新密码（至少8位）"
-                className="w-full px-4 py-3 bg-background border border-border rounded-xl text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/45 transition-all"
+                className="w-full px-4 py-3 bg-[#111312] border border-[#343a36] rounded-xl text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-[#6fa08f]/30 focus:border-[#6fa08f]/45 transition-all"
                 required
               />
               {newPassword && (
@@ -134,7 +134,7 @@ export default function ForcePasswordChange() {
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 placeholder="请再次输入新密码"
-                className="w-full px-4 py-3 bg-background border border-border rounded-xl text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary/45 transition-all"
+                className="w-full px-4 py-3 bg-[#111312] border border-[#343a36] rounded-xl text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-[#6fa08f]/30 focus:border-[#6fa08f]/45 transition-all"
                 required
               />
               {confirmPassword && newPassword && (
@@ -164,7 +164,7 @@ export default function ForcePasswordChange() {
             <button
               type="submit"
               disabled={changePasswordMutation.isPending}
-              className="w-full py-3.5 bg-primary hover:bg-primary/90 text-white font-semibold rounded-xl transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-black/25 hover:shadow-xl hover:shadow-black/35 transform hover:-translate-y-0.5 active:translate-y-0 flex items-center justify-center gap-2"
+              className="w-full py-3.5 bg-[#4f766b] hover:bg-[#5f887c] text-white font-semibold rounded-xl transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-black/25 hover:shadow-xl hover:shadow-black/35 transform hover:-translate-y-0.5 active:translate-y-0 flex items-center justify-center gap-2"
             >
               {changePasswordMutation.isPending ? (
                 <>
