@@ -1,4 +1,5 @@
 import { createContext, ReactNode, useContext, useEffect, useMemo, useState } from 'react';
+import { setRuntimeLocale } from '../i18n/runtimeState';
 
 export type Locale = 'zh-CN' | 'en-US';
 
@@ -321,8 +322,10 @@ function getInitialLocale(): Locale {
 
 export function LocaleProvider({ children }: { children: ReactNode }) {
   const [locale, setLocaleState] = useState<Locale>(getInitialLocale);
+  setRuntimeLocale(locale);
 
   useEffect(() => {
+    setRuntimeLocale(locale);
     localStorage.setItem('locale', locale);
     document.documentElement.lang = locale === 'zh-CN' ? 'zh-CN' : 'en';
   }, [locale]);

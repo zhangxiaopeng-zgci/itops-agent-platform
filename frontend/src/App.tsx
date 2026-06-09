@@ -7,7 +7,6 @@ import { LocaleProvider } from './contexts/LocaleContext';
 import ErrorBoundary from './components/ErrorBoundary';
 import ProtectedRoute from './components/ProtectedRoute';
 import Layout from './components/layout/Layout';
-import LocaleDomTranslator from './components/i18n/LocaleDomTranslator';
 import Login from './pages/Login';
 import ForcePasswordChange from './pages/ForcePasswordChange';
 import Dashboard from './pages/Dashboard';
@@ -45,6 +44,7 @@ import NetworkDevices from './pages/NetworkDevices';
 import SSHKeys from './pages/SSHKeys';
 import AIModels from './pages/AIModels';
 import NotFound from './pages/NotFound';
+import { useLocale } from './contexts/LocaleContext';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -55,15 +55,24 @@ const queryClient = new QueryClient({
   },
 });
 
+function LocaleRenderBoundary({ children }: { children: React.ReactNode }) {
+  const { locale } = useLocale();
+  return (
+    <div key={locale} className="contents">
+      {children}
+    </div>
+  );
+}
+
 function App() {
   return (
     <ErrorBoundary>
       <ThemeProvider>
       <LocaleProvider>
-        <LocaleDomTranslator />
         <AuthProvider>
           <ToastProvider>
           <QueryClientProvider client={queryClient}>
+            <LocaleRenderBoundary>
             <BrowserRouter>
             <Routes>
             <Route path="/login" element={<Login />} />
@@ -108,6 +117,7 @@ function App() {
             <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>
+            </LocaleRenderBoundary>
       </QueryClientProvider>
           </ToastProvider>
         </AuthProvider>

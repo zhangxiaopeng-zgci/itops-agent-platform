@@ -1,4 +1,5 @@
 import { createContext, useContext, useCallback, useState, ReactNode } from 'react';
+import { localizeMessage } from '../i18n/message';
 
 export type ToastType = 'success' | 'error' | 'warning' | 'info';
 
@@ -50,7 +51,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
 
   const toast = useCallback((message: string, type: ToastType = 'info') => {
     const id = Date.now();
-    setToasts(prev => [...prev, { id, message, type }]);
+    setToasts(prev => [...prev, { id, message: localizeMessage(message), type }]);
     setTimeout(() => removeToast(id), 4000);
   }, [removeToast]);
 
