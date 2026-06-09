@@ -1,11 +1,20 @@
 import { Router, Request, Response } from 'express';
 import { randomUUID } from 'crypto';
 import db from '../models/database';
-import { executeAgentWithLLM } from '../services/llmService';
 import { executeAgentNode } from '../services/agentExecutor';
+import { inferLegacyRuntimeType } from '../services/agentRuntime/registry';
 import { requireRole } from '../middleware/auth';
 
 const router = Router();
+
+function serializeRuntimeConfig(value: unknown): string | null {
+  if (!value) return null;
+  return typeof value === 'string' ? value : JSON.stringify(value);
+}
+
+function defaultRuntimeForName(name: string, runtime?: string): string {
+  return runtime || inferLegacyRuntimeType(name);
+}
 
 router.get('/', (req: Request, res: Response) => {
   try {
@@ -145,12 +154,16 @@ router.get('/:id/executions', (req: Request, res: Response) => {
 
 router.post('/', requireRole('admin', 'operator'), (req: Request, res: Response) => {
   try {
-    const { name, avatar, role, system_prompt, model, temperature, enabled, category, tags, description, api_provider, primary_model_id, fallback_model_id } = req.body;
+    const { name, avatar, role, system_prompt, model, temperature, enabled, category, tags, description, api_provider, primary_model_id, fallback_model_id, runtime, runtime_config, autonomy_level, tool_policy_id } = req.body;
     const id = randomUUID();
     
     db.prepare(`
-      INSERT INTO agents (id, name, avatar, role, system_prompt, model, temperature, enabled, is_preset, category, tags, description, api_provider, primary_model_id, fallback_model_id)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO agents (
+        id, name, avatar, role, system_prompt, model, temperature, enabled, is_preset,
+        category, tags, description, api_provider, primary_model_id, fallback_model_id,
+        runtime, runtime_config, autonomy_level, tool_policy_id
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       id, 
       name, 
@@ -166,7 +179,11 @@ router.post('/', requireRole('admin', 'operator'), (req: Request, res: Response)
       description || null,
       api_provider || 'doubao',
       primary_model_id || null,
-      fallback_model_id || null
+      fallback_model_id || null,
+      defaultRuntimeForName(name, runtime),
+      serializeRuntimeConfig(runtime_config),
+      autonomy_level || 'suggest',
+      tool_policy_id || null
     );
     
     const agent = db.prepare('SELECT * FROM agents WHERE id = ?').get(id);
@@ -215,13 +232,7 @@ router.post('/:id/test', async (req: Request, res: Response) => {
     };
     
     try {
-      // 检查是否是服务器相关的Agent，如果是，就用增强的执行器
-      if (agentName.includes('服务器') || agentName.includes('巡检')) {
-        output = await executeAgentNode((agent as { id: string }).id, input, executionContext);
-      } else {
-        // 其他Agent用LLM执行
-        output = await executeAgentWithLLM((agent as { id: string }).id, input);
-      }
+      output = await executeAgentNode((agent as { id: string }).id, input, executionContext);
     } catch (error) {
       status = 'error';
       errorMessage = (error as Error).message;
@@ -303,7 +314,7 @@ router.get('/:id/test-input', (req: Request, res: Response) => {
 
 router.put('/:id', requireRole('admin', 'operator'), (req: Request, res: Response) => {
   try {
-    const { name, avatar, role, system_prompt, model, temperature, enabled, category, tags, description, api_provider, primary_model_id, fallback_model_id } = req.body;
+    const { name, avatar, role, system_prompt, model, temperature, enabled, category, tags, description, api_provider, primary_model_id, fallback_model_id, runtime, runtime_config, autonomy_level, tool_policy_id } = req.body;
     
     db.prepare(`
       UPDATE agents 
@@ -311,6 +322,10 @@ router.put('/:id', requireRole('admin', 'operator'), (req: Request, res: Respons
           model = ?, temperature = ?, enabled = ?, 
           category = ?, tags = ?, description = ?, api_provider = ?,
           primary_model_id = ?, fallback_model_id = ?,
+          runtime = COALESCE(?, runtime),
+          runtime_config = COALESCE(?, runtime_config),
+          autonomy_level = COALESCE(?, autonomy_level, 'suggest'),
+          tool_policy_id = COALESCE(?, tool_policy_id),
           updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
     `).run(
@@ -319,6 +334,10 @@ router.put('/:id', requireRole('admin', 'operator'), (req: Request, res: Respons
       category || null, tags ? JSON.stringify(tags) : null, 
       description || null, api_provider || 'doubao',
       primary_model_id || null, fallback_model_id || null,
+      runtime === undefined ? null : runtime,
+      runtime_config === undefined ? null : serializeRuntimeConfig(runtime_config),
+      autonomy_level === undefined ? null : autonomy_level,
+      tool_policy_id === undefined ? null : tool_policy_id,
       req.params.id
     );
     
@@ -352,8 +371,11 @@ router.post('/import', (req: Request, res: Response) => {
     }
     
     const insertStmt = db.prepare(`
-      INSERT INTO agents (id, name, avatar, role, system_prompt, model, temperature, enabled, is_preset, category, tags, description)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO agents (
+        id, name, avatar, role, system_prompt, model, temperature, enabled, is_preset,
+        category, tags, description, runtime, runtime_config, autonomy_level, tool_policy_id
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     
     const imported = [];
@@ -371,7 +393,11 @@ router.post('/import', (req: Request, res: Response) => {
         0,
         agent.category || null,
         agent.tags ? JSON.stringify(agent.tags) : null,
-        agent.description || null
+        agent.description || null,
+        defaultRuntimeForName(agent.name, agent.runtime),
+        serializeRuntimeConfig(agent.runtime_config),
+        agent.autonomy_level || 'suggest',
+        agent.tool_policy_id || null
       );
       imported.push(id);
     }

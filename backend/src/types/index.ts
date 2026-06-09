@@ -62,6 +62,10 @@ export interface Agent {
   id: string;
   name: string;
   system_prompt: string;
+  runtime?: string | null;
+  runtime_config?: string | null;
+  autonomy_level?: string | null;
+  tool_policy_id?: string | null;
 }
 
 export interface Server {
