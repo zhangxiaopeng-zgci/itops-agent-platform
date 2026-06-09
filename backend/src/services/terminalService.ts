@@ -84,7 +84,6 @@ export class TerminalService {
 
     let decryptedPassword: string | undefined;
     let decryptedPrivateKey: string | undefined;
-    let decryptedPassphrase: string | undefined;
 
     try {
       decryptedPassword = server.password ? decrypt(server.password) : undefined;
@@ -94,11 +93,10 @@ export class TerminalService {
 
     if (server.ssh_key_id) {
       const credential = db.prepare(
-        'SELECT auth_type, private_key, passphrase, username, password FROM ssh_keys WHERE id = ?'
+        'SELECT auth_type, private_key, username, password FROM ssh_keys WHERE id = ?'
       ).get(server.ssh_key_id) as {
         auth_type: 'key' | 'password';
         private_key: string | null;
-        passphrase?: string | null;
         username?: string | null;
         password?: string | null;
       } | undefined;
@@ -111,10 +109,8 @@ export class TerminalService {
               server.username = credential.username;
             }
             decryptedPrivateKey = undefined;
-            decryptedPassphrase = undefined;
           } else if (credential.private_key) {
             decryptedPrivateKey = decrypt(credential.private_key);
-            decryptedPassphrase = credential.passphrase ? decrypt(credential.passphrase) : undefined;
           }
         } catch (error) {
           return { sessionId: '', shell: null as unknown as ClientChannel, error: `Failed to decrypt SSH credential: ${(error as Error).message}` };
@@ -219,9 +215,6 @@ export class TerminalService {
 
       if (server.use_ssh_key && decryptedPrivateKey) {
         connectConfig.privateKey = decryptedPrivateKey;
-        if (decryptedPassphrase) {
-          connectConfig.passphrase = decryptedPassphrase;
-        }
       } else if (decryptedPassword) {
         connectConfig.password = decryptedPassword;
       } else {

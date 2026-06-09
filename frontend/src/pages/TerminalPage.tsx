@@ -12,11 +12,18 @@ interface ServerItem {
   port: number;
   username: string;
   use_ssh_key: number;
+  ssh_key_id?: string | null;
   description?: string;
   tags?: string[];
   enabled: number;
   last_connected?: string;
   created_at: string;
+}
+
+interface AuthCredential {
+  id: string;
+  name: string;
+  auth_type: 'key' | 'password';
 }
 
 export default function TerminalPage() {
@@ -36,6 +43,32 @@ export default function TerminalPage() {
     queryKey: ['servers'],
     queryFn: () => api.get('/api/servers').then((r) => r.data),
   });
+
+  const { data: credentials } = useQuery<AuthCredential[]>({
+    queryKey: ['ssh-keys'],
+    queryFn: () => api.get('/api/ssh-keys').then((r) => r.data.data),
+  });
+
+  const credentialsById = useMemo(() => {
+    return new Map((credentials || []).map((credential) => [credential.id, credential]));
+  }, [credentials]);
+
+  const getAuthBadge = useCallback((server: ServerItem) => {
+    if (server.ssh_key_id) {
+      const credential = credentialsById.get(server.ssh_key_id);
+      if (credential?.auth_type === 'password') {
+        return { label: '账号密码凭证', className: 'bg-status-warning/10 text-status-warning' };
+      }
+      if (credential?.auth_type === 'key') {
+        return { label: 'SSH 私钥凭证', className: 'bg-status-success/10 text-status-success' };
+      }
+      return { label: '认证凭证', className: 'bg-primary/10 text-primary' };
+    }
+    if (server.use_ssh_key) {
+      return { label: 'SSH 私钥', className: 'bg-status-success/10 text-status-success' };
+    }
+    return { label: '密码', className: 'bg-status-warning/10 text-status-warning' };
+  }, [credentialsById]);
 
   const servers = useMemo(() => {
     const all = serversData?.data || [];
@@ -136,15 +169,14 @@ export default function TerminalPage() {
                 <span className="px-2 py-0.5 text-xs bg-background text-text-secondary rounded">
                   {server.username}@{server.port}
                 </span>
-                {server.use_ssh_key ? (
-                  <span className="px-2 py-0.5 text-xs bg-status-success/10 text-status-success rounded">
-                    密钥
-                  </span>
-                ) : (
-                  <span className="px-2 py-0.5 text-xs bg-status-warning/10 text-status-warning rounded">
-                    密码
-                  </span>
-                )}
+                {(() => {
+                  const authBadge = getAuthBadge(server);
+                  return (
+                    <span className={`px-2 py-0.5 text-xs rounded ${authBadge.className}`}>
+                      {authBadge.label}
+                    </span>
+                  );
+                })()}
               </div>
               {server.tags && server.tags.length > 0 && (
                 <div className="flex flex-wrap gap-1 mt-2">
