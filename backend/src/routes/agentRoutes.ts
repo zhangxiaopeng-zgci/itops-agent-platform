@@ -211,6 +211,7 @@ const PRESET_TEST_INPUTS: Record<string, string> = {
 router.post('/:id/test', async (req: Request, res: Response) => {
   try {
     const { input, serverId, serverIds, context } = req.body;
+    const authUser = (req as Request & { user?: { id: string; role: string } }).user;
     const agent = db.prepare('SELECT * FROM agents WHERE id = ?').get(req.params.id);
     
     if (!agent) {
@@ -228,6 +229,9 @@ router.post('/:id/test', async (req: Request, res: Response) => {
     // 构建上下文 - 优先使用serverIds，如果没有则使用serverId
     const executionContext = {
       ...context,
+      userId: authUser?.id,
+      userRole: authUser?.role,
+      ipAddress: req.ip,
       serverIds: serverIds && serverIds.length > 0 ? serverIds : (serverId ? [serverId] : undefined)
     };
     

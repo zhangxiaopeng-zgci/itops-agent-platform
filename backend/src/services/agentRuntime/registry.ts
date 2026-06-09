@@ -2,13 +2,15 @@ import db from '../../models/database';
 import { logger } from '../../utils/logger';
 import { BuiltinAgentRuntime } from './builtinRuntime';
 import { CustomHttpAgentRuntime } from './customHttpRuntime';
+import { HermesAgentRuntime } from './hermesRuntime';
 import { LLMAgentRuntime } from './llmRuntime';
 import { AgentRuntime, AgentRuntimeType, RuntimeAgentRecord } from './types';
 
 const runtimes: Partial<Record<AgentRuntimeType, AgentRuntime>> = {
   builtin: new BuiltinAgentRuntime(),
   llm: new LLMAgentRuntime(),
-  custom_http: new CustomHttpAgentRuntime()
+  custom_http: new CustomHttpAgentRuntime(),
+  hermes: new HermesAgentRuntime()
 };
 
 const supportedRuntimeTypes: AgentRuntimeType[] = ['builtin', 'llm', 'custom_http', 'hermes', 'openclaw', 'mcp'];

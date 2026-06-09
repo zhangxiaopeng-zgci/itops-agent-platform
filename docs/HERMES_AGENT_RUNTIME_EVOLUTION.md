@@ -215,9 +215,41 @@ destructive     denied by default
 Objectives:
 
 - Add Hermes runtime support through a backend adapter.
-- Run Hermes as a sidecar service.
-- Send only scoped context and allowed tools to Hermes.
-- Store Hermes trace, plan, tool calls, and summary in ITOps task history.
+- Call an OpenAI-compatible Hermes endpoint through backend runtime_config.
+- Send only scoped context and read-only allowed tools to Hermes.
+- Route Hermes tool calls back through the ITOps Tool API, PolicyGuard, and
+  audit logs.
+- Keep API keys in environment variables, not in agent records.
+
+Implemented adapter:
+
+```text
+backend/src/services/agentRuntime/hermesRuntime.ts
+```
+
+Runtime config example:
+
+```json
+{
+  "baseUrl": "https://your-openai-compatible-endpoint/v1",
+  "model": "smart-router",
+  "apiKeyEnv": "HERMES_API_KEY",
+  "timeoutMs": 300000,
+  "maxToolRounds": 3,
+  "allowedTools": [
+    "list_servers",
+    "query_alerts",
+    "search_knowledge_base",
+    "run_readonly_command"
+  ]
+}
+```
+
+Detailed stage notes:
+
+```text
+docs/AGENT_RUNTIME_STAGE_4_HERMES.md
+```
 
 Suggested backend structure:
 
