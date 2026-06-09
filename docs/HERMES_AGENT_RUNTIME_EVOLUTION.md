@@ -359,6 +359,29 @@ Detailed stage notes:
 docs/AGENT_RUNTIME_STAGE_8_HERMES_OPS_AGENT.md
 ```
 
+## Phase 9: Approval, Task, Trace UX
+
+Objectives:
+
+- Make approved workflow execution easier to follow from the UI.
+- Link tool approvals to created workflow tasks.
+- Support task detail deep links.
+- Show complete Agent trace timelines instead of a short preview.
+
+Implemented additions:
+
+```text
+Tool approval -> task link
+/tasks?taskId=<task-id>
+Agent execution trace timeline
+```
+
+Detailed stage notes:
+
+```text
+docs/AGENT_RUNTIME_STAGE_9_APPROVAL_TASK_TRACE_UX.md
+```
+
 Suggested backend structure:
 
 ```text

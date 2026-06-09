@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
+import { useSearchParams } from 'react-router-dom';
 import { io, Socket } from 'socket.io-client';
 import { Play, Pause, XCircle, Clock, CheckCircle, XCircle as XIcon, FileText, Activity, List, FileCheck } from 'lucide-react';
 import { formatDistanceToNow, format } from 'date-fns';
@@ -33,6 +34,7 @@ interface Workflow {
 
 export default function Tasks() {
   const { token } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [executingNodeId, setExecutingNodeId] = useState<string | null>(null);
   const [taskLogs, setTaskLogs] = useState<any[]>([]);
@@ -264,8 +266,20 @@ export default function Tasks() {
       }
     }
   }, [tasks]);
-  
-  const handleSelectTask = (task: Task) => {
+
+  useEffect(() => {
+    const taskId = searchParams.get('taskId');
+    if (!taskId || !tasks || selectedTask?.id === taskId) {
+      return;
+    }
+
+    const task = tasks.find((item) => item.id === taskId);
+    if (task) {
+      handleSelectTask(task, false);
+    }
+  }, [searchParams, tasks, selectedTask?.id]);
+
+  const handleSelectTask = (task: Task, updateUrl = true) => {
     // 解析 execution_order、node_results、logs 字段
     const parsedTask = { ...task };
     
@@ -308,9 +322,12 @@ export default function Tasks() {
       }
     }
     
-    setSelectedTask(parsedTask);
-    setTaskLogs(parsedLogs);
-  };
+	    setSelectedTask(parsedTask);
+	    setTaskLogs(parsedLogs);
+    if (updateUrl) {
+      setSearchParams({ taskId: task.id });
+    }
+	  };
 
   const pauseMutation = useMutation({
     mutationFn: async (taskId: string) => {

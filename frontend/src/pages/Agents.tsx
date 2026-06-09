@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { 
   Plus, Edit, Trash2, Play, Clock, Search, 
-  ChevronLeft, BookOpen, Server, BrainCircuit, Cable, CheckCircle2, AlertTriangle
+  ChevronLeft, BookOpen, Server, BrainCircuit, Cable, CheckCircle2, AlertTriangle, Wrench, MessageSquare
 } from 'lucide-react';
 import clsx from 'clsx';
 import api from '../lib/api';
@@ -72,6 +72,14 @@ interface HermesRuntimeConfig {
   allowedTools?: string[];
 }
 
+interface TraceSummary {
+  success?: boolean;
+  decisionStatus?: string;
+  approvalId?: string;
+  taskId?: string;
+  error?: string;
+}
+
 const DEFAULT_HERMES_TOOLS = 'list_servers, query_alerts, search_knowledge_base, list_workflows, run_readonly_command, get_task_status, verify_remediation';
 
 function parseRuntimeConfig(value: Agent['runtime_config']): HermesRuntimeConfig {
@@ -94,6 +102,72 @@ function formatRuntime(runtime?: string): string {
     mcp: 'MCP'
   };
   return labels[runtime || ''] || runtime || 'LLM';
+}
+
+function parseTraceSummary(content?: string): TraceSummary | null {
+  if (!content) return null;
+
+  try {
+    const parsed = JSON.parse(content) as Record<string, unknown>;
+    return {
+      success: typeof parsed.success === 'boolean' ? parsed.success : undefined,
+      decisionStatus: readNestedString(parsed, ['decision', 'status']),
+      approvalId: readString(parsed.approvalId) || readNestedString(parsed, ['data', 'approval', 'id']),
+      taskId: findStringField(parsed, 'taskId'),
+      error: readString(parsed.error)
+    };
+  } catch {
+    return null;
+  }
+}
+
+function formatTraceContent(content: string): string {
+  try {
+    const parsed = JSON.parse(content) as unknown;
+    return JSON.stringify(parsed, null, 2);
+  } catch {
+    return content;
+  }
+}
+
+function findStringField(value: unknown, key: string): string | undefined {
+  if (!value || typeof value !== 'object') return undefined;
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = findStringField(item, key);
+      if (found) return found;
+    }
+    return undefined;
+  }
+
+  const record = value as Record<string, unknown>;
+  const direct = readString(record[key]);
+  if (direct) return direct;
+
+  for (const child of Object.values(record)) {
+    const found = findStringField(child, key);
+    if (found) return found;
+  }
+  return undefined;
+}
+
+function readNestedString(value: Record<string, unknown>, path: string[]): string | undefined {
+  let current: unknown = value;
+  for (const segment of path) {
+    if (!current || typeof current !== 'object' || Array.isArray(current)) {
+      return undefined;
+    }
+    current = (current as Record<string, unknown>)[segment];
+  }
+  return readString(current);
+}
+
+function readString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.length > 0 ? value : undefined;
+}
+
+function shortTraceId(value: string): string {
+  return value.length > 12 ? `${value.slice(0, 8)}...` : value;
 }
 
 export default function Agents() {
@@ -815,28 +889,82 @@ function AgentDetailInner({ agentId, onBack, deleteMutation }: AgentDetailInnerP
                           </span>
                         )}
                       </div>
-                      {Array.isArray(exec.metadata.trace) && exec.metadata.trace.length > 0 && (
-                        <div className="mt-3 space-y-2">
-                          {exec.metadata.trace.slice(0, 5).map((event, index) => {
-                            const traceEvent = event as { type?: string; content?: string; metadata?: Record<string, unknown> };
-                            return (
-                              <div key={`${exec.id}-trace-${index}`} className="rounded-lg bg-slate-950/40 border border-slate-800/80 p-3">
-                                <div className="flex items-center justify-between gap-3 mb-1">
-                                  <span className="text-xs font-semibold text-slate-300">{traceEvent.type || 'trace'}</span>
-                                  {Array.isArray(traceEvent.metadata?.toolCalls) && (
-                                    <span className="text-xs text-blue-300">
-                                      {(traceEvent.metadata.toolCalls as string[]).join(', ')}
-                                    </span>
-                                  )}
-                                </div>
-                                {traceEvent.content && (
-                                  <p className="text-xs text-slate-400 whitespace-pre-wrap line-clamp-3">{traceEvent.content}</p>
-                                )}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
+	                      {Array.isArray(exec.metadata.trace) && exec.metadata.trace.length > 0 && (
+	                        <div className="mt-3 space-y-2">
+	                          {exec.metadata.trace.map((event, index) => {
+	                            const traceEvent = event as { type?: string; content?: string; timestamp?: string; metadata?: Record<string, unknown> };
+	                            const summary = parseTraceSummary(traceEvent.content);
+	                            const toolName = typeof traceEvent.metadata?.tool === 'string' ? traceEvent.metadata.tool : null;
+	                            const toolCalls = Array.isArray(traceEvent.metadata?.toolCalls) ? traceEvent.metadata.toolCalls as string[] : [];
+	                            const isToolEvent = traceEvent.type?.startsWith('tool_call');
+	                            return (
+	                              <div key={`${exec.id}-trace-${index}`} className="rounded-lg bg-slate-950/40 border border-slate-800/80 p-3">
+	                                <div className="flex items-start justify-between gap-3 mb-2">
+	                                  <div className="flex items-center gap-2 min-w-0">
+	                                    <span className={clsx(
+	                                      'inline-flex items-center justify-center w-6 h-6 rounded-md border',
+	                                      isToolEvent
+	                                        ? 'bg-amber-500/10 text-amber-300 border-amber-500/20'
+	                                        : 'bg-blue-500/10 text-blue-300 border-blue-500/20'
+	                                    )}>
+	                                      {isToolEvent ? <Wrench className="w-3.5 h-3.5" /> : <MessageSquare className="w-3.5 h-3.5" />}
+	                                    </span>
+	                                    <div className="min-w-0">
+	                                      <div className="flex items-center gap-2">
+	                                        <span className="text-xs font-semibold text-slate-300">{traceEvent.type || 'trace'}</span>
+	                                        {summary?.success !== undefined && (
+	                                          <span className={clsx(
+	                                            'text-[11px] px-1.5 py-0.5 rounded border',
+	                                            summary.success
+	                                              ? 'bg-green-500/10 text-green-300 border-green-500/20'
+	                                              : 'bg-red-500/10 text-red-300 border-red-500/20'
+	                                          )}>
+	                                            {summary.success ? 'success' : 'failed'}
+	                                          </span>
+	                                        )}
+	                                      </div>
+	                                      {traceEvent.timestamp && (
+	                                        <span className="text-[11px] text-slate-500">
+	                                          {new Date(traceEvent.timestamp).toLocaleString()}
+	                                        </span>
+	                                      )}
+	                                    </div>
+	                                  </div>
+	                                  {(toolName || toolCalls.length > 0) && (
+	                                    <span className="text-xs text-blue-300 text-right break-words max-w-[45%]">
+	                                      {toolName || toolCalls.join(', ')}
+	                                    </span>
+	                                  )}
+	                                </div>
+	                                {summary && (
+	                                  <div className="flex flex-wrap gap-2 mb-2 text-[11px]">
+	                                    {summary.decisionStatus && (
+	                                      <span className="px-2 py-1 rounded bg-slate-800/80 text-slate-300 border border-slate-700/50">
+	                                        {summary.decisionStatus}
+	                                      </span>
+	                                    )}
+	                                    {summary.approvalId && (
+	                                      <span className="px-2 py-1 rounded bg-amber-500/10 text-amber-300 border border-amber-500/20">
+	                                        approval {shortTraceId(summary.approvalId)}
+	                                      </span>
+	                                    )}
+	                                    {summary.taskId && (
+	                                      <span className="px-2 py-1 rounded bg-green-500/10 text-green-300 border border-green-500/20">
+	                                        task {shortTraceId(summary.taskId)}
+	                                      </span>
+	                                    )}
+	                                  </div>
+	                                )}
+	                                {summary?.error ? (
+	                                  <p className="text-xs text-red-300 whitespace-pre-wrap">{summary.error}</p>
+	                                ) : traceEvent.content ? (
+	                                  <p className="text-xs text-slate-400 whitespace-pre-wrap line-clamp-4">{formatTraceContent(traceEvent.content)}</p>
+	                                ) : null}
+	                              </div>
+	                            );
+	                          })}
+	                        </div>
+	                      )}
                     </div>
                   )}
                 </div>

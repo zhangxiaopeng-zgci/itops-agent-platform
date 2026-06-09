@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { CheckCircle2, Clock, ShieldAlert, XCircle, RefreshCw } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { CheckCircle2, Clock, ShieldAlert, XCircle, RefreshCw, ExternalLink } from 'lucide-react';
 import clsx from 'clsx';
 import api from '../lib/api';
 
@@ -35,6 +36,7 @@ const statusLabels: Record<ToolApproval['status'], string> = {
 
 export default function ToolApprovals() {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const [status, setStatus] = useState('pending');
   const [selectedApproval, setSelectedApproval] = useState<ToolApproval | null>(null);
   const [comment, setComment] = useState('');
@@ -74,6 +76,7 @@ export default function ToolApprovals() {
   });
 
   const approvals = data?.approvals || [];
+  const selectedTaskId = selectedApproval ? extractTaskId(selectedApproval) : null;
 
   return (
     <div className="h-full overflow-auto p-6">
@@ -144,11 +147,17 @@ export default function ToolApprovals() {
                       </div>
                       <StatusBadge status={approval.status} />
                     </div>
-                    <p className="text-sm text-text-secondary line-clamp-2">
-                      {approval.reason || '等待人工审批'}
-                    </p>
-                  </button>
-                ))}
+	                    <p className="text-sm text-text-secondary line-clamp-2">
+	                      {approval.reason || '等待人工审批'}
+	                    </p>
+	                    {extractTaskId(approval) && (
+	                      <div className="mt-3 inline-flex items-center gap-1.5 px-2 py-1 rounded-md bg-primary/10 text-primary text-xs border border-primary/20">
+	                        <ExternalLink className="w-3.5 h-3.5" />
+	                        task {shortId(extractTaskId(approval)!)}
+	                      </div>
+	                    )}
+	                  </button>
+	                ))}
               </div>
             )}
           </div>
@@ -168,11 +177,26 @@ export default function ToolApprovals() {
                   <StatusBadge status={selectedApproval.status} />
                 </div>
 
-                <DetailRow label="来源" value={selectedApproval.source || '-'} />
-                <DetailRow label="请求角色" value={selectedApproval.requester_role || '-'} />
-                <DetailRow label="原因" value={selectedApproval.reason || '-'} />
+	                <DetailRow label="来源" value={selectedApproval.source || '-'} />
+	                <DetailRow label="请求角色" value={selectedApproval.requester_role || '-'} />
+	                <DetailRow label="原因" value={selectedApproval.reason || '-'} />
+	                {selectedTaskId && (
+	                  <div className="rounded-lg border border-primary/20 bg-primary/5 p-3">
+	                    <p className="text-xs text-text-secondary mb-1">关联任务</p>
+	                    <div className="flex items-center justify-between gap-3">
+	                      <code className="text-sm text-text-primary break-all">{selectedTaskId}</code>
+	                      <button
+	                        onClick={() => navigate(`/tasks?taskId=${encodeURIComponent(selectedTaskId)}`)}
+	                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary/10 text-primary border border-primary/20 hover:bg-primary/20 transition-colors whitespace-nowrap"
+	                      >
+	                        <ExternalLink className="w-4 h-4" />
+	                        查看
+	                      </button>
+	                    </div>
+	                  </div>
+	                )}
 
-                <div>
+	                <div>
                   <p className="text-xs text-text-secondary mb-2">输入参数</p>
                   <pre className="max-h-64 overflow-auto rounded-lg bg-background border border-border p-3 text-xs text-text-primary whitespace-pre-wrap">
                     {JSON.stringify(selectedApproval.input, null, 2)}
@@ -247,4 +271,44 @@ function DetailRow({ label, value }: { label: string; value: string }) {
       <p className="text-sm text-text-primary break-words">{value}</p>
     </div>
   );
+}
+
+function extractTaskId(approval: ToolApproval): string | null {
+  const directTaskId = readStringField(approval.input, 'taskId');
+  if (directTaskId) return directTaskId;
+  return findStringField(approval.execution_result, 'taskId');
+}
+
+function findStringField(value: unknown, key: string): string | null {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = findStringField(item, key);
+      if (found) return found;
+    }
+    return null;
+  }
+
+  const record = value as Record<string, unknown>;
+  const direct = readStringField(record, key);
+  if (direct) return direct;
+
+  for (const child of Object.values(record)) {
+    const found = findStringField(child, key);
+    if (found) return found;
+  }
+
+  return null;
+}
+
+function readStringField(record: Record<string, unknown> | null | undefined, key: string): string | null {
+  const value = record?.[key];
+  return typeof value === 'string' && value.length > 0 ? value : null;
+}
+
+function shortId(value: string): string {
+  return value.length > 12 ? `${value.slice(0, 8)}...` : value;
 }
