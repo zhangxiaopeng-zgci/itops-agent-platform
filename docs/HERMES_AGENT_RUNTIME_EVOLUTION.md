@@ -251,6 +251,34 @@ Detailed stage notes:
 docs/AGENT_RUNTIME_STAGE_4_HERMES.md
 ```
 
+## Phase 5: Frontend Runtime Configuration And Trace
+
+Objectives:
+
+- Add runtime configuration to the Agent edit experience.
+- Add a Hermes connection test endpoint.
+- Persist runtime metadata and trace in `agent_executions.metadata`.
+- Show runtime and trace summaries in Agent execution history.
+
+Implemented:
+
+```text
+POST /api/agents/runtime/hermes/test-connection
+frontend/src/pages/Agents.tsx
+docs/AGENT_RUNTIME_STAGE_5_FRONTEND_TRACE.md
+```
+
+Agent test execution now stores:
+
+```json
+{
+  "runtime": "hermes",
+  "runtimeMetadata": {},
+  "trace": [],
+  "context": {}
+}
+```
+
 Suggested backend structure:
 
 ```text

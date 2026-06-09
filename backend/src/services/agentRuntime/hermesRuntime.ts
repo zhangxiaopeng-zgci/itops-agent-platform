@@ -19,6 +19,16 @@ interface HermesRuntimeConfig {
   temperature?: number;
 }
 
+interface HermesConnectionTestResult {
+  success: boolean;
+  baseUrl: string;
+  model: string;
+  apiKeyEnv: string;
+  latencyMs: number;
+  output?: string;
+  error?: string;
+}
+
 interface ChatMessage {
   role: 'system' | 'user' | 'assistant' | 'tool';
   content: string | null;
@@ -232,6 +242,74 @@ function parseRuntimeConfig(rawConfig?: string | null): HermesRuntimeConfig {
     allowedTools: config.allowedTools,
     temperature: config.temperature
   };
+}
+
+export async function testHermesConnection(rawConfig?: unknown): Promise<HermesConnectionTestResult> {
+  const config = parseRuntimeConfig(serializeRawConfig(rawConfig));
+  const configuredBaseUrl = config.baseUrl || process.env.HERMES_API_BASE;
+  const model = config.model || process.env.HERMES_MODEL || DEFAULT_MODEL;
+  const apiKeyEnv = config.apiKeyEnv || 'HERMES_API_KEY';
+  const apiKey = process.env[apiKeyEnv];
+
+  if (!configuredBaseUrl) {
+    return {
+      success: false,
+      baseUrl: '',
+      model,
+      apiKeyEnv,
+      latencyMs: 0,
+      error: 'Hermes runtime requires runtime_config.baseUrl or HERMES_API_BASE'
+    };
+  }
+
+  if (!apiKey) {
+    return {
+      success: false,
+      baseUrl: configuredBaseUrl,
+      model,
+      apiKeyEnv,
+      latencyMs: 0,
+      error: `Missing API key environment variable: ${apiKeyEnv}`
+    };
+  }
+
+  const baseUrl = trimTrailingSlash(configuredBaseUrl);
+  const startTime = Date.now();
+
+  try {
+    const response = await callChatCompletions(baseUrl, apiKey, {
+      model,
+      messages: [
+        { role: 'system', content: 'You are a connection health checker. Reply with a short confirmation.' },
+        { role: 'user', content: 'Return OK if this Hermes-compatible endpoint is reachable.' }
+      ],
+      max_tokens: 32,
+      temperature: 0
+    }, Math.min(config.timeoutMs || 30000, 30000));
+
+    return {
+      success: true,
+      baseUrl,
+      model,
+      apiKeyEnv,
+      latencyMs: Date.now() - startTime,
+      output: response.choices?.[0]?.message?.content || ''
+    };
+  } catch (error) {
+    return {
+      success: false,
+      baseUrl,
+      model,
+      apiKeyEnv,
+      latencyMs: Date.now() - startTime,
+      error: error instanceof Error ? error.message : String(error)
+    };
+  }
+}
+
+function serializeRawConfig(rawConfig?: unknown): string | null {
+  if (!rawConfig) return null;
+  return typeof rawConfig === 'string' ? rawConfig : JSON.stringify(rawConfig);
 }
 
 function buildInitialMessages(agent: RuntimeAgentRecord, request: AgentRunRequest): ChatMessage[] {

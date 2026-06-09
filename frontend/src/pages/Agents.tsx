@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { 
   Plus, Edit, Trash2, Play, Clock, Search, 
-  ChevronLeft, BookOpen, Server
+  ChevronLeft, BookOpen, Server, BrainCircuit, Cable, CheckCircle2, AlertTriangle
 } from 'lucide-react';
 import clsx from 'clsx';
 import api from '../lib/api';
@@ -27,6 +27,10 @@ interface Agent {
   fallback_model_id?: string;
   primary_model_name?: string;
   fallback_model_name?: string;
+  runtime?: string;
+  runtime_config?: string | Record<string, unknown> | null;
+  autonomy_level?: string;
+  tool_policy_id?: string;
 }
 
 interface AIModel {
@@ -59,6 +63,39 @@ interface AgentExecution {
   created_at: string;
 }
 
+interface HermesRuntimeConfig {
+  baseUrl?: string;
+  model?: string;
+  apiKeyEnv?: string;
+  timeoutMs?: number;
+  maxToolRounds?: number;
+  allowedTools?: string[];
+}
+
+const DEFAULT_HERMES_TOOLS = 'list_servers, query_alerts, search_knowledge_base, run_readonly_command';
+
+function parseRuntimeConfig(value: Agent['runtime_config']): HermesRuntimeConfig {
+  if (!value) return {};
+  if (typeof value === 'object') return value as HermesRuntimeConfig;
+  try {
+    return JSON.parse(value) as HermesRuntimeConfig;
+  } catch {
+    return {};
+  }
+}
+
+function formatRuntime(runtime?: string): string {
+  const labels: Record<string, string> = {
+    builtin: 'Builtin',
+    llm: 'LLM',
+    custom_http: 'Custom HTTP',
+    hermes: 'Hermes',
+    openclaw: 'OpenClaw',
+    mcp: 'MCP'
+  };
+  return labels[runtime || ''] || runtime || 'LLM';
+}
+
 export default function Agents() {
   const queryClient = useQueryClient();
   const [showModal, setShowModal] = useState(false);
@@ -68,7 +105,7 @@ export default function Agents() {
   const [showDetail, setShowDetail] = useState<string | null>(null);
   const [testInput, setTestInput] = useState('');
   const [showTestModal, setShowTestModal] = useState(false);
-  const [testResult, setTestResult] = useState<{output: string, time: number} | null>(null);
+  const [testResult, setTestResult] = useState<{output: string, time: number, metadata?: Record<string, unknown>} | null>(null);
   const [isTesting, setIsTesting] = useState(false);
   const [selectedServerIds, setSelectedServerIds] = useState<string[]>([]);
 
@@ -173,7 +210,7 @@ export default function Agents() {
       },
       {
         onSuccess: (data) => {
-          setTestResult({ output: data.output, time: data.executionTime });
+          setTestResult({ output: data.output, time: data.executionTime, metadata: data.metadata });
           queryClient.invalidateQueries({ queryKey: ['agents'] });
         },
         onSettled: () => setIsTesting(false),
@@ -355,6 +392,13 @@ export default function Agents() {
                     </div>
                   )}
                   <div className="flex justify-between text-sm">
+                    <span className="text-slate-500">Runtime</span>
+                    <span className={clsx(
+                      "text-slate-200 font-medium",
+                      agent.runtime === 'hermes' && "text-blue-300"
+                    )}>{formatRuntime(agent.runtime)}</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
                     <span className="text-slate-500">使用次数</span>
                     <span className="text-slate-200 font-medium">{agent.usage_count || 0}</span>
                   </div>
@@ -529,6 +573,12 @@ export default function Agents() {
                   <div className="bg-slate-900/50 rounded-xl p-4 border border-slate-700/50 max-h-64 overflow-y-auto scrollbar-thin">
                     <MarkdownOutput content={testResult.output} />
                   </div>
+                  {typeof testResult.metadata?.runtime === 'string' && (
+                    <div className="mt-3 flex items-center gap-2 text-xs text-slate-400">
+                      <BrainCircuit className="w-4 h-4 text-blue-400" />
+                      Runtime: {formatRuntime(String(testResult.metadata.runtime))}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -629,6 +679,16 @@ function AgentDetailInner({ agentId, onBack, deleteMutation }: AgentDetailInnerP
                 <span className="text-sm text-slate-500 block mb-1">温度</span>
                 <span className="text-slate-200">{agent.temperature}</span>
               </div>
+              <div>
+                <span className="text-sm text-slate-500 block mb-1">Runtime</span>
+                <span className={clsx(
+                  "inline-flex items-center gap-2 text-slate-200 font-medium",
+                  agent.runtime === 'hermes' && "text-blue-300"
+                )}>
+                  <BrainCircuit className="w-4 h-4" />
+                  {formatRuntime(agent.runtime)}
+                </span>
+              </div>
             </div>
             <div className="space-y-4">
               <div>
@@ -651,6 +711,10 @@ function AgentDetailInner({ agentId, onBack, deleteMutation }: AgentDetailInnerP
                 )}>
                   {agent.enabled ? '在线' : '离线'}
                 </span>
+              </div>
+              <div>
+                <span className="text-sm text-slate-500 block mb-1">自治级别</span>
+                <span className="text-slate-200">{agent.autonomy_level || 'suggest'}</span>
               </div>
             </div>
           </div>
@@ -736,6 +800,45 @@ function AgentDetailInner({ agentId, onBack, deleteMutation }: AgentDetailInnerP
                       <p className="text-sm text-red-400">{exec.error_message}</p>
                     </div>
                   )}
+                  {exec.metadata && Object.keys(exec.metadata).length > 0 && (
+                    <div className="mt-3 pt-3 border-t border-slate-700/40">
+                      <div className="flex flex-wrap gap-2 text-xs">
+                        {typeof exec.metadata.runtime === 'string' && (
+                          <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-blue-500/10 text-blue-300 border border-blue-500/20">
+                            <BrainCircuit className="w-3.5 h-3.5" />
+                            {formatRuntime(exec.metadata.runtime)}
+                          </span>
+                        )}
+                        {Array.isArray(exec.metadata.trace) && (
+                          <span className="px-2 py-1 rounded-lg bg-slate-800/80 text-slate-300 border border-slate-700/50">
+                            Trace {exec.metadata.trace.length}
+                          </span>
+                        )}
+                      </div>
+                      {Array.isArray(exec.metadata.trace) && exec.metadata.trace.length > 0 && (
+                        <div className="mt-3 space-y-2">
+                          {exec.metadata.trace.slice(0, 5).map((event, index) => {
+                            const traceEvent = event as { type?: string; content?: string; metadata?: Record<string, unknown> };
+                            return (
+                              <div key={`${exec.id}-trace-${index}`} className="rounded-lg bg-slate-950/40 border border-slate-800/80 p-3">
+                                <div className="flex items-center justify-between gap-3 mb-1">
+                                  <span className="text-xs font-semibold text-slate-300">{traceEvent.type || 'trace'}</span>
+                                  {Array.isArray(traceEvent.metadata?.toolCalls) && (
+                                    <span className="text-xs text-blue-300">
+                                      {(traceEvent.metadata.toolCalls as string[]).join(', ')}
+                                    </span>
+                                  )}
+                                </div>
+                                {traceEvent.content && (
+                                  <p className="text-xs text-slate-400 whitespace-pre-wrap line-clamp-3">{traceEvent.content}</p>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -776,6 +879,7 @@ function AgentDetailInner({ agentId, onBack, deleteMutation }: AgentDetailInnerP
 
 function AgentModal({ agent, onClose }: { agent: Agent | null; onClose: () => void }) {
   const queryClient = useQueryClient();
+  const initialRuntimeConfig = parseRuntimeConfig(agent?.runtime_config);
   const [tagsInput, setTagsInput] = useState(
     Array.isArray(agent?.tags) ? agent.tags.join(', ') : ''
   );
@@ -783,6 +887,16 @@ function AgentModal({ agent, onClose }: { agent: Agent | null; onClose: () => vo
   const [testInput, setTestInput] = useState('');
   const [testResult, setTestResult] = useState<string | null>(null);
   const [testLoading, setTestLoading] = useState(false);
+  const [connectionResult, setConnectionResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [connectionLoading, setConnectionLoading] = useState(false);
+  const [hermesConfig, setHermesConfig] = useState({
+    baseUrl: initialRuntimeConfig.baseUrl || '',
+    model: initialRuntimeConfig.model || 'smart-router',
+    apiKeyEnv: initialRuntimeConfig.apiKeyEnv || 'HERMES_API_KEY',
+    timeoutMs: initialRuntimeConfig.timeoutMs || 300000,
+    maxToolRounds: initialRuntimeConfig.maxToolRounds || 3,
+    allowedTools: (initialRuntimeConfig.allowedTools || DEFAULT_HERMES_TOOLS.split(',').map(tool => tool.trim())).join(', ')
+  });
   
   const { data: aiModels } = useQuery({
     queryKey: ['aiModels'],
@@ -804,10 +918,13 @@ function AgentModal({ agent, onClose }: { agent: Agent | null; onClose: () => vo
     description: agent?.description || '',
     primary_model_id: agent?.primary_model_id || '',
     fallback_model_id: agent?.fallback_model_id || '',
+    runtime: agent?.runtime || 'llm',
+    autonomy_level: agent?.autonomy_level || 'suggest',
+    tool_policy_id: agent?.tool_policy_id || '',
   });
 
   const mutation = useMutation({
-    mutationFn: async (data: typeof formData & { tags?: string[] }) => {
+    mutationFn: async (data: typeof formData & { tags?: string[], runtime_config?: HermesRuntimeConfig | null }) => {
       if (agent) {
         await api.put(`/api/agents/${agent.id}`, data);
       } else {
@@ -823,7 +940,45 @@ function AgentModal({ agent, onClose }: { agent: Agent | null; onClose: () => vo
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const tags = tagsInput.split(',').map(t => t.trim()).filter(Boolean);
-    mutation.mutate({ ...formData, tags });
+    mutation.mutate({ ...formData, tags, runtime_config: buildRuntimeConfig() });
+  };
+
+  const buildRuntimeConfig = (): HermesRuntimeConfig | null => {
+    if (formData.runtime !== 'hermes') {
+      return null;
+    }
+
+    return {
+      baseUrl: hermesConfig.baseUrl.trim() || undefined,
+      model: hermesConfig.model.trim() || 'smart-router',
+      apiKeyEnv: hermesConfig.apiKeyEnv.trim() || 'HERMES_API_KEY',
+      timeoutMs: hermesConfig.timeoutMs,
+      maxToolRounds: hermesConfig.maxToolRounds,
+      allowedTools: hermesConfig.allowedTools.split(',').map(tool => tool.trim()).filter(Boolean)
+    };
+  };
+
+  const testHermesConnection = async () => {
+    setConnectionLoading(true);
+    setConnectionResult(null);
+    try {
+      const res = await api.post('/api/agents/runtime/hermes/test-connection', {
+        runtime_config: buildRuntimeConfig()
+      });
+      const data = res.data.data;
+      setConnectionResult({
+        success: true,
+        message: `连接成功 · ${data.model} · ${data.latencyMs}ms`
+      });
+    } catch (error: unknown) {
+      const err = error as { response?: { data?: { error?: string; data?: { error?: string } } }; message?: string };
+      setConnectionResult({
+        success: false,
+        message: err.response?.data?.data?.error || err.response?.data?.error || err.message || '连接测试失败'
+      });
+    } finally {
+      setConnectionLoading(false);
+    }
   };
 
   const handleTest = async () => {
@@ -835,6 +990,7 @@ function AgentModal({ agent, onClose }: { agent: Agent | null; onClose: () => vo
     try {
       const testAgent = {
         ...formData,
+        runtime_config: buildRuntimeConfig(),
         tags: tagsInput.split(',').map(t => t.trim()).filter(Boolean),
         id: agent?.id || 'test'
       };
@@ -843,7 +999,7 @@ function AgentModal({ agent, onClose }: { agent: Agent | null; onClose: () => vo
         input: testInput
       });
       
-      setTestResult(res.data.data.result || '测试完成，无返回结果');
+      setTestResult(res.data.data.output || '测试完成，无返回结果');
     } catch (error: unknown) {
       const err = error as { response?: { data?: { error?: string; message?: string } }; message?: string };
       setTestResult(`测试失败: ${err.response?.data?.error || err.response?.data?.message || err.message}`);
@@ -985,6 +1141,138 @@ function AgentModal({ agent, onClose }: { agent: Agent | null; onClose: () => vo
             <p className="text-xs text-slate-500 mt-1">
               主模型失败时自动切换到备选模型
             </p>
+          </div>
+
+          <div className="bg-slate-900/30 rounded-xl p-4 border border-slate-700/30 space-y-4">
+            <div className="flex items-center justify-between gap-3">
+              <label className="text-sm font-medium text-slate-300 flex items-center gap-2">
+                <BrainCircuit className="w-4 h-4 text-blue-400" />
+                Runtime
+              </label>
+              {formData.runtime === 'hermes' && (
+                <button
+                  type="button"
+                  onClick={testHermesConnection}
+                  disabled={connectionLoading}
+                  className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-blue-600/20 text-blue-300 border border-blue-500/30 hover:bg-blue-600/30 disabled:opacity-50 transition-all text-sm"
+                >
+                  <Cable className="w-4 h-4" />
+                  {connectionLoading ? '测试中...' : '测试连接'}
+                </button>
+              )}
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <select
+                  value={formData.runtime}
+                  onChange={(e) => {
+                    setConnectionResult(null);
+                    setFormData({ ...formData, runtime: e.target.value });
+                  }}
+                  className="w-full px-4 py-2 bg-slate-900/50 border border-slate-700/50 rounded-xl text-white focus:outline-none focus:border-blue-500/50 focus:ring-2 focus:ring-blue-500/20 transition-all"
+                >
+                  <option value="llm" className="bg-slate-800">LLM</option>
+                  <option value="builtin" className="bg-slate-800">Builtin</option>
+                  <option value="custom_http" className="bg-slate-800">Custom HTTP</option>
+                  <option value="hermes" className="bg-slate-800">Hermes</option>
+                </select>
+              </div>
+              <div>
+                <select
+                  value={formData.autonomy_level}
+                  onChange={(e) => setFormData({ ...formData, autonomy_level: e.target.value })}
+                  className="w-full px-4 py-2 bg-slate-900/50 border border-slate-700/50 rounded-xl text-white focus:outline-none focus:border-blue-500/50 focus:ring-2 focus:ring-blue-500/20 transition-all"
+                >
+                  <option value="suggest" className="bg-slate-800">suggest</option>
+                  <option value="read_only" className="bg-slate-800">read_only</option>
+                  <option value="approval_required" className="bg-slate-800">approval_required</option>
+                  <option value="auto" className="bg-slate-800">auto</option>
+                </select>
+              </div>
+            </div>
+
+            {formData.runtime === 'hermes' && (
+              <div className="space-y-4 pt-3 border-t border-slate-700/30">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs text-slate-500 mb-1">Base URL</label>
+                    <input
+                      type="text"
+                      value={hermesConfig.baseUrl}
+                      onChange={(e) => setHermesConfig({ ...hermesConfig, baseUrl: e.target.value })}
+                      className="w-full px-4 py-2 bg-slate-900/50 border border-slate-700/50 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-blue-500/50 focus:ring-2 focus:ring-blue-500/20 transition-all"
+                      placeholder="留空使用 HERMES_API_BASE"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-slate-500 mb-1">Model</label>
+                    <input
+                      type="text"
+                      value={hermesConfig.model}
+                      onChange={(e) => setHermesConfig({ ...hermesConfig, model: e.target.value })}
+                      className="w-full px-4 py-2 bg-slate-900/50 border border-slate-700/50 rounded-xl text-white focus:outline-none focus:border-blue-500/50 focus:ring-2 focus:ring-blue-500/20 transition-all"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-xs text-slate-500 mb-1">API Key Env</label>
+                    <input
+                      type="text"
+                      value={hermesConfig.apiKeyEnv}
+                      onChange={(e) => setHermesConfig({ ...hermesConfig, apiKeyEnv: e.target.value })}
+                      className="w-full px-4 py-2 bg-slate-900/50 border border-slate-700/50 rounded-xl text-white focus:outline-none focus:border-blue-500/50 focus:ring-2 focus:ring-blue-500/20 transition-all"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-slate-500 mb-1">Timeout ms</label>
+                    <input
+                      type="number"
+                      min="1000"
+                      max="300000"
+                      value={hermesConfig.timeoutMs}
+                      onChange={(e) => setHermesConfig({ ...hermesConfig, timeoutMs: parseInt(e.target.value, 10) || 300000 })}
+                      className="w-full px-4 py-2 bg-slate-900/50 border border-slate-700/50 rounded-xl text-white focus:outline-none focus:border-blue-500/50 focus:ring-2 focus:ring-blue-500/20 transition-all"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-slate-500 mb-1">Tool rounds</label>
+                    <input
+                      type="number"
+                      min="0"
+                      max="8"
+                      value={hermesConfig.maxToolRounds}
+                      onChange={(e) => setHermesConfig({ ...hermesConfig, maxToolRounds: parseInt(e.target.value, 10) || 3 })}
+                      className="w-full px-4 py-2 bg-slate-900/50 border border-slate-700/50 rounded-xl text-white focus:outline-none focus:border-blue-500/50 focus:ring-2 focus:ring-blue-500/20 transition-all"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs text-slate-500 mb-1">Allowed tools</label>
+                  <input
+                    type="text"
+                    value={hermesConfig.allowedTools}
+                    onChange={(e) => setHermesConfig({ ...hermesConfig, allowedTools: e.target.value })}
+                    className="w-full px-4 py-2 bg-slate-900/50 border border-slate-700/50 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-blue-500/50 focus:ring-2 focus:ring-blue-500/20 transition-all"
+                  />
+                </div>
+
+                {connectionResult && (
+                  <div className={clsx(
+                    "flex items-start gap-2 rounded-xl border p-3 text-sm",
+                    connectionResult.success
+                      ? "bg-green-500/10 border-green-500/30 text-green-300"
+                      : "bg-amber-500/10 border-amber-500/30 text-amber-300"
+                  )}>
+                    {connectionResult.success ? <CheckCircle2 className="w-4 h-4 mt-0.5" /> : <AlertTriangle className="w-4 h-4 mt-0.5" />}
+                    <span>{connectionResult.message}</span>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           <div className="grid grid-cols-2 gap-4">

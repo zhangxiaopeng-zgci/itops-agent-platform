@@ -1,15 +1,24 @@
 import { logger } from '../utils/logger';
 import { getRuntimeForAgent } from './agentRuntime/registry';
+import { AgentRunResult } from './agentRuntime/types';
+
+export async function executeAgentRun(
+  agentId: string,
+  input: string,
+  context?: Record<string, unknown>
+): Promise<AgentRunResult> {
+  logger.info(`🔍 executeAgentNode called with agentId: ${agentId} input: ${input?.substring(0, 100)}`);
+
+  const runtime = getRuntimeForAgent(agentId);
+  return runtime.run({ agentId, input, context });
+}
 
 export async function executeAgentNode(
   agentId: string,
   input: string,
   context?: Record<string, unknown>
 ): Promise<string> {
-  logger.info(`🔍 executeAgentNode called with agentId: ${agentId} input: ${input?.substring(0, 100)}`);
-
-  const runtime = getRuntimeForAgent(agentId);
-  const result = await runtime.run({ agentId, input, context });
+  const result = await executeAgentRun(agentId, input, context);
   return result.output;
 }
 

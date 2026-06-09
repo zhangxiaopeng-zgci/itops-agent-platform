@@ -1,9 +1,11 @@
 import { Router, Request, Response } from 'express';
 import { randomUUID } from 'crypto';
 import db from '../models/database';
-import { executeAgentNode } from '../services/agentExecutor';
+import { executeAgentRun } from '../services/agentExecutor';
+import { testHermesConnection } from '../services/agentRuntime/hermesRuntime';
 import { inferLegacyRuntimeType } from '../services/agentRuntime/registry';
 import { requireRole } from '../middleware/auth';
+import { AgentRunResult } from '../services/agentRuntime/types';
 
 const router = Router();
 
@@ -14,6 +16,15 @@ function serializeRuntimeConfig(value: unknown): string | null {
 
 function defaultRuntimeForName(name: string, runtime?: string): string {
   return runtime || inferLegacyRuntimeType(name);
+}
+
+function parseJsonField<T>(value: unknown, fallback: T): T {
+  if (typeof value !== 'string' || value.length === 0) return fallback;
+  try {
+    return JSON.parse(value) as T;
+  } catch {
+    return fallback;
+  }
 }
 
 router.get('/', (req: Request, res: Response) => {
@@ -89,6 +100,15 @@ router.get('/stats/summary', (_req: Request, res: Response) => {
   }
 });
 
+router.post('/runtime/hermes/test-connection', requireRole('admin', 'operator'), async (req: Request, res: Response) => {
+  try {
+    const result = await testHermesConnection(req.body?.runtime_config || req.body);
+    res.status(result.success ? 200 : 400).json({ success: result.success, data: result, error: result.error });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error instanceof Error ? error.message : 'Failed to test Hermes connection' });
+  }
+});
+
 router.get('/:id', (req: Request, res: Response) => {
   try {
     const agent = db.prepare(`
@@ -125,7 +145,10 @@ router.get('/:id/executions', (req: Request, res: Response) => {
     query += ' ORDER BY created_at DESC LIMIT ? OFFSET ?';
     params.push(parseInt(limit as string), parseInt(offset as string));
     
-    const executions = db.prepare(query).all(...params);
+    const executions = (db.prepare(query).all(...params) as Array<{ metadata?: string; [key: string]: unknown }>).map((execution) => ({
+      ...execution,
+      metadata: parseJsonField(execution.metadata, {})
+    }));
     
     // 获取总数
     let countQuery = 'SELECT COUNT(*) as count FROM agent_executions WHERE agent_id = ?';
@@ -225,6 +248,7 @@ router.post('/:id/test', async (req: Request, res: Response) => {
     let output = '';
     let status = 'success';
     let errorMessage = null;
+    let runResult: AgentRunResult | null = null;
     
     // 构建上下文 - 优先使用serverIds，如果没有则使用serverId
     const executionContext = {
@@ -236,7 +260,8 @@ router.post('/:id/test', async (req: Request, res: Response) => {
     };
     
     try {
-      output = await executeAgentNode((agent as { id: string }).id, input, executionContext);
+      runResult = await executeAgentRun((agent as { id: string }).id, input, executionContext);
+      output = runResult.output;
     } catch (error) {
       status = 'error';
       errorMessage = (error as Error).message;
@@ -258,7 +283,15 @@ router.post('/:id/test', async (req: Request, res: Response) => {
       status,
       errorMessage,
       executionTime,
-      JSON.stringify({ test: true, context: executionContext, serverId, serverIds })
+      JSON.stringify({
+        test: true,
+        context: executionContext,
+        serverId,
+        serverIds,
+        runtime: runResult?.metadata?.runtime || (agent as { runtime?: string }).runtime || null,
+        runtimeMetadata: runResult?.metadata || {},
+        trace: runResult?.trace || []
+      })
     );
     
     // 更新Agent使用统计
@@ -278,8 +311,12 @@ router.post('/:id/test', async (req: Request, res: Response) => {
         status,
         executionTime,
         metadata: {
-          serverId
-        }
+          serverId,
+          runtime: runResult?.metadata?.runtime || (agent as { runtime?: string }).runtime || null,
+          runtimeMetadata: runResult?.metadata || {},
+          trace: runResult?.trace || []
+        },
+        trace: runResult?.trace || []
       }
     });
   } catch {
