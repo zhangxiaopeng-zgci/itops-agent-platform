@@ -1,7 +1,6 @@
 import axios, { AxiosError } from 'axios';
 import db from '../../models/database';
 import { logger } from '../../utils/logger';
-import { invokeTool, listTools } from '../toolApi/toolRegistry';
 import { ToolContext, ToolDescriptor } from '../toolApi/types';
 import { AgentRunRequest, AgentRunResult, AgentRuntime, AgentTraceEvent, RuntimeAgentRecord } from './types';
 
@@ -96,7 +95,8 @@ export class HermesAgentRuntime implements AgentRuntime {
     }
 
     const trace: AgentTraceEvent[] = [];
-    const tools = getHermesTools(config.allowedTools);
+    const { invokeTool, listTools } = await import('../toolApi/toolRegistry');
+    const tools = getHermesTools(listTools, config.allowedTools);
     const messages = buildInitialMessages(agent, request);
     const maxToolRounds = config.maxToolRounds ?? DEFAULT_MAX_TOOL_ROUNDS;
 
@@ -172,11 +172,14 @@ export class HermesAgentRuntime implements AgentRuntime {
             tool: toolCall.function.name,
             success: result.success,
             decision: result.decision,
+            approvalId: result.approvalId,
+            data: result.data,
             error: result.error
           }),
           timestamp: new Date().toISOString(),
           metadata: {
             tool: toolCall.function.name,
+            approvalId: result.approvalId,
             auditId: result.auditId
           }
         });
@@ -330,9 +333,9 @@ function buildInitialMessages(agent: RuntimeAgentRecord, request: AgentRunReques
   ];
 }
 
-function getHermesTools(allowedTools?: string[]): ChatTool[] {
+function getHermesTools(listAvailableTools: () => ToolDescriptor[], allowedTools?: string[]): ChatTool[] {
   const allowed = allowedTools && allowedTools.length > 0 ? new Set(allowedTools) : null;
-  return listTools()
+  return listAvailableTools()
     .filter(tool => allowed ? allowed.has(tool.name) && tool.riskLevel !== 'destructive' : tool.riskLevel === 'read_only')
     .map(toChatTool);
 }

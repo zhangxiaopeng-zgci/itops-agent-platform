@@ -122,6 +122,26 @@ export function markToolApprovalRejected(id: string, reviewerId: string, comment
   return getToolApproval(id)!;
 }
 
+export function markToolApprovalApproved(id: string, reviewerId: string, comment?: string): ToolApprovalRecord {
+  const existing = getToolApproval(id);
+  if (!existing) {
+    throw new Error('Tool approval not found');
+  }
+
+  const result = db.prepare(`
+    UPDATE tool_approvals
+    SET status = 'approved', reviewed_by = ?, reviewed_at = CURRENT_TIMESTAMP, review_comment = ?
+    WHERE id = ? AND status = 'pending'
+  `).run(reviewerId, comment || null, id);
+
+  if (result.changes === 0) {
+    const current = getToolApproval(id);
+    throw new Error(`Tool approval is already ${current?.status || 'unavailable'}`);
+  }
+
+  return getToolApproval(id)!;
+}
+
 export function markToolApprovalExecuted(
   id: string,
   reviewerId: string,

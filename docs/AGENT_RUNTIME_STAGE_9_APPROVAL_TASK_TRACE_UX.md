@@ -51,6 +51,16 @@ Agent 执行历史中的 trace 从短预览升级为完整时间线：
 - 不在前端暴露 Hermes API key。
 - Trace 只展示后端已经持久化的执行元数据。
 
+## 9.1 补齐项
+
+本阶段补齐了评审中发现的闭环缺口：
+
+- 审批执行前先把 `pending` 原子切换到 `approved`，避免重复点击或并发请求重复执行同一审批。
+- Hermes Runtime 的 `tool_call_result` trace 会持久化 `approvalId`、`data` 和 trace metadata 中的 `approvalId`。
+- Hermes Runtime 懒加载 Tool Registry，避免 runtime、tool registry、workflow executor 之间形成启动期循环依赖。
+- 工具审批前端把 `approved` 展示为“已批准/执行中”，方便识别执行中间态。
+- 增加审批抢占幂等测试和 Hermes trace 关联字段测试。
+
 ## 下一步
 
 阶段 10 建议进入“可观测闭环”：

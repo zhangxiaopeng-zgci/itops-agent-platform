@@ -402,7 +402,24 @@ hermes-runtime
 Hermes should produce plans and tool-call requests. ITOps should execute or
 reject those requests through policy.
 
-## Phase 5: Mixed Workflow Nodes
+## Future Backlog: Phase 10+
+
+The completed implementation has reached Phase 9. The remaining items below are
+the recommended backlog for Phase 10 and later, not the already delivered phase
+sequence.
+
+### Phase 10: Correlated Observability
+
+Objectives:
+
+- Assign a stable correlation id to each Hermes tool-call loop.
+- Propagate the correlation id through agent executions, tool approvals,
+  workflow tasks, and audit logs.
+- Add backend APIs for querying a full incident/action chain by correlation id.
+- Add a single frontend trace view that links the agent answer, approval record,
+  task execution, verification, and audit entry.
+
+### Phase 11: Mixed Workflow Nodes
 
 Objectives:
 
@@ -436,7 +453,7 @@ alert
   -> report and knowledge capture
 ```
 
-## Phase 6: Controlled Self-Evolution
+### Phase 12: Controlled Self-Evolution
 
 Objectives:
 
@@ -465,7 +482,7 @@ Allowed proposal types:
 
 Production mutation must require evaluation and human approval.
 
-## Phase 7: Deployment And Validation
+### Phase 13: Deployment And Validation
 
 Test host:
 

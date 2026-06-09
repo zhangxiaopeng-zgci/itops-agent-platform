@@ -28,7 +28,7 @@ interface ToolApproval {
 
 const statusLabels: Record<ToolApproval['status'], string> = {
   pending: '待审批',
-  approved: '已批准',
+  approved: '已批准/执行中',
   rejected: '已拒绝',
   executed: '已执行',
   failed: '执行失败'
@@ -96,7 +96,7 @@ export default function ToolApprovals() {
         </div>
 
         <div className="flex flex-wrap gap-2">
-          {['pending', 'executed', 'failed', 'rejected', ''].map((item) => (
+          {['pending', 'approved', 'executed', 'failed', 'rejected', ''].map((item) => (
             <button
               key={item || 'all'}
               onClick={() => {

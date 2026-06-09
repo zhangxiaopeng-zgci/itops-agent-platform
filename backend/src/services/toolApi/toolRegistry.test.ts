@@ -1,5 +1,6 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import db, { initializeDatabase } from '../../models/database';
+import { createToolApproval, markToolApprovalApproved } from './approvalService';
 import { invokeTool } from './toolRegistry';
 
 describe('toolRegistry', () => {
@@ -76,5 +77,23 @@ describe('toolRegistry', () => {
     expect(result.success).toBe(false);
     expect(result.decision.status).toBe('denied');
     expect(result.error).toContain('Role cannot invoke read-only tools');
+  });
+
+  it('claims a pending approval only once before execution', () => {
+    const approval = createToolApproval({
+      toolName: 'run_workflow',
+      input: { workflowId: 'workflow-for-claim-test' },
+      context: { userId: 'test-operator', userRole: 'operator', source: 'api' },
+      decision: {
+        status: 'approval_required',
+        riskLevel: 'medium_risk',
+        reason: 'Tool requires human approval before execution'
+      }
+    });
+
+    const claimed = markToolApprovalApproved(approval.id, 'reviewer-1', 'approved');
+
+    expect(claimed.status).toBe('approved');
+    expect(() => markToolApprovalApproved(approval.id, 'reviewer-2')).toThrow(/already approved/);
   });
 });
