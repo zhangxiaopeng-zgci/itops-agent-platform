@@ -57,6 +57,7 @@ interface ServerInfo {
   username: string;
   password: string | null;
   private_key: string | null;
+  ssh_key_id?: string | null;
   use_ssh_key: number;
   enabled?: number;
 }
@@ -81,8 +82,51 @@ export class TerminalService {
       return { sessionId: '', shell: null as unknown as ClientChannel, error: 'Server is disabled' };
     }
 
-    const decryptedPassword = server.password ? decrypt(server.password) : undefined;
-    const decryptedPrivateKey = server.private_key ? decrypt(server.private_key) : undefined;
+    let decryptedPassword: string | undefined;
+    let decryptedPrivateKey: string | undefined;
+    let decryptedPassphrase: string | undefined;
+
+    try {
+      decryptedPassword = server.password ? decrypt(server.password) : undefined;
+    } catch (error) {
+      return { sessionId: '', shell: null as unknown as ClientChannel, error: `Failed to decrypt password: ${(error as Error).message}` };
+    }
+
+    if (server.ssh_key_id) {
+      const credential = db.prepare(
+        'SELECT auth_type, private_key, passphrase, username, password FROM ssh_keys WHERE id = ?'
+      ).get(server.ssh_key_id) as {
+        auth_type: 'key' | 'password';
+        private_key: string | null;
+        passphrase?: string | null;
+        username?: string | null;
+        password?: string | null;
+      } | undefined;
+
+      if (credential) {
+        try {
+          if (credential.auth_type === 'password') {
+            decryptedPassword = credential.password ? decrypt(credential.password) : undefined;
+            if (credential.username) {
+              server.username = credential.username;
+            }
+            decryptedPrivateKey = undefined;
+            decryptedPassphrase = undefined;
+          } else if (credential.private_key) {
+            decryptedPrivateKey = decrypt(credential.private_key);
+            decryptedPassphrase = credential.passphrase ? decrypt(credential.passphrase) : undefined;
+          }
+        } catch (error) {
+          return { sessionId: '', shell: null as unknown as ClientChannel, error: `Failed to decrypt SSH credential: ${(error as Error).message}` };
+        }
+      }
+    } else if (server.private_key) {
+      try {
+        decryptedPrivateKey = decrypt(server.private_key);
+      } catch (error) {
+        return { sessionId: '', shell: null as unknown as ClientChannel, error: `Failed to decrypt SSH key: ${(error as Error).message}` };
+      }
+    }
 
     return new Promise((resolve) => {
       const conn = new Client();
@@ -175,6 +219,9 @@ export class TerminalService {
 
       if (server.use_ssh_key && decryptedPrivateKey) {
         connectConfig.privateKey = decryptedPrivateKey;
+        if (decryptedPassphrase) {
+          connectConfig.passphrase = decryptedPassphrase;
+        }
       } else if (decryptedPassword) {
         connectConfig.password = decryptedPassword;
       } else {
