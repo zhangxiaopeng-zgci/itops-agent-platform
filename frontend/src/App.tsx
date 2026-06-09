@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AuthProvider } from './contexts/AuthContext';
 import { ToastProvider } from './contexts/ToastContext';
 import { ThemeProvider } from './contexts/ThemeContext';
+import { LocaleProvider } from './contexts/LocaleContext';
 import ErrorBoundary from './components/ErrorBoundary';
 import ProtectedRoute from './components/ProtectedRoute';
 import Layout from './components/layout/Layout';
@@ -57,8 +58,9 @@ function App() {
   return (
     <ErrorBoundary>
       <ThemeProvider>
-      <AuthProvider>
-        <ToastProvider>
+      <LocaleProvider>
+        <AuthProvider>
+          <ToastProvider>
           <QueryClientProvider client={queryClient}>
             <BrowserRouter>
             <Routes>
@@ -105,8 +107,9 @@ function App() {
           </Routes>
         </BrowserRouter>
       </QueryClientProvider>
-    </ToastProvider>
-    </AuthProvider>
+          </ToastProvider>
+        </AuthProvider>
+      </LocaleProvider>
     </ThemeProvider>
   </ErrorBoundary>
   );

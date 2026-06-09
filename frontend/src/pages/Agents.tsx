@@ -8,6 +8,7 @@ import {
 import clsx from 'clsx';
 import api from '../lib/api';
 import MarkdownOutput from '../components/MarkdownOutput';
+import { useLocale } from '../contexts/LocaleContext';
 
 interface Agent {
   id: string;
@@ -84,6 +85,13 @@ interface TraceSummary {
 }
 
 const DEFAULT_HERMES_TOOLS = 'list_servers, query_alerts, search_knowledge_base, list_workflows, run_readonly_command, get_task_status, verify_remediation';
+const panelClass = 'bg-surface/95 backdrop-blur-xl rounded-2xl border border-border shadow-lg';
+const softPanelClass = 'bg-background/70 rounded-xl border border-border';
+const inputClass = 'w-full px-4 py-2 bg-background border border-border rounded-xl text-text-primary placeholder-text-tertiary focus:outline-none focus:border-primary/60 focus:ring-2 focus:ring-primary/20 transition-all';
+const textareaClass = `${inputClass} resize-none`;
+const labelClass = 'block text-sm font-medium text-text-secondary mb-2';
+const mutedTextClass = 'text-text-secondary';
+const subtleTextClass = 'text-text-tertiary';
 
 function parseRuntimeConfig(value: Agent['runtime_config']): HermesRuntimeConfig {
   if (!value) return {};
@@ -178,6 +186,7 @@ function shortTraceId(value: string): string {
 export default function Agents() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const { t } = useLocale();
   const [showModal, setShowModal] = useState(false);
   const [editingAgent, setEditingAgent] = useState<Agent | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
@@ -228,7 +237,7 @@ export default function Agents() {
   });
 
   const handleDelete = (id: string, name: string) => {
-    if (confirm(`确定要删除Agent "${name}" 吗？`)) {
+    if (confirm(t('agents.deleteConfirm', { name }))) {
       deleteMutation.mutate(id);
     }
   };
@@ -315,56 +324,56 @@ export default function Agents() {
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-3xl font-bold text-white mb-2 tracking-tight">Agent管理</h1>
-            <p className="text-slate-400">管理运维自动化Agent</p>
+            <h1 className="text-3xl font-bold text-text-primary mb-2 tracking-tight">{t('agents.title')}</h1>
+            <p className="text-text-secondary">{t('agents.subtitle')}</p>
           </div>
           <div className="flex gap-3">
             <button
               onClick={handleNew}
-              className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-xl hover:from-blue-500 hover:to-blue-600 hover:shadow-lg hover:shadow-blue-500/25 transition-all duration-300 font-semibold hover:scale-[1.02] active:scale-[0.98]"
+              className="flex items-center gap-2 px-5 py-2.5 bg-primary text-white rounded-xl hover:bg-primary/90 hover:shadow-lg hover:shadow-black/15 transition-all duration-300 font-semibold hover:scale-[1.02] active:scale-[0.98]"
             >
               <Plus className="w-5 h-5" />
-              新建Agent
+              {t('agents.new')}
             </button>
           </div>
         </div>
 
         {/* Filters */}
-        <div className="bg-gradient-to-r from-slate-800/70 to-slate-900/70 backdrop-blur-xl rounded-2xl p-5 border border-slate-700/50 flex flex-wrap gap-4 items-center shadow-lg">
+        <div className={`${panelClass} p-5 flex flex-wrap gap-4 items-center`}>
           <div className="flex items-center gap-3">
-            <Search className="w-5 h-5 text-slate-400" />
+            <Search className="w-5 h-5 text-text-secondary" />
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="搜索Agent..."
-              className="px-4 py-2 bg-slate-900/50 border border-slate-700/50 rounded-xl text-sm text-white placeholder-slate-500 focus:outline-none focus:border-blue-500/50 focus:ring-2 focus:ring-blue-500/20 transition-all w-64"
+              placeholder={t('agents.searchPlaceholder')}
+              className={`${inputClass} text-sm w-64`}
             />
           </div>
           <div className="flex gap-2 items-center">
-            <span className="text-sm text-slate-400 font-medium">分类:</span>
+            <span className="text-sm text-text-secondary font-medium">{t('common.category')}:</span>
             <button
               onClick={() => setSelectedCategory(null)}
               className={clsx(
                 "px-4 py-2 rounded-full text-sm font-medium transition-all duration-300",
                 !selectedCategory
-                  ? "bg-gradient-to-r from-blue-600 to-blue-700 text-white shadow-lg shadow-blue-500/25"
-                  : "bg-slate-800/80 border border-slate-700/50 text-slate-400 hover:bg-slate-700/80 hover:text-slate-300"
+                  ? "bg-primary text-white shadow-lg shadow-black/15"
+                  : "bg-background border border-border text-text-secondary hover:bg-surface hover:text-text-primary"
               )}
             >
-              全部
+              {t('common.all')}
             </button>
             {categories.map((cat) => (
               <button
                 key={cat}
                 onClick={() => setSelectedCategory(selectedCategory === cat ? null : cat)}
                 className={clsx(
-                  "px-4 py-2 rounded-full text-sm font-medium transition-all duration-300",
-                  selectedCategory === cat
-                    ? "bg-gradient-to-r from-blue-600 to-blue-700 text-white shadow-lg shadow-blue-500/25"
-                    : "bg-slate-800/80 border border-slate-700/50 text-slate-400 hover:bg-slate-700/80 hover:text-slate-300"
-                )}
-              >
+                "px-4 py-2 rounded-full text-sm font-medium transition-all duration-300",
+                selectedCategory === cat
+                    ? "bg-primary text-white shadow-lg shadow-black/15"
+                    : "bg-background border border-border text-text-secondary hover:bg-surface hover:text-text-primary"
+              )}
+            >
                 {cat}
               </button>
             ))}
@@ -374,21 +383,21 @@ export default function Agents() {
         {isLoading ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3 gap-6">
             {Array.from({ length: 6 }).map((_, i) => (
-              <div key={i} className="bg-gradient-to-br from-slate-800/70 to-slate-900/70 backdrop-blur-xl rounded-2xl p-6 border border-slate-700/50 animate-pulse">
+              <div key={i} className={`${panelClass} p-6 animate-pulse`}>
                 <div className="flex items-start gap-4 mb-5">
-                  <div className="w-14 h-14 rounded-2xl bg-slate-700/50" />
+                  <div className="w-14 h-14 rounded-2xl bg-background" />
                   <div className="flex-1 space-y-2">
-                    <div className="h-5 w-32 bg-slate-700/50 rounded" />
-                    <div className="h-4 w-24 bg-slate-700/50 rounded" />
+                    <div className="h-5 w-32 bg-background rounded" />
+                    <div className="h-4 w-24 bg-background rounded" />
                   </div>
                 </div>
                 <div className="space-y-2 mb-5">
-                  <div className="h-4 bg-slate-700/50 rounded" />
-                  <div className="h-4 w-3/4 bg-slate-700/50 rounded" />
+                  <div className="h-4 bg-background rounded" />
+                  <div className="h-4 w-3/4 bg-background rounded" />
                 </div>
-                <div className="border-t border-slate-700/30 pt-3 space-y-2">
-                  <div className="h-4 bg-slate-700/50 rounded" />
-                  <div className="h-4 bg-slate-700/50 rounded" />
+                <div className="border-t border-border pt-3 space-y-2">
+                  <div className="h-4 bg-background rounded" />
+                  <div className="h-4 bg-background rounded" />
                 </div>
               </div>
             ))}
@@ -398,7 +407,7 @@ export default function Agents() {
             {filteredAgents.map((agent) => (
               <div
                 key={agent.id}
-                className="group relative bg-gradient-to-br from-slate-800/70 to-slate-900/70 backdrop-blur-xl rounded-2xl p-6 border border-slate-700/50 hover:border-primary/50 hover:shadow-xl hover:shadow-black/20 transition-all duration-300 transform hover:-translate-y-1"
+                className={`group relative ${panelClass} p-6 hover:border-primary/50 hover:shadow-xl hover:shadow-black/10 transition-all duration-300 transform hover:-translate-y-1`}
               >
                 {/* Background glow effect */}
                 <div className="absolute top-0 right-0 w-32 h-32 bg-primary/10 rounded-full blur-2xl -z-10 group-hover:opacity-100 opacity-50 transition-opacity" />
@@ -411,24 +420,24 @@ export default function Agents() {
                       </div>
                       <div className="absolute -bottom-1 -right-1">
                         <div className={clsx(
-                          "w-4 h-4 rounded-full border-2 border-slate-800",
-                          agent.enabled ? "bg-gradient-to-r from-green-400 to-emerald-500 shadow-lg shadow-green-500/40" : "bg-gradient-to-r from-slate-500 to-slate-600"
+                          "w-4 h-4 rounded-full border-2 border-surface",
+                          agent.enabled ? "bg-gradient-to-r from-green-400 to-emerald-500 shadow-lg shadow-green-500/40" : "bg-[var(--color-text-tertiary)]"
                         )} />
                       </div>
                     </div>
                     <div>
-                      <h3 className="font-bold text-white tracking-tight group-hover:text-primary transition-colors">{agent.name}</h3>
-                      <p className="text-sm text-slate-400 mt-1">{agent.role}</p>
+                      <h3 className="font-bold text-text-primary tracking-tight group-hover:text-primary transition-colors">{agent.name}</h3>
+                      <p className="text-sm text-text-secondary mt-1">{agent.role}</p>
                     </div>
                   </div>
                   <div className="flex flex-col gap-2 items-end">
                     {agent.is_preset === 1 && (
                       <span className="px-3 py-1 bg-primary/10 text-primary text-xs rounded-full border border-primary/30 font-medium">
-                        预设
+                        {t('common.preset')}
                       </span>
                     )}
                     {agent.category && (
-                      <span className="px-3 py-1 bg-slate-700/50 text-slate-300 text-xs rounded-full border border-slate-600/50">
+                      <span className="px-3 py-1 bg-background text-text-secondary text-xs rounded-full border border-border">
                         {agent.category}
                       </span>
                     )}
@@ -436,7 +445,7 @@ export default function Agents() {
                 </div>
 
                 {agent.description && (
-                  <p className="text-sm text-slate-400 mb-4 line-clamp-2 leading-relaxed">
+                  <p className="text-sm text-text-secondary mb-4 line-clamp-2 leading-relaxed">
                     {agent.description}
                   </p>
                 )}
@@ -447,52 +456,52 @@ export default function Agents() {
                     {agent.tags.slice(0, 3).map((tag) => (
                       <span
                         key={tag}
-                        className="px-3 py-1 bg-gradient-to-r from-slate-700/50 to-slate-600/50 border border-slate-600/50 text-xs text-slate-300 rounded-full"
+                        className="px-3 py-1 bg-background border border-border text-xs text-text-secondary rounded-full"
                       >
                         {tag}
                       </span>
                     ))}
                     {agent.tags.length > 3 && (
-                      <span className="text-xs text-slate-500 px-2 py-1">
+                      <span className="text-xs text-text-tertiary px-2 py-1">
                         +{agent.tags.length - 3}
                       </span>
                     )}
                   </div>
                 )}
 
-                <div className="space-y-2 mb-5 pt-3 border-t border-slate-700/30">
+                <div className="space-y-2 mb-5 pt-3 border-t border-border">
                   <div className="flex justify-between text-sm">
-                    <span className="text-slate-500">主模型</span>
-                    <span className="text-slate-200 font-medium">{agent.primary_model_name || agent.model || '-'}</span>
+                    <span className="text-text-tertiary">{t('agents.primaryModel')}</span>
+                    <span className="text-text-primary font-medium">{agent.primary_model_name || agent.model || '-'}</span>
                   </div>
                   {agent.fallback_model_name && (
                     <div className="flex justify-between text-sm">
-                      <span className="text-slate-500">备选模型</span>
-                      <span className="text-slate-200 font-medium">{agent.fallback_model_name}</span>
+                      <span className="text-text-tertiary">{t('agents.fallbackModel')}</span>
+                      <span className="text-text-primary font-medium">{agent.fallback_model_name}</span>
                     </div>
                   )}
                   <div className="flex justify-between text-sm">
-                    <span className="text-slate-500">Runtime</span>
+                    <span className="text-text-tertiary">{t('common.runtime')}</span>
                     <span className={clsx(
-                      "text-slate-200 font-medium",
-                      agent.runtime === 'hermes' && "text-blue-300"
+                      "text-text-primary font-medium",
+                      agent.runtime === 'hermes' && "text-primary"
                     )}>{formatRuntime(agent.runtime)}</span>
                   </div>
                   <div className="flex justify-between text-sm">
-                    <span className="text-slate-500">使用次数</span>
-                    <span className="text-slate-200 font-medium">{agent.usage_count || 0}</span>
+                    <span className="text-text-tertiary">{t('agents.usageCount')}</span>
+                    <span className="text-text-primary font-medium">{agent.usage_count || 0}</span>
                   </div>
                   {agent.last_used_at && (
                     <div className="flex justify-between text-sm">
-                      <span className="text-slate-500">最后使用</span>
-                      <span className="text-slate-300">
+                      <span className="text-text-tertiary">{t('agents.lastUsed')}</span>
+                      <span className="text-text-secondary">
                         {new Date(agent.last_used_at).toLocaleDateString()}
                       </span>
                     </div>
                   )}
                 </div>
 
-                <div className="flex items-center justify-between gap-2 pt-3 border-t border-slate-700/30">
+                <div className="flex items-center justify-between gap-2 pt-3 border-t border-border">
                   <span
                     className={clsx(
                       'px-3 py-1.5 rounded-full text-xs font-semibold',
@@ -501,27 +510,27 @@ export default function Agents() {
                         : 'bg-gradient-to-r from-red-500/20 to-rose-500/20 text-red-400 border border-red-500/30'
                     )}
                   >
-                    {agent.enabled ? '在线' : '离线'}
+                    {agent.enabled ? t('common.online') : t('common.offline')}
                   </span>
                   <div className="flex gap-1">
                     <button
                       onClick={() => handleTest(agent)}
-                      className="p-2.5 hover:bg-blue-500/20 text-blue-400 rounded-xl transition-all hover:scale-[1.02] active:scale-[0.98]"
-                      title="测试"
+                      className="p-2.5 hover:bg-primary/10 text-primary rounded-xl transition-all hover:scale-[1.02] active:scale-[0.98]"
+                      title={t('common.test')}
                     >
                       <Play className="w-4.5 h-4.5" />
                     </button>
                     <button
                       onClick={() => setShowDetail(agent.id)}
-                      className="p-2.5 hover:bg-slate-700/50 text-slate-400 hover:text-slate-200 rounded-xl transition-all hover:scale-[1.02] active:scale-[0.98]"
-                      title="详情"
+                      className="p-2.5 hover:bg-background text-text-secondary hover:text-text-primary rounded-xl transition-all hover:scale-[1.02] active:scale-[0.98]"
+                      title={t('common.details')}
                     >
                       <BookOpen className="w-4.5 h-4.5" />
                     </button>
                     <button
                       onClick={() => handleEdit(agent)}
-                      className="p-2.5 hover:bg-slate-700/50 text-slate-400 hover:text-slate-200 rounded-xl transition-all hover:scale-105 active:scale-95"
-                      title="编辑"
+                      className="p-2.5 hover:bg-background text-text-secondary hover:text-text-primary rounded-xl transition-all hover:scale-105 active:scale-95"
+                      title={t('common.edit')}
                     >
                       <Edit className="w-4.5 h-4.5" />
                     </button>
@@ -529,7 +538,7 @@ export default function Agents() {
                       <button
                         onClick={() => handleDelete(agent.id, agent.name)}
                         className="p-2.5 hover:bg-red-500/20 text-red-400 rounded-xl transition-all hover:scale-[1.02] active:scale-[0.98]"
-                        title="删除"
+                        title={t('common.delete')}
                       >
                         <Trash2 className="w-4.5 h-4.5" />
                       </button>
@@ -551,21 +560,21 @@ export default function Agents() {
 
       {showTestModal && editingAgent && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-gradient-to-br from-slate-800/95 to-slate-900/95 backdrop-blur-xl rounded-2xl w-full max-w-3xl border border-slate-700/50 shadow-2xl shadow-blue-500/10 flex flex-col max-h-[90vh]">
+          <div className={`${panelClass} w-full max-w-3xl shadow-2xl flex flex-col max-h-[90vh]`}>
             {/* 头部 */}
-            <div className="p-6 border-b border-slate-700/30 flex items-center justify-between flex-shrink-0">
+            <div className="p-6 border-b border-border flex items-center justify-between flex-shrink-0">
               <div className="flex items-center gap-4">
-                <div className="w-12 h-12 flex items-center justify-center rounded-xl bg-gradient-to-br from-blue-500/20 to-purple-500/20 border border-blue-400/30 text-2xl">
+                <div className="w-12 h-12 flex items-center justify-center rounded-xl bg-primary/10 border border-primary/30 text-2xl">
                   {editingAgent.avatar}
                 </div>
                 <div>
-                  <h2 className="text-xl font-bold text-white">测试 {editingAgent.name}</h2>
-                  <p className="text-sm text-slate-400">{editingAgent.role}</p>
+                  <h2 className="text-xl font-bold text-text-primary">{t('agents.testAgent', { name: editingAgent.name })}</h2>
+                  <p className="text-sm text-text-secondary">{editingAgent.role}</p>
                 </div>
               </div>
               <button
                 onClick={() => setShowTestModal(false)}
-                className="p-2 hover:bg-slate-700/50 rounded-xl text-slate-400 hover:text-white transition-all"
+                className="p-2 hover:bg-background rounded-xl text-text-secondary hover:text-text-primary transition-all"
               >
                 ✕
               </button>
@@ -574,15 +583,15 @@ export default function Agents() {
             {/* 内容区域 - 可滚动 */}
             <div className="p-6 overflow-y-auto flex-1 space-y-4">
               {/* 服务器选择 */}
-              <div className="pt-3 border-t border-slate-700/30">
-                <label className="block text-sm font-medium text-slate-300 mb-2 flex items-center gap-2">
+              <div className="pt-3 border-t border-border">
+                <label className={`${labelClass} flex items-center gap-2`}>
                   <Server className="w-4 h-4" />
-                  选择服务器
+                  {t('agents.selectServers')}
                 </label>
                 {servers && servers.length > 0 ? (
                   <div className="space-y-2">
                     {servers.filter((s) => s.enabled).map((server) => (
-                      <label key={server.id} className="flex items-center gap-3 p-3 bg-slate-900/50 border border-slate-700/50 rounded-xl hover:bg-slate-800/50 transition-all cursor-pointer">
+                      <label key={server.id} className="flex items-center gap-3 p-3 bg-background border border-border rounded-xl hover:bg-surface transition-all cursor-pointer">
                         <input
                           type="checkbox"
                           checked={selectedServerIds.includes(server.id)}
@@ -593,51 +602,54 @@ export default function Agents() {
                               setSelectedServerIds(selectedServerIds.filter((id) => id !== server.id));
                             }
                           }}
-                          className="w-4 h-4 rounded border-slate-600 text-blue-500 focus:ring-blue-500/50"
+                          className="w-4 h-4 rounded border-border text-primary focus:ring-primary/50"
                         />
                         <div className="flex-1">
-                          <div className="text-sm font-medium text-white">{server.name}</div>
-                          <div className="text-xs text-slate-500">{server.hostname}:{server.port}</div>
+                          <div className="text-sm font-medium text-text-primary">{server.name}</div>
+                          <div className="text-xs text-text-tertiary">{server.hostname}:{server.port}</div>
                         </div>
                       </label>
                     ))}
                   </div>
                 ) : (
-                  <p className="text-sm text-slate-400">暂无可用的服务器</p>
+                  <p className="text-sm text-text-secondary">{t('agents.noServers')}</p>
                 )}
                 {selectedServerIds.length > 0 && servers && (
-                  <p className="mt-2 text-xs text-slate-500">
-                    已选择 {selectedServerIds.length} 台服务器: {selectedServerIds.map((id) => servers.find((s) => s.id === id)?.name).join(', ')}
+                  <p className="mt-2 text-xs text-text-tertiary">
+                    {t('agents.selectedServers', {
+                      count: selectedServerIds.length,
+                      servers: selectedServerIds.map((id) => servers.find((s) => s.id === id)?.name).join(', ')
+                    })}
                   </p>
                 )}
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-slate-300 mb-2">
-                  输入内容
+                <label className={labelClass}>
+                  {t('agents.inputContent')}
                 </label>
                 <textarea
                   value={testInput}
                   onChange={(e) => setTestInput(e.target.value)}
-                  placeholder="请输入要发送给Agent的内容..."
-                  className="w-full px-4 py-3 bg-slate-900/50 border border-slate-700/50 rounded-xl text-white focus:outline-none focus:border-blue-500/50 focus:ring-2 focus:ring-blue-500/20 transition-all h-32 resize-none"
+                  placeholder={t('agents.inputPlaceholder')}
+                  className={`${textareaClass} py-3 h-32`}
                 />
               </div>
 
               <button
                 onClick={runTest}
                 disabled={!testInput || isTesting}
-                className="w-full px-6 py-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-xl hover:from-blue-500 hover:to-blue-600 hover:shadow-lg hover:shadow-blue-500/25 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-300 flex items-center justify-center gap-2 font-semibold"
+                className="w-full px-6 py-3 bg-primary text-white rounded-xl hover:bg-primary/90 hover:shadow-lg hover:shadow-black/15 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-300 flex items-center justify-center gap-2 font-semibold"
               >
                 {isTesting ? (
                   <>
                     <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
-                    执行中...
+                    {t('agents.running')}
                   </>
                 ) : (
                   <>
                     <Play className="w-5 h-5" />
-                    运行测试
+                    {t('agents.runTest')}
                   </>
                 )}
               </button>
@@ -645,18 +657,18 @@ export default function Agents() {
               {testResult && (
                 <div className="mt-4">
                   <div className="flex items-center justify-between mb-3">
-                    <span className="text-sm font-medium text-slate-300">输出结果</span>
-                    <span className="text-xs text-slate-500">
-                      耗时: {testResult.time}ms
+                    <span className="text-sm font-medium text-text-secondary">{t('agents.outputResult')}</span>
+                    <span className="text-xs text-text-tertiary">
+                      {t('agents.elapsed', { time: testResult.time })}
                     </span>
                   </div>
-                  <div className="bg-slate-900/50 rounded-xl p-4 border border-slate-700/50 max-h-64 overflow-y-auto scrollbar-thin">
+                  <div className="bg-background rounded-xl p-4 border border-border max-h-64 overflow-y-auto scrollbar-thin">
                     <MarkdownOutput content={testResult.output} />
                   </div>
                   {typeof testResult.metadata?.runtime === 'string' && (
-                    <div className="mt-3 flex items-center gap-2 text-xs text-slate-400">
-                      <BrainCircuit className="w-4 h-4 text-blue-400" />
-                      Runtime: {formatRuntime(String(testResult.metadata.runtime))}
+                    <div className="mt-3 flex items-center gap-2 text-xs text-text-secondary">
+                      <BrainCircuit className="w-4 h-4 text-primary" />
+                      {t('common.runtime')}: {formatRuntime(String(testResult.metadata.runtime))}
                     </div>
                   )}
                 </div>
@@ -664,13 +676,13 @@ export default function Agents() {
             </div>
 
             {/* 底部 - 固定 */}
-            <div className="p-6 border-t border-slate-700/30 flex-shrink-0">
+            <div className="p-6 border-t border-border flex-shrink-0">
               <button
                 type="button"
                 onClick={() => setShowTestModal(false)}
-                className="w-full px-6 py-3 bg-slate-700/50 text-slate-300 rounded-xl hover:bg-slate-700/70 transition-all duration-300 font-semibold border border-slate-600/30"
+                className="w-full px-6 py-3 bg-background text-text-secondary rounded-xl hover:bg-surface transition-all duration-300 font-semibold border border-border"
               >
-                关闭
+                {t('common.close')}
               </button>
             </div>
           </div>
@@ -688,6 +700,7 @@ interface AgentDetailInnerProps {
 
 function AgentDetailInner({ agentId, onBack, deleteMutation }: AgentDetailInnerProps) {
   const navigate = useNavigate();
+  const { t } = useLocale();
   const { data: agent, isLoading: agentLoading } = useQuery({
     queryKey: ['agents', agentId],
     queryFn: async () => {
@@ -707,7 +720,7 @@ function AgentDetailInner({ agentId, onBack, deleteMutation }: AgentDetailInnerP
   if (agentLoading) {
     return (
       <div className="h-full flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
       </div>
     );
   }
@@ -721,50 +734,50 @@ function AgentDetailInner({ agentId, onBack, deleteMutation }: AgentDetailInnerP
           <div className="flex items-center gap-4">
             <button
               onClick={onBack}
-              className="p-2 hover:bg-slate-800/50 rounded-xl transition-all"
+              className="p-2 hover:bg-surface rounded-xl transition-all"
             >
-              <ChevronLeft className="w-5 h-5 text-slate-400" />
+              <ChevronLeft className="w-5 h-5 text-text-secondary" />
             </button>
             <div className="flex items-center gap-3">
-              <div className="w-12 h-12 flex items-center justify-center rounded-2xl bg-gradient-to-br from-blue-500/20 to-purple-500/20 border border-blue-400/30 text-2xl shadow-lg shadow-blue-500/20">
+              <div className="w-12 h-12 flex items-center justify-center rounded-2xl bg-primary/10 border border-primary/30 text-2xl shadow-lg shadow-black/10">
                 {agent.avatar}
               </div>
               <div>
-                <h1 className="text-2xl font-bold text-white tracking-tight flex items-center gap-3">
+                <h1 className="text-2xl font-bold text-text-primary tracking-tight flex items-center gap-3">
                   {agent.name}
                 </h1>
-                <p className="text-sm text-slate-400">{agent.role}</p>
+                <p className="text-sm text-text-secondary">{agent.role}</p>
               </div>
             </div>
           </div>
         </div>
 
-        <div className="bg-gradient-to-br from-slate-800/70 to-slate-900/70 backdrop-blur-xl rounded-2xl p-6 border border-slate-700/50 shadow-lg">
+        <div className={`${panelClass} p-6`}>
           <div className="grid grid-cols-2 gap-6">
             <div className="space-y-4">
               <div>
-                <span className="text-sm text-slate-500 block mb-1">分类</span>
-                <span className="text-slate-200">{agent.category || '-'}</span>
+                <span className="text-sm text-text-tertiary block mb-1">{t('common.category')}</span>
+                <span className="text-text-primary">{agent.category || '-'}</span>
               </div>
               <div>
-                <span className="text-sm text-slate-500 block mb-1">主模型</span>
-                <span className="text-slate-200 font-medium">{agent.primary_model_name || agent.model || '-'}</span>
+                <span className="text-sm text-text-tertiary block mb-1">{t('agents.primaryModel')}</span>
+                <span className="text-text-primary font-medium">{agent.primary_model_name || agent.model || '-'}</span>
               </div>
               {agent.fallback_model_name && (
                 <div>
-                  <span className="text-sm text-slate-500 block mb-1">备选模型</span>
-                  <span className="text-slate-200 font-medium">{agent.fallback_model_name}</span>
+                  <span className="text-sm text-text-tertiary block mb-1">{t('agents.fallbackModel')}</span>
+                  <span className="text-text-primary font-medium">{agent.fallback_model_name}</span>
                 </div>
               )}
               <div>
-                <span className="text-sm text-slate-500 block mb-1">温度</span>
-                <span className="text-slate-200">{agent.temperature}</span>
+                <span className="text-sm text-text-tertiary block mb-1">{t('agents.temperature')}</span>
+                <span className="text-text-primary">{agent.temperature}</span>
               </div>
               <div>
-                <span className="text-sm text-slate-500 block mb-1">Runtime</span>
+                <span className="text-sm text-text-tertiary block mb-1">{t('common.runtime')}</span>
                 <span className={clsx(
-                  "inline-flex items-center gap-2 text-slate-200 font-medium",
-                  agent.runtime === 'hermes' && "text-blue-300"
+                  "inline-flex items-center gap-2 text-text-primary font-medium",
+                  agent.runtime === 'hermes' && "text-primary"
                 )}>
                   <BrainCircuit className="w-4 h-4" />
                   {formatRuntime(agent.runtime)}
@@ -773,41 +786,41 @@ function AgentDetailInner({ agentId, onBack, deleteMutation }: AgentDetailInnerP
             </div>
             <div className="space-y-4">
               <div>
-                <span className="text-sm text-slate-500 block mb-1">使用次数</span>
-                <span className="text-slate-200 font-medium">{agent.usage_count || 0}</span>
+                <span className="text-sm text-text-tertiary block mb-1">{t('agents.usageCount')}</span>
+                <span className="text-text-primary font-medium">{agent.usage_count || 0}</span>
               </div>
               <div>
-                <span className="text-sm text-slate-500 block mb-1">最后使用</span>
-                <span className="text-slate-300">
+                <span className="text-sm text-text-tertiary block mb-1">{t('agents.lastUsed')}</span>
+                <span className="text-text-secondary">
                   {agent.last_used_at ? new Date(agent.last_used_at).toLocaleString() : '-'}
                 </span>
               </div>
               <div>
-                <span className="text-sm text-slate-500 block mb-1">状态</span>
+                <span className="text-sm text-text-tertiary block mb-1">{t('common.status')}</span>
                 <span className={clsx(
                   "px-3 py-1.5 rounded-full text-xs font-semibold",
                   agent.enabled
                     ? 'bg-gradient-to-r from-green-500/20 to-emerald-500/20 text-green-400 border border-green-500/30'
                     : 'bg-gradient-to-r from-red-500/20 to-rose-500/20 text-red-400 border border-red-500/30'
                 )}>
-                  {agent.enabled ? '在线' : '离线'}
+                  {agent.enabled ? t('common.online') : t('common.offline')}
                 </span>
               </div>
               <div>
-                <span className="text-sm text-slate-500 block mb-1">自治级别</span>
-                <span className="text-slate-200">{agent.autonomy_level || 'suggest'}</span>
+                <span className="text-sm text-text-tertiary block mb-1">{t('agents.autonomyLevel')}</span>
+                <span className="text-text-primary">{agent.autonomy_level || 'suggest'}</span>
               </div>
             </div>
           </div>
 
           {agent.tags && agent.tags.length > 0 && (
-            <div className="mt-6 pt-4 border-t border-slate-700/30">
-              <span className="text-sm text-slate-500 block mb-2">标签</span>
+            <div className="mt-6 pt-4 border-t border-border">
+              <span className="text-sm text-text-tertiary block mb-2">{t('common.tags')}</span>
               <div className="flex flex-wrap gap-1.5">
                 {agent.tags.map((tag) => (
                   <span
                     key={tag}
-                    className="px-3 py-1 bg-gradient-to-r from-slate-700/50 to-slate-600/50 border border-slate-600/50 text-xs text-slate-300 rounded-full"
+                    className="px-3 py-1 bg-background border border-border text-xs text-text-secondary rounded-full"
                   >
                     {tag}
                   </span>
@@ -817,10 +830,10 @@ function AgentDetailInner({ agentId, onBack, deleteMutation }: AgentDetailInnerP
           )}
 
           {agent.system_prompt && (
-            <div className="mt-6 pt-4 border-t border-slate-700/30">
-              <span className="text-sm text-slate-500 block mb-2">系统提示词</span>
-              <div className="bg-slate-900/50 rounded-xl p-4 border border-slate-700/50">
-                <pre className="text-sm text-slate-300 whitespace-pre-wrap font-mono">
+            <div className="mt-6 pt-4 border-t border-border">
+              <span className="text-sm text-text-tertiary block mb-2">{t('agents.systemPrompt')}</span>
+              <div className="bg-background rounded-xl p-4 border border-border">
+                <pre className="text-sm text-text-secondary whitespace-pre-wrap font-mono">
                   {agent.system_prompt}
                 </pre>
               </div>
@@ -828,25 +841,25 @@ function AgentDetailInner({ agentId, onBack, deleteMutation }: AgentDetailInnerP
           )}
         </div>
 
-        <div className="bg-gradient-to-br from-slate-800/70 to-slate-900/70 backdrop-blur-xl rounded-2xl p-6 border border-slate-700/50 shadow-lg">
-          <h2 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
-            <Clock className="w-5 h-5 text-slate-400" />
-            执行历史
+        <div className={`${panelClass} p-6`}>
+          <h2 className="text-lg font-bold text-text-primary mb-4 flex items-center gap-2">
+            <Clock className="w-5 h-5 text-text-secondary" />
+            {t('agents.executionHistory')}
           </h2>
           
           {executionsLoading ? (
             <div className="flex items-center justify-center py-12">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
             </div>
           ) : (!executions || executions.executions.length === 0) ? (
-            <div className="text-center py-12 text-slate-400">
+            <div className="text-center py-12 text-text-secondary">
               <Clock className="w-12 h-12 mx-auto mb-3 opacity-50" />
-              <p>暂无执行记录</p>
+              <p>{t('agents.noExecutions')}</p>
             </div>
           ) : (
             <div className="space-y-3">
               {executions.executions.map((exec) => (
-                <div key={exec.id} className="bg-slate-900/50 rounded-xl p-4 border border-slate-700/50">
+                <div key={exec.id} className="bg-background rounded-xl p-4 border border-border">
                   <div className="flex items-start justify-between mb-2">
                     <div className="flex items-center gap-3">
                       <span className={clsx(
@@ -855,43 +868,43 @@ function AgentDetailInner({ agentId, onBack, deleteMutation }: AgentDetailInnerP
                           ? 'bg-gradient-to-r from-green-500/20 to-emerald-500/20 text-green-400 border border-green-500/30'
                           : 'bg-gradient-to-r from-red-500/20 to-rose-500/20 text-red-400 border border-red-500/30'
                       )}>
-                        {exec.status === 'success' ? '成功' : '失败'}
+                        {exec.status === 'success' ? t('common.success') : t('common.failed')}
                       </span>
-                      <span className="text-sm text-slate-400">
+                      <span className="text-sm text-text-secondary">
                         {new Date(exec.created_at).toLocaleString()}
                       </span>
                     </div>
-                    <span className="text-xs text-slate-500">
+                    <span className="text-xs text-text-tertiary">
                       {exec.execution_time_ms}ms
                     </span>
                   </div>
                   <div className="mb-3">
-                    <span className="text-xs text-slate-500 block mb-1">输入:</span>
-                    <p className="text-sm text-slate-300">{exec.input_text}</p>
+                    <span className="text-xs text-text-tertiary block mb-1">{t('common.input')}:</span>
+                    <p className="text-sm text-text-secondary">{exec.input_text}</p>
                   </div>
                   <div>
-                    <span className="text-xs text-slate-500 block mb-1">输出:</span>
-                    <pre className="text-sm text-slate-300 whitespace-pre-wrap max-h-40 overflow-y-auto scrollbar-thin">
+                    <span className="text-xs text-text-tertiary block mb-1">{t('common.output')}:</span>
+                    <pre className="text-sm text-text-secondary whitespace-pre-wrap max-h-40 overflow-y-auto scrollbar-thin">
                       {exec.output_text}
                     </pre>
                   </div>
                   {exec.error_message && (
                     <div className="mt-2">
-                      <span className="text-xs text-amber-400 block mb-1">错误:</span>
+                      <span className="text-xs text-amber-400 block mb-1">{t('common.error')}:</span>
                       <p className="text-sm text-red-400">{exec.error_message}</p>
                     </div>
                   )}
                   {exec.metadata && Object.keys(exec.metadata).length > 0 && (
-                    <div className="mt-3 pt-3 border-t border-slate-700/40">
+                    <div className="mt-3 pt-3 border-t border-border">
                       <div className="flex flex-wrap gap-2 text-xs">
                         {typeof exec.metadata.runtime === 'string' && (
-                          <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-blue-500/10 text-blue-300 border border-blue-500/20">
+                          <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-primary/10 text-primary border border-primary/20">
                             <BrainCircuit className="w-3.5 h-3.5" />
                             {formatRuntime(exec.metadata.runtime)}
                           </span>
                         )}
                         {Array.isArray(exec.metadata.trace) && (
-                          <span className="px-2 py-1 rounded-lg bg-slate-800/80 text-slate-300 border border-slate-700/50">
+                          <span className="px-2 py-1 rounded-lg bg-surface text-text-secondary border border-border">
                             Trace {exec.metadata.trace.length}
                           </span>
                         )}
@@ -907,20 +920,20 @@ function AgentDetailInner({ agentId, onBack, deleteMutation }: AgentDetailInnerP
 	                            const toolCalls = Array.isArray(traceEvent.metadata?.toolCalls) ? traceEvent.metadata.toolCalls as string[] : [];
 	                            const isToolEvent = traceEvent.type?.startsWith('tool_call');
 	                            return (
-	                              <div key={`${exec.id}-trace-${index}`} className="rounded-lg bg-slate-950/40 border border-slate-800/80 p-3">
+	                              <div key={`${exec.id}-trace-${index}`} className="rounded-lg bg-surface border border-border p-3">
 	                                <div className="flex items-start justify-between gap-3 mb-2">
 	                                  <div className="flex items-center gap-2 min-w-0">
 	                                    <span className={clsx(
 	                                      'inline-flex items-center justify-center w-6 h-6 rounded-md border',
 	                                      isToolEvent
 	                                        ? 'bg-amber-500/10 text-amber-300 border-amber-500/20'
-	                                        : 'bg-blue-500/10 text-blue-300 border-blue-500/20'
+	                                        : 'bg-primary/10 text-primary border-primary/20'
 	                                    )}>
 	                                      {isToolEvent ? <Wrench className="w-3.5 h-3.5" /> : <MessageSquare className="w-3.5 h-3.5" />}
 	                                    </span>
 	                                    <div className="min-w-0">
 	                                      <div className="flex items-center gap-2">
-	                                        <span className="text-xs font-semibold text-slate-300">{traceEvent.type || 'trace'}</span>
+	                                        <span className="text-xs font-semibold text-text-secondary">{traceEvent.type || 'trace'}</span>
 	                                        {summary?.success !== undefined && (
 	                                          <span className={clsx(
 	                                            'text-[11px] px-1.5 py-0.5 rounded border',
@@ -933,14 +946,14 @@ function AgentDetailInner({ agentId, onBack, deleteMutation }: AgentDetailInnerP
 	                                        )}
 	                                      </div>
 	                                      {traceEvent.timestamp && (
-	                                        <span className="text-[11px] text-slate-500">
+	                                        <span className="text-[11px] text-text-tertiary">
 	                                          {new Date(traceEvent.timestamp).toLocaleString()}
 	                                        </span>
 	                                      )}
 	                                    </div>
 	                                  </div>
 	                                  {(toolName || toolCalls.length > 0) && (
-	                                    <span className="text-xs text-blue-300 text-right break-words max-w-[45%]">
+	                                    <span className="text-xs text-primary text-right break-words max-w-[45%]">
 	                                      {toolName || toolCalls.join(', ')}
 	                                    </span>
 	                                  )}
@@ -948,7 +961,7 @@ function AgentDetailInner({ agentId, onBack, deleteMutation }: AgentDetailInnerP
 	                                {summary && (
 	                                  <div className="flex flex-wrap gap-2 mb-2 text-[11px]">
 	                                    {summary.decisionStatus && (
-	                                      <span className="px-2 py-1 rounded bg-slate-800/80 text-slate-300 border border-slate-700/50">
+	                                      <span className="px-2 py-1 rounded bg-background text-text-secondary border border-border">
 	                                        {summary.decisionStatus}
 	                                      </span>
 	                                    )}
@@ -973,12 +986,12 @@ function AgentDetailInner({ agentId, onBack, deleteMutation }: AgentDetailInnerP
 	                                      </button>
 	                                    )}
 	                                    {correlationId && (
-	                                      <span className="px-2 py-1 rounded bg-blue-500/10 text-blue-300 border border-blue-500/20">
+	                                      <span className="px-2 py-1 rounded bg-primary/10 text-primary border border-primary/20">
 	                                        corr {shortTraceId(correlationId)}
 	                                      </span>
 	                                    )}
 	                                    {toolCallId && (
-	                                      <span className="px-2 py-1 rounded bg-slate-800/80 text-slate-300 border border-slate-700/50">
+	                                      <span className="px-2 py-1 rounded bg-background text-text-secondary border border-border">
 	                                        call {shortTraceId(toolCallId)}
 	                                      </span>
 	                                    )}
@@ -987,7 +1000,7 @@ function AgentDetailInner({ agentId, onBack, deleteMutation }: AgentDetailInnerP
 	                                {summary?.error ? (
 	                                  <p className="text-xs text-red-300 whitespace-pre-wrap">{summary.error}</p>
 	                                ) : traceEvent.content ? (
-	                                  <p className="text-xs text-slate-400 whitespace-pre-wrap line-clamp-4">{formatTraceContent(traceEvent.content)}</p>
+	                                  <p className="text-xs text-text-secondary whitespace-pre-wrap line-clamp-4">{formatTraceContent(traceEvent.content)}</p>
 	                                ) : null}
 	                              </div>
 	                            );
@@ -1002,21 +1015,21 @@ function AgentDetailInner({ agentId, onBack, deleteMutation }: AgentDetailInnerP
           )}
         </div>
         
-        <div className="bg-gradient-to-br from-slate-800/70 to-slate-900/70 backdrop-blur-xl rounded-2xl p-6 border border-slate-700/50 shadow-lg">
+        <div className={`${panelClass} p-6`}>
           <div className="flex gap-3">
             <button
               onClick={() => {
                 onBack();
               }}
-              className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-xl hover:from-blue-500 hover:to-blue-600 hover:shadow-lg hover:shadow-blue-500/25 transition-all duration-300 font-semibold"
+              className="flex items-center gap-2 px-5 py-2.5 bg-primary text-white rounded-xl hover:bg-primary/90 hover:shadow-lg hover:shadow-black/15 transition-all duration-300 font-semibold"
             >
               <Edit className="w-4 h-4" />
-              编辑 Agent
+              {t('agents.editAgent')}
             </button>
             {agent.is_preset !== 1 && (
               <button
                 onClick={() => {
-                  if (confirm(`确定要删除Agent "${agent.name}" 吗？`)) {
+                  if (confirm(t('agents.deleteConfirm', { name: agent.name }))) {
                     deleteMutation.mutate(agent.id);
                     onBack();
                   }
@@ -1024,7 +1037,7 @@ function AgentDetailInner({ agentId, onBack, deleteMutation }: AgentDetailInnerP
                 className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-red-500/20 to-rose-500/20 text-red-400 border border-red-500/30 rounded-xl hover:from-red-500/30 hover:to-rose-500/30 transition-all duration-300 font-semibold"
               >
                 <Trash2 className="w-4 h-4" />
-                删除 Agent
+                {t('agents.deleteAgent')}
               </button>
             )}
           </div>
@@ -1036,6 +1049,7 @@ function AgentDetailInner({ agentId, onBack, deleteMutation }: AgentDetailInnerP
 
 function AgentModal({ agent, onClose }: { agent: Agent | null; onClose: () => void }) {
   const queryClient = useQueryClient();
+  const { t } = useLocale();
   const initialRuntimeConfig = parseRuntimeConfig(agent?.runtime_config);
   const [tagsInput, setTagsInput] = useState(
     Array.isArray(agent?.tags) ? agent.tags.join(', ') : ''
@@ -1167,154 +1181,154 @@ function AgentModal({ agent, onClose }: { agent: Agent | null; onClose: () => vo
 
   return (
     <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50">
-      <div className="bg-gradient-to-br from-slate-800/95 to-slate-900/95 backdrop-blur-xl rounded-2xl p-6 w-full max-w-3xl max-h-[90vh] overflow-y-auto border border-slate-700/50 shadow-2xl shadow-blue-500/10">
-        <h2 className="text-xl font-bold text-white mb-6">
-          {agent ? '编辑Agent' : '新建Agent'}
+      <div className={`${panelClass} p-6 w-full max-w-3xl max-h-[90vh] overflow-y-auto shadow-2xl`}>
+        <h2 className="text-xl font-bold text-text-primary mb-6">
+          {agent ? t('agents.modalTitleEdit') : t('agents.modalTitleNew')}
         </h2>
         
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-slate-300 mb-2">
-                Agent名称
+              <label className={labelClass}>
+                {t('agents.name')}
               </label>
               <input
                 type="text"
                 value={formData.name}
                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                className="w-full px-4 py-2 bg-slate-900/50 border border-slate-700/50 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-blue-500/50 focus:ring-2 focus:ring-blue-500/20 transition-all"
+                className={inputClass}
                 required
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-slate-300 mb-2">
-                头像
+              <label className={labelClass}>
+                {t('agents.avatar')}
               </label>
               <input
                 type="text"
                 value={formData.avatar}
                 onChange={(e) => setFormData({ ...formData, avatar: e.target.value })}
-                className="w-full px-4 py-2 bg-slate-900/50 border border-slate-700/50 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-blue-500/50 focus:ring-2 focus:ring-blue-500/20 transition-all"
-                placeholder="使用emoji作为头像"
+                className={inputClass}
+                placeholder={t('agents.avatarPlaceholder')}
               />
             </div>
           </div>
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-slate-300 mb-2">
-                角色描述
+              <label className={labelClass}>
+                {t('agents.role')}
               </label>
               <input
                 type="text"
                 value={formData.role}
                 onChange={(e) => setFormData({ ...formData, role: e.target.value })}
-                className="w-full px-4 py-2 bg-slate-900/50 border border-slate-700/50 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-blue-500/50 focus:ring-2 focus:ring-blue-500/20 transition-all"
+                className={inputClass}
                 required
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-slate-300 mb-2">
-                分类
+              <label className={labelClass}>
+                {t('common.category')}
               </label>
               <select
                 value={formData.category}
                 onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-                className="w-full px-4 py-2 bg-slate-900/50 border border-slate-700/50 rounded-xl text-white focus:outline-none focus:border-blue-500/50 focus:ring-2 focus:ring-blue-500/20 transition-all"
+                className={inputClass}
               >
-                <option value="" className="bg-slate-800">选择分类...</option>
-                <option value="告警处理" className="bg-slate-800">告警处理</option>
-                <option value="故障处理" className="bg-slate-800">故障处理</option>
-                <option value="数据分析" className="bg-slate-800">数据分析</option>
-                <option value="巡检审计" className="bg-slate-800">巡检审计</option>
-                <option value="服务器管理" className="bg-slate-800">服务器管理</option>
-                <option value="操作执行" className="bg-slate-800">操作执行</option>
-                <option value="文档报告" className="bg-slate-800">文档报告</option>
+                <option value="">{t('agents.chooseCategory')}</option>
+                <option value="告警处理">告警处理</option>
+                <option value="故障处理">故障处理</option>
+                <option value="数据分析">数据分析</option>
+                <option value="巡检审计">巡检审计</option>
+                <option value="服务器管理">服务器管理</option>
+                <option value="操作执行">操作执行</option>
+                <option value="文档报告">文档报告</option>
               </select>
             </div>
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-slate-300 mb-2">
-              描述
+            <label className={labelClass}>
+              {t('agents.description')}
             </label>
             <textarea
               value={formData.description}
               onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-              className="w-full px-4 py-2 bg-slate-900/50 border border-slate-700/50 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-blue-500/50 focus:ring-2 focus:ring-blue-500/20 transition-all h-20"
-              placeholder="简短描述这个Agent的作用"
+              className={`${textareaClass} h-20`}
+              placeholder={t('agents.descriptionPlaceholder')}
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-slate-300 mb-2">
-              系统提示词
+            <label className={labelClass}>
+              {t('agents.systemPrompt')}
             </label>
             <textarea
               value={formData.system_prompt}
               onChange={(e) => setFormData({ ...formData, system_prompt: e.target.value })}
-              className="w-full px-4 py-2 bg-slate-900/50 border border-slate-700/50 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-blue-500/50 focus:ring-2 focus:ring-blue-500/20 transition-all h-40"
+              className={`${textareaClass} h-40`}
               required
             />
           </div>
 
-          <div className="bg-slate-900/30 rounded-xl p-4 border border-slate-700/30">
-            <label className="block text-sm font-medium text-slate-300 mb-3">
-              主模型 *
+          <div className={`${softPanelClass} p-4`}>
+            <label className="block text-sm font-medium text-text-secondary mb-3">
+              {t('agents.primaryModel')} *
             </label>
             <select
               value={formData.primary_model_id}
               onChange={(e) => setFormData({ ...formData, primary_model_id: e.target.value })}
-              className="w-full px-4 py-2 bg-slate-900/50 border border-slate-700/50 rounded-xl text-white focus:outline-none focus:border-blue-500/50 focus:ring-2 focus:ring-blue-500/20 transition-all"
+              className={inputClass}
             >
-              <option value="" className="bg-slate-800">选择主模型...</option>
+              <option value="">{t('agents.choosePrimaryModel')}</option>
               {(aiModels || []).filter((m: { enabled: number }) => m.enabled === 1).map((model: { id: string; name: string }) => (
-                <option key={model.id} value={model.id} className="bg-slate-800">
+                <option key={model.id} value={model.id}>
                   {model.name}
                 </option>
               ))}
             </select>
-            <p className="text-xs text-slate-500 mt-1">
-              Agent 执行时优先使用的模型
+            <p className="text-xs text-text-tertiary mt-1">
+              {t('agents.primaryModelHelp')}
             </p>
           </div>
 
-          <div className="bg-slate-900/30 rounded-xl p-4 border border-slate-700/30">
-            <label className="block text-sm font-medium text-slate-300 mb-3">
-              备选模型 (可选)
+          <div className={`${softPanelClass} p-4`}>
+            <label className="block text-sm font-medium text-text-secondary mb-3">
+              {t('agents.fallbackModel')} (可选)
             </label>
             <select
               value={formData.fallback_model_id}
               onChange={(e) => setFormData({ ...formData, fallback_model_id: e.target.value })}
-              className="w-full px-4 py-2 bg-slate-900/50 border border-slate-700/50 rounded-xl text-white focus:outline-none focus:border-blue-500/50 focus:ring-2 focus:ring-blue-500/20 transition-all"
+              className={inputClass}
             >
-              <option value="" className="bg-slate-800">选择备选模型...</option>
+              <option value="">{t('agents.chooseFallbackModel')}</option>
               {(aiModels || []).filter((m: { enabled: number }) => m.enabled === 1).map((model: { id: string; name: string }) => (
-                <option key={model.id} value={model.id} className="bg-slate-800">
+                <option key={model.id} value={model.id}>
                   {model.name}
                 </option>
               ))}
             </select>
-            <p className="text-xs text-slate-500 mt-1">
-              主模型失败时自动切换到备选模型
+            <p className="text-xs text-text-tertiary mt-1">
+              {t('agents.fallbackModelHelp')}
             </p>
           </div>
 
-          <div className="bg-slate-900/30 rounded-xl p-4 border border-slate-700/30 space-y-4">
+          <div className={`${softPanelClass} p-4 space-y-4`}>
             <div className="flex items-center justify-between gap-3">
-              <label className="text-sm font-medium text-slate-300 flex items-center gap-2">
-                <BrainCircuit className="w-4 h-4 text-blue-400" />
-                Runtime
+              <label className="text-sm font-medium text-text-secondary flex items-center gap-2">
+                <BrainCircuit className="w-4 h-4 text-primary" />
+                {t('common.runtime')}
               </label>
               {formData.runtime === 'hermes' && (
                 <button
                   type="button"
                   onClick={testHermesConnection}
                   disabled={connectionLoading}
-                  className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-blue-600/20 text-blue-300 border border-blue-500/30 hover:bg-blue-600/30 disabled:opacity-50 transition-all text-sm"
+                  className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-primary/10 text-primary border border-primary/30 hover:bg-primary/15 disabled:opacity-50 transition-all text-sm"
                 >
                   <Cable className="w-4 h-4" />
-                  {connectionLoading ? '测试中...' : '测试连接'}
+                  {connectionLoading ? t('agents.testingConnection') : t('agents.testConnection')}
                 </button>
               )}
             </div>
@@ -1327,93 +1341,93 @@ function AgentModal({ agent, onClose }: { agent: Agent | null; onClose: () => vo
                     setConnectionResult(null);
                     setFormData({ ...formData, runtime: e.target.value });
                   }}
-                  className="w-full px-4 py-2 bg-slate-900/50 border border-slate-700/50 rounded-xl text-white focus:outline-none focus:border-blue-500/50 focus:ring-2 focus:ring-blue-500/20 transition-all"
+                  className={inputClass}
                 >
-                  <option value="llm" className="bg-slate-800">LLM</option>
-                  <option value="builtin" className="bg-slate-800">Builtin</option>
-                  <option value="custom_http" className="bg-slate-800">Custom HTTP</option>
-                  <option value="hermes" className="bg-slate-800">Hermes</option>
+                  <option value="llm">LLM</option>
+                  <option value="builtin">Builtin</option>
+                  <option value="custom_http">Custom HTTP</option>
+                  <option value="hermes">Hermes</option>
                 </select>
               </div>
               <div>
                 <select
                   value={formData.autonomy_level}
                   onChange={(e) => setFormData({ ...formData, autonomy_level: e.target.value })}
-                  className="w-full px-4 py-2 bg-slate-900/50 border border-slate-700/50 rounded-xl text-white focus:outline-none focus:border-blue-500/50 focus:ring-2 focus:ring-blue-500/20 transition-all"
+                  className={inputClass}
                 >
-                  <option value="suggest" className="bg-slate-800">suggest</option>
-                  <option value="read_only" className="bg-slate-800">read_only</option>
-                  <option value="approval_required" className="bg-slate-800">approval_required</option>
-                  <option value="auto" className="bg-slate-800">auto</option>
+                  <option value="suggest">suggest</option>
+                  <option value="read_only">read_only</option>
+                  <option value="approval_required">approval_required</option>
+                  <option value="auto">auto</option>
                 </select>
               </div>
             </div>
 
             {formData.runtime === 'hermes' && (
-              <div className="space-y-4 pt-3 border-t border-slate-700/30">
+              <div className="space-y-4 pt-3 border-t border-border">
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-xs text-slate-500 mb-1">Base URL</label>
+                    <label className="block text-xs text-text-tertiary mb-1">Base URL</label>
                     <input
                       type="text"
                       value={hermesConfig.baseUrl}
                       onChange={(e) => setHermesConfig({ ...hermesConfig, baseUrl: e.target.value })}
-                      className="w-full px-4 py-2 bg-slate-900/50 border border-slate-700/50 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-blue-500/50 focus:ring-2 focus:ring-blue-500/20 transition-all"
-                      placeholder="留空使用 HERMES_API_BASE"
+                      className={inputClass}
+                      placeholder={t('agents.baseUrlPlaceholder')}
                     />
                   </div>
                   <div>
-                    <label className="block text-xs text-slate-500 mb-1">Model</label>
+                    <label className="block text-xs text-text-tertiary mb-1">Model</label>
                     <input
                       type="text"
                       value={hermesConfig.model}
                       onChange={(e) => setHermesConfig({ ...hermesConfig, model: e.target.value })}
-                      className="w-full px-4 py-2 bg-slate-900/50 border border-slate-700/50 rounded-xl text-white focus:outline-none focus:border-blue-500/50 focus:ring-2 focus:ring-blue-500/20 transition-all"
+                      className={inputClass}
                     />
                   </div>
                 </div>
 
                 <div className="grid grid-cols-3 gap-4">
                   <div>
-                    <label className="block text-xs text-slate-500 mb-1">API Key Env</label>
+                    <label className="block text-xs text-text-tertiary mb-1">API Key Env</label>
                     <input
                       type="text"
                       value={hermesConfig.apiKeyEnv}
                       onChange={(e) => setHermesConfig({ ...hermesConfig, apiKeyEnv: e.target.value })}
-                      className="w-full px-4 py-2 bg-slate-900/50 border border-slate-700/50 rounded-xl text-white focus:outline-none focus:border-blue-500/50 focus:ring-2 focus:ring-blue-500/20 transition-all"
+                      className={inputClass}
                     />
                   </div>
                   <div>
-                    <label className="block text-xs text-slate-500 mb-1">Timeout ms</label>
+                    <label className="block text-xs text-text-tertiary mb-1">Timeout ms</label>
                     <input
                       type="number"
                       min="1000"
                       max="300000"
                       value={hermesConfig.timeoutMs}
                       onChange={(e) => setHermesConfig({ ...hermesConfig, timeoutMs: parseInt(e.target.value, 10) || 300000 })}
-                      className="w-full px-4 py-2 bg-slate-900/50 border border-slate-700/50 rounded-xl text-white focus:outline-none focus:border-blue-500/50 focus:ring-2 focus:ring-blue-500/20 transition-all"
+                      className={inputClass}
                     />
                   </div>
                   <div>
-                    <label className="block text-xs text-slate-500 mb-1">Tool rounds</label>
+                    <label className="block text-xs text-text-tertiary mb-1">Tool rounds</label>
                     <input
                       type="number"
                       min="0"
                       max="8"
                       value={hermesConfig.maxToolRounds}
                       onChange={(e) => setHermesConfig({ ...hermesConfig, maxToolRounds: parseInt(e.target.value, 10) || 3 })}
-                      className="w-full px-4 py-2 bg-slate-900/50 border border-slate-700/50 rounded-xl text-white focus:outline-none focus:border-blue-500/50 focus:ring-2 focus:ring-blue-500/20 transition-all"
+                      className={inputClass}
                     />
                   </div>
                 </div>
 
                 <div>
-                  <label className="block text-xs text-slate-500 mb-1">Allowed tools</label>
+                  <label className="block text-xs text-text-tertiary mb-1">Allowed tools</label>
                   <input
                     type="text"
                     value={hermesConfig.allowedTools}
                     onChange={(e) => setHermesConfig({ ...hermesConfig, allowedTools: e.target.value })}
-                    className="w-full px-4 py-2 bg-slate-900/50 border border-slate-700/50 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-blue-500/50 focus:ring-2 focus:ring-blue-500/20 transition-all"
+                    className={inputClass}
                   />
                 </div>
 
@@ -1434,8 +1448,8 @@ function AgentModal({ agent, onClose }: { agent: Agent | null; onClose: () => vo
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-slate-300 mb-2">
-                温度参数
+              <label className={labelClass}>
+                {t('agents.temperature')}
               </label>
               <input
                 type="number"
@@ -1444,19 +1458,19 @@ function AgentModal({ agent, onClose }: { agent: Agent | null; onClose: () => vo
                 max="2"
                 value={formData.temperature}
                 onChange={(e) => setFormData({ ...formData, temperature: parseFloat(e.target.value) })}
-                className="w-full px-4 py-2 bg-slate-900/50 border border-slate-700/50 rounded-xl text-white focus:outline-none focus:border-blue-500/50 focus:ring-2 focus:ring-blue-500/20 transition-all"
+                className={inputClass}
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-slate-300 mb-2">
-                标签 (逗号分隔)
+              <label className={labelClass}>
+                {t('agents.tagsInput')}
               </label>
               <input
                 type="text"
                 value={tagsInput}
                 onChange={(e) => setTagsInput(e.target.value)}
-                className="w-full px-4 py-2 bg-slate-900/50 border border-slate-700/50 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-blue-500/50 focus:ring-2 focus:ring-blue-500/20 transition-all"
-                placeholder="例如: 运维, 自动化, 测试"
+                className={inputClass}
+                placeholder={t('agents.tagsPlaceholder')}
               />
             </div>
           </div>
@@ -1467,10 +1481,10 @@ function AgentModal({ agent, onClose }: { agent: Agent | null; onClose: () => vo
               id="enabled"
               checked={formData.enabled}
               onChange={(e) => setFormData({ ...formData, enabled: e.target.checked })}
-              className="w-4 h-4 rounded border-slate-600 text-blue-500 focus:ring-blue-500/50"
+              className="w-4 h-4 rounded border-border text-primary focus:ring-primary/50"
             />
-            <label htmlFor="enabled" className="text-sm text-slate-300">
-              启用此Agent
+            <label htmlFor="enabled" className="text-sm text-text-secondary">
+              {t('agents.enableAgent')}
             </label>
           </div>
 
@@ -1480,22 +1494,22 @@ function AgentModal({ agent, onClose }: { agent: Agent | null; onClose: () => vo
               onClick={() => setShowTestModal(true)}
               className="px-5 py-2.5 bg-primary/10 text-primary border border-primary/30 rounded-xl hover:bg-primary/15 transition-all font-semibold"
             >
-              🧪 测试 Agent
+              {t('agents.testGeneric')}
             </button>
             <div className="flex-1" />
             <button
               type="button"
               onClick={onClose}
-              className="px-5 py-2.5 bg-slate-700/50 text-slate-300 rounded-xl hover:bg-slate-700/70 transition-all font-semibold border border-slate-600/30"
+              className="px-5 py-2.5 bg-background text-text-secondary rounded-xl hover:bg-surface transition-all font-semibold border border-border"
             >
-              取消
+              {t('common.cancel')}
             </button>
             <button
               type="submit"
               disabled={mutation.isPending}
-              className="px-5 py-2.5 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-xl hover:from-blue-500 hover:to-blue-600 hover:shadow-lg hover:shadow-blue-500/25 disabled:opacity-50 disabled:shadow-none transition-all duration-300 font-semibold"
+              className="px-5 py-2.5 bg-primary text-white rounded-xl hover:bg-primary/90 hover:shadow-lg hover:shadow-black/15 disabled:opacity-50 disabled:shadow-none transition-all duration-300 font-semibold"
             >
-              {mutation.isPending ? '保存中...' : (agent ? '保存' : '创建')}
+              {mutation.isPending ? t('common.saving') : (agent ? t('common.save') : t('common.create'))}
             </button>
           </div>
         </form>
@@ -1503,14 +1517,14 @@ function AgentModal({ agent, onClose }: { agent: Agent | null; onClose: () => vo
         {/* 测试模态框 */}
         {showTestModal && (
           <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-            <div className="bg-gradient-to-br from-slate-800/95 to-slate-900/95 backdrop-blur-xl rounded-2xl w-full max-w-3xl border border-slate-700/50 shadow-2xl shadow-blue-500/10 flex flex-col max-h-[90vh]">
-              <div className="p-6 border-b border-slate-700/30 flex items-center justify-between flex-shrink-0">
-                <h2 className="text-xl font-bold text-white flex items-center gap-2">
-                  🧪 测试 Agent
+            <div className={`${panelClass} w-full max-w-3xl shadow-2xl flex flex-col max-h-[90vh]`}>
+              <div className="p-6 border-b border-border flex items-center justify-between flex-shrink-0">
+                <h2 className="text-xl font-bold text-text-primary flex items-center gap-2">
+                  {t('agents.testGeneric')}
                 </h2>
                 <button
                   onClick={() => setShowTestModal(false)}
-                  className="p-2 hover:bg-slate-700/50 rounded-xl text-slate-400 hover:text-white transition-all"
+                  className="p-2 hover:bg-background rounded-xl text-text-secondary hover:text-text-primary transition-all"
                 >
                   ✕
                 </button>
@@ -1518,32 +1532,32 @@ function AgentModal({ agent, onClose }: { agent: Agent | null; onClose: () => vo
 
               <div className="p-6 overflow-y-auto flex-1 space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-slate-300 mb-2">
-                    输入测试内容
+                  <label className={labelClass}>
+                    {t('agents.testInput')}
                   </label>
                   <textarea
                     value={testInput}
                     onChange={(e) => setTestInput(e.target.value)}
-                    className="w-full px-4 py-3 bg-slate-900/50 border border-slate-700/50 rounded-xl text-white focus:outline-none focus:border-blue-500/50 focus:ring-2 focus:ring-blue-500/20 transition-all h-32 resize-none"
-                    placeholder="输入您想让这个 Agent 处理的内容..."
+                    className={`${textareaClass} py-3 h-32`}
+                    placeholder={t('agents.testInputPlaceholder')}
                   />
                 </div>
 
                 <button
                   onClick={handleTest}
                   disabled={testLoading || !testInput.trim()}
-                  className="w-full px-6 py-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-xl hover:from-blue-500 hover:to-blue-600 hover:shadow-lg hover:shadow-blue-500/25 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-300 font-semibold"
+                  className="w-full px-6 py-3 bg-primary text-white rounded-xl hover:bg-primary/90 hover:shadow-lg hover:shadow-black/15 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-300 font-semibold"
                 >
-                  {testLoading ? '测试中...' : '运行测试'}
+                  {testLoading ? t('agents.testingConnection') : t('agents.runTest')}
                 </button>
 
                 {testResult && (
                   <div>
-                    <label className="block text-sm font-medium text-slate-300 mb-2">
-                      测试结果
+                    <label className={labelClass}>
+                      {t('agents.testResult')}
                     </label>
-                    <div className="p-4 bg-slate-900/50 rounded-xl border border-slate-700/50 max-h-64 overflow-y-auto scrollbar-thin">
-                      <pre className="text-sm text-white whitespace-pre-wrap">
+                    <div className="p-4 bg-background rounded-xl border border-border max-h-64 overflow-y-auto scrollbar-thin">
+                      <pre className="text-sm text-text-primary whitespace-pre-wrap">
                         {testResult}
                       </pre>
                     </div>
@@ -1551,12 +1565,12 @@ function AgentModal({ agent, onClose }: { agent: Agent | null; onClose: () => vo
                 )}
               </div>
 
-              <div className="p-6 border-t border-slate-700/30 flex-shrink-0">
+              <div className="p-6 border-t border-border flex-shrink-0">
                 <button
                   onClick={() => setShowTestModal(false)}
-                  className="w-full px-6 py-3 bg-slate-700/50 text-slate-300 rounded-xl hover:bg-slate-700/70 transition-all duration-300 font-semibold border border-slate-600/30"
+                  className="w-full px-6 py-3 bg-background text-text-secondary rounded-xl hover:bg-surface transition-all duration-300 font-semibold border border-border"
                 >
-                  关闭
+                  {t('common.close')}
                 </button>
               </div>
             </div>

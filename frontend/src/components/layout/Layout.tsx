@@ -44,104 +44,119 @@ import {
   ShieldCheck,
   BookMarked,
   Cog,
+  Languages,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../contexts/ThemeContext';
+import { MessageKey, useLocale } from '../../contexts/LocaleContext';
 import ChatWidget from '../ChatWidget';
 
-const navigationGroups = [
+const navigationGroups: Array<{
+  id: string;
+  labelKey: MessageKey;
+  icon: typeof Home;
+  items: Array<{ labelKey: MessageKey; href: string; icon: typeof Home }>;
+}> = [
   {
-    name: '首页',
+    id: 'home',
+    labelKey: 'nav.home',
     icon: Home,
     items: [
-      { name: '仪表盘', href: '/dashboard', icon: LayoutDashboard },
-      { name: '监控大屏', href: '/big-screen', icon: Monitor },
+      { labelKey: 'nav.dashboard', href: '/dashboard', icon: LayoutDashboard },
+      { labelKey: 'nav.bigScreen', href: '/big-screen', icon: Monitor },
     ]
   },
   {
-    name: '服务器管理',
+    id: 'serverOps',
+    labelKey: 'nav.serverOps',
     icon: ServerCog,
     items: [
-      { name: '服务器管理', href: '/servers', icon: Server },
-      { name: '网络设备', href: '/network-devices', icon: Network },
-      { name: '认证凭证', href: '/ssh-keys', icon: Key },
-      { name: 'Web 终端', href: '/terminal', icon: Terminal },
-      { name: '远程桌面', href: '/remote-desktop', icon: MonitorPlay },
+      { labelKey: 'nav.servers', href: '/servers', icon: Server },
+      { labelKey: 'nav.networkDevices', href: '/network-devices', icon: Network },
+      { labelKey: 'nav.credentials', href: '/ssh-keys', icon: Key },
+      { labelKey: 'nav.terminal', href: '/terminal', icon: Terminal },
+      { labelKey: 'nav.remoteDesktop', href: '/remote-desktop', icon: MonitorPlay },
     ]
   },
   {
-    name: '自动化执行',
+    id: 'automation',
+    labelKey: 'nav.automation',
     icon: Zap,
     items: [
-      { name: 'Agent管理', href: '/agents', icon: Bot },
-      { name: '工具审批', href: '/tool-approvals', icon: ShieldAlert },
-      { name: '工作流', href: '/workflows', icon: GitBranch },
-      { name: '任务执行', href: '/tasks', icon: Play },
-      { name: '脚本中心', href: '/scripts', icon: FileCode },
-      { name: '定时任务', href: '/scheduled-tasks', icon: Clock },
+      { labelKey: 'nav.agents', href: '/agents', icon: Bot },
+      { labelKey: 'nav.toolApprovals', href: '/tool-approvals', icon: ShieldAlert },
+      { labelKey: 'nav.workflows', href: '/workflows', icon: GitBranch },
+      { labelKey: 'nav.tasks', href: '/tasks', icon: Play },
+      { labelKey: 'nav.scripts', href: '/scripts', icon: FileCode },
+      { labelKey: 'nav.scheduledTasks', href: '/scheduled-tasks', icon: Clock },
     ]
   },
   {
-    name: '告警与AI分析',
+    id: 'alertAi',
+    labelKey: 'nav.alertAi',
     icon: AlertTriangle,
     items: [
-      { name: '告警中心', href: '/alerts', icon: Bell },
-      { name: '告警自动处理', href: '/alert-mappings', icon: Link2 },
-      { name: '告警降噪', href: '/alert-noise', icon: Shield },
-      { name: '根因分析', href: '/root-cause-analysis', icon: Search },
-      { name: 'AI 根因报告', href: '/ai-root-cause', icon: Brain },
-      { name: '服务拓扑', href: '/topology', icon: Network },
-      { name: 'AI 洞察', href: '/ai-insights', icon: Lightbulb },
+      { labelKey: 'nav.alerts', href: '/alerts', icon: Bell },
+      { labelKey: 'nav.alertMappings', href: '/alert-mappings', icon: Link2 },
+      { labelKey: 'nav.alertNoise', href: '/alert-noise', icon: Shield },
+      { labelKey: 'nav.rootCause', href: '/root-cause-analysis', icon: Search },
+      { labelKey: 'nav.aiRootCause', href: '/ai-root-cause', icon: Brain },
+      { labelKey: 'nav.topology', href: '/topology', icon: Network },
+      { labelKey: 'nav.aiInsights', href: '/ai-insights', icon: Lightbulb },
     ]
   },
   {
-    name: '自动修复/自愈',
+    id: 'remediation',
+    labelKey: 'nav.remediation',
     icon: ShieldCheck,
     items: [
-      { name: '自动修复策略', href: '/remediation-policies', icon: Wrench },
-      { name: '修复效果仪表盘', href: '/remediation-dashboard', icon: BarChart3 },
-      { name: '修复执行记录', href: '/remediation-executions', icon: ListChecks },
-      { name: '自愈工作台', href: '/remediation-workbench', icon: Workflow },
+      { labelKey: 'nav.remediationPolicies', href: '/remediation-policies', icon: Wrench },
+      { labelKey: 'nav.remediationDashboard', href: '/remediation-dashboard', icon: BarChart3 },
+      { labelKey: 'nav.remediationExecutions', href: '/remediation-executions', icon: ListChecks },
+      { labelKey: 'nav.remediationWorkbench', href: '/remediation-workbench', icon: Workflow },
     ]
   },
   {
-    name: '知识库与报告',
+    id: 'knowledgeReports',
+    labelKey: 'nav.knowledgeReports',
     icon: BookMarked,
     items: [
-      { name: '知识库', href: '/knowledge', icon: BookOpen },
-      { name: '审计日志', href: '/audit', icon: Shield },
-      { name: '通知系统', href: '/notifications', icon: MessageSquare },
-      { name: '报告系统', href: '/reports', icon: FileText },
+      { labelKey: 'nav.knowledge', href: '/knowledge', icon: BookOpen },
+      { labelKey: 'nav.audit', href: '/audit', icon: Shield },
+      { labelKey: 'nav.notifications', href: '/notifications', icon: MessageSquare },
+      { labelKey: 'nav.reports', href: '/reports', icon: FileText },
     ]
   },
   {
-    name: '系统与用户',
+    id: 'systemUsers',
+    labelKey: 'nav.systemUsers',
     icon: Cog,
     items: [
-      { name: '用户管理', href: '/users', icon: Users },
-      { name: '设置', href: '/settings', icon: Settings },
+      { labelKey: 'nav.users', href: '/users', icon: Users },
+      { labelKey: 'nav.settings', href: '/settings', icon: Settings },
     ]
   },
 ];
 
 export default function Layout() {
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(
-    new Set(['首页', '服务器管理', '自动化执行', '告警与AI分析', '自动修复/自愈', '知识库与报告', '系统与用户'])
+    new Set(navigationGroups.map((group) => group.id))
   );
 
-  const toggleGroup = (groupName: string) => {
+  const toggleGroup = (groupId: string) => {
     const newExpanded = new Set(expandedGroups);
-    if (newExpanded.has(groupName)) {
-      newExpanded.delete(groupName);
+    if (newExpanded.has(groupId)) {
+      newExpanded.delete(groupId);
     } else {
-      newExpanded.add(groupName);
+      newExpanded.add(groupId);
     }
     setExpandedGroups(newExpanded);
   };
 
   const { user, logout } = useAuth();
   const { theme, toggleTheme } = useTheme();
+  const { locale, setLocale, t } = useLocale();
   const navigate = useNavigate();
 
   // 使用 staleTime 优化查询，5分钟内使用缓存数据，避免频繁重新请求
@@ -172,9 +187,9 @@ export default function Layout() {
 
   const getRoleText = (role: string) => {
     const roleMap: Record<string, string> = {
-      'admin': '管理员',
-      'operator': '运维员',
-      'viewer': '只读用户'
+      'admin': t('role.admin'),
+      'operator': t('role.operator'),
+      'viewer': t('role.viewer')
     };
     return roleMap[role] || role;
   };
@@ -199,16 +214,16 @@ export default function Layout() {
               )}>AIOps Agent</h1>
               <p className={clsx('text-[11px]',
                 theme === 'dark' ? 'text-slate-400' : 'text-gray-500'
-              )}>多Agent自动化平台</p>
+              )}>{t('app.subtitle')}</p>
             </div>
           </div>
         </div>
 
         <nav className="flex-1 p-3 space-y-2 overflow-y-auto scrollbar-thin">
           {navigationGroups.map((group) => (
-            <div key={group.name} className="space-y-0.5">
+            <div key={group.id} className="space-y-0.5">
               <button
-                onClick={() => toggleGroup(group.name)}
+                onClick={() => toggleGroup(group.id)}
                 className={clsx(
                   'w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-semibold uppercase tracking-wider transition-all duration-200 group',
                   theme === 'dark'
@@ -217,19 +232,19 @@ export default function Layout() {
                 )}
               >
                 <group.icon className="w-3.5 h-3.5 flex-shrink-0" />
-                <span className="flex-1 text-left">{group.name}</span>
-                {expandedGroups.has(group.name) ? (
+                <span className="flex-1 text-left">{t(group.labelKey)}</span>
+                {expandedGroups.has(group.id) ? (
                   <ChevronDown className="w-3.5 h-3.5 flex-shrink-0" />
                 ) : (
                   <ChevronRight className="w-3.5 h-3.5 flex-shrink-0" />
                 )}
               </button>
               
-              {expandedGroups.has(group.name) && (
+              {expandedGroups.has(group.id) && (
                 <div className="pl-2 space-y-0.5">
                   {group.items.map((item) => (
                     <NavLink
-                      key={item.name}
+                      key={item.href}
                       to={item.href}
                       className={({ isActive }) =>
                         clsx(
@@ -243,7 +258,7 @@ export default function Layout() {
                       }
                     >
                       <item.icon className="w-4 h-4 group-hover:scale-110 transition-transform flex-shrink-0" />
-                      {item.name}
+                      {t(item.labelKey)}
                     </NavLink>
                   ))}
                 </div>
@@ -267,9 +282,9 @@ export default function Layout() {
                   <div className="flex-1 min-w-0">
                     <p className={clsx('text-xs font-semibold truncate leading-tight',
                       theme === 'dark' ? 'text-white' : 'text-gray-900'
-                    )}>
-                      {user.username}
-                    </p>
+                  )}>
+                    {user.username}
+                  </p>
                     <p className="text-[10px] text-slate-400 truncate leading-tight">
                       {getRoleText(user.role)}
                     </p>
@@ -285,6 +300,29 @@ export default function Layout() {
               </div>
             )}
 
+            <div className={clsx('flex items-center justify-between rounded-lg px-3 py-2 mb-2',
+              theme === 'dark'
+                ? 'bg-secondary border border-border'
+                : 'bg-gray-50 border border-gray-200'
+            )}>
+              <div className="flex items-center gap-2 min-w-0">
+                <Languages className="w-3.5 h-3.5 text-primary flex-shrink-0" />
+                <span className={clsx('text-xs font-semibold',
+                  theme === 'dark' ? 'text-slate-200' : 'text-gray-800'
+                )}>{t('common.language')}</span>
+              </div>
+              <button
+                onClick={() => setLocale(locale === 'zh-CN' ? 'en-US' : 'zh-CN')}
+                className={clsx('px-2 py-1 rounded-md text-[11px] font-semibold transition-colors',
+                  theme === 'dark'
+                    ? 'bg-slate-800 text-slate-300 hover:text-white'
+                    : 'bg-white text-gray-700 hover:text-gray-900 border border-gray-200'
+                )}
+              >
+                {locale === 'zh-CN' ? 'EN' : '中'}
+              </button>
+            </div>
+
             <div className={clsx('flex items-center justify-between rounded-lg px-3 py-2.5',
               theme === 'dark'
                 ? 'bg-secondary border border-border'
@@ -295,9 +333,9 @@ export default function Layout() {
                 <div>
                   <span className={clsx('text-xs font-semibold leading-tight',
                     theme === 'dark' ? 'text-white' : 'text-gray-900'
-                  )}>系统正常</span>
+                  )}>{t('layout.status.ok')}</span>
                   <p className="text-[10px] text-slate-400 leading-tight">
-                    {agentCount ?? '...'}个Agent · {workflowCount ?? '...'}个工作流
+                    {t('layout.status.summary', { agents: agentCount ?? '...', workflows: workflowCount ?? '...' })}
                   </p>
                 </div>
               </div>
@@ -308,7 +346,7 @@ export default function Layout() {
                     ? 'text-slate-400 hover:text-amber-300 hover:bg-slate-700/60'
                     : 'text-gray-400 hover:text-teal-700 hover:bg-gray-200'
                 )}
-                title={theme === 'dark' ? '切换浅色模式' : '切换深色模式'}
+                title={theme === 'dark' ? t('layout.theme.light') : t('layout.theme.dark')}
               >
                 {theme === 'dark' ? (
                   <Sun className="w-3.5 h-3.5" />
