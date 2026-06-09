@@ -1,9 +1,10 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import {
   AlertCircle,
   ArrowRight,
+  Bell,
   Bot,
   BrainCircuit,
   CheckCircle2,
@@ -14,14 +15,17 @@ import {
   Loader2,
   MessageSquare,
   RefreshCw,
+  Server as ServerIcon,
   ShieldCheck,
   Sparkles,
   Wrench,
+  X,
 } from 'lucide-react';
 import clsx from 'clsx';
 import api from '../lib/api';
 import MarkdownOutput from '../components/MarkdownOutput';
 import { useToast } from '../contexts/ToastContext';
+import { type MessageKey, useLocale } from '../contexts/LocaleContext';
 
 interface Agent {
   id: string;
@@ -66,6 +70,41 @@ interface TraceSummary {
   error?: string;
 }
 
+interface ServerItem {
+  id: string;
+  name: string;
+  hostname: string;
+  port: number;
+  username: string;
+  enabled: number;
+  tags?: string[];
+  os_type?: string;
+}
+
+interface AlertItem {
+  id: string;
+  source: string;
+  severity: string;
+  title: string;
+  content: string;
+  status: string;
+  created_at: string;
+}
+
+interface WorkflowItem {
+  id: string;
+  name: string;
+  description?: string;
+  is_template: number;
+  nodes?: unknown[];
+}
+
+interface KnowledgeItem {
+  id: string;
+  title: string;
+  category?: string;
+}
+
 type HermesMode = 'diagnose' | 'remediate' | 'review';
 
 const panelClass = 'bg-surface/95 backdrop-blur-xl rounded-2xl border border-border shadow-lg';
@@ -73,50 +112,50 @@ const inputClass = 'w-full px-4 py-3 bg-background border border-border rounded-
 
 const HERMES_MODES: Array<{
   id: HermesMode;
-  title: string;
-  subtitle: string;
+  titleKey: MessageKey;
+  subtitleKey: MessageKey;
   agentName: string;
   icon: typeof BrainCircuit;
   color: string;
-  prompts: string[];
+  promptKeys: MessageKey[];
 }> = [
   {
     id: 'diagnose',
-    title: '诊断问题',
-    subtitle: '只读证据、诊断结论、修复建议',
+    titleKey: 'hermes.mode.diagnose.title',
+    subtitleKey: 'hermes.mode.diagnose.subtitle',
     agentName: 'Hermes 诊断修复 Agent',
     icon: FileSearch,
     color: 'text-cyan-400 bg-cyan-500/10 border-cyan-500/20',
-    prompts: [
-      '诊断 k8s-node01 当前 CPU 告警，先收集证据，不要执行修复。',
-      '分析最近的严重告警，判断是否需要提交修复审批。',
-      '检查这批服务器是否存在资源瓶颈，并给出下一步建议。',
+    promptKeys: [
+      'hermes.prompt.diagnose.cpu',
+      'hermes.prompt.diagnose.alerts',
+      'hermes.prompt.diagnose.capacity',
     ],
   },
   {
     id: 'remediate',
-    title: '修复编排',
-    subtitle: '方案确认、审批提交、任务追踪',
+    titleKey: 'hermes.mode.remediate.title',
+    subtitleKey: 'hermes.mode.remediate.subtitle',
     agentName: 'Hermes 修复编排 Agent',
     icon: Wrench,
     color: 'text-amber-400 bg-amber-500/10 border-amber-500/20',
-    prompts: [
-      '根据已确认的故障原因，选择合适的工作流并提交审批。',
-      '为 k8s-node01 的服务异常准备修复编排，列出风险、回滚和验证目标。',
-      '查看可用修复工作流，给出一个需要审批的执行计划。',
+    promptKeys: [
+      'hermes.prompt.remediate.workflow',
+      'hermes.prompt.remediate.service',
+      'hermes.prompt.remediate.plan',
     ],
   },
   {
     id: 'review',
-    title: '复盘优化',
-    subtitle: 'Trace、审批、任务、改进建议',
+    titleKey: 'hermes.mode.review.title',
+    subtitleKey: 'hermes.mode.review.subtitle',
     agentName: 'Hermes 复盘进化 Agent',
     icon: ShieldCheck,
     color: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20',
-    prompts: [
-      '复盘最近一次 Hermes 诊断和修复链路，找出可以优化的地方。',
-      '查看最近失败或等待审批的工具调用，给出改进建议。',
-      '根据最近任务和审批记录，提出工作流和知识库优化 proposal。',
+    promptKeys: [
+      'hermes.prompt.review.trace',
+      'hermes.prompt.review.tools',
+      'hermes.prompt.review.proposal',
     ],
   },
 ];
@@ -222,13 +261,67 @@ function collectTraceLinks(trace: TraceEvent[], correlationId?: string) {
   };
 }
 
+function buildContextLines(options: {
+  servers: ServerItem[];
+  alert?: AlertItem;
+  workflow?: WorkflowItem;
+  knowledgeCategory?: string;
+}, labels: {
+  targetServers: string;
+  relatedAlert: string;
+  alertContent: string;
+  candidateWorkflow: string;
+  workflowDescription: string;
+  knowledgeCategory: string;
+}) {
+  const lines: string[] = [];
+
+  if (options.servers.length > 0) {
+    lines.push(`${labels.targetServers}: ${options.servers.map((server) => `${server.name}(${server.hostname}:${server.port})`).join(', ')}`);
+  }
+
+  if (options.alert) {
+    lines.push(`${labels.relatedAlert}: [${options.alert.severity}/${options.alert.status}] ${options.alert.title} (${options.alert.source})`);
+    if (options.alert.content) {
+      lines.push(`${labels.alertContent}: ${options.alert.content}`);
+    }
+  }
+
+  if (options.workflow) {
+    lines.push(`${labels.candidateWorkflow}: ${options.workflow.name} (${options.workflow.id})`);
+    if (options.workflow.description) {
+      lines.push(`${labels.workflowDescription}: ${options.workflow.description}`);
+    }
+  }
+
+  if (options.knowledgeCategory) {
+    lines.push(`${labels.knowledgeCategory}: ${options.knowledgeCategory}`);
+  }
+
+  return lines;
+}
+
+function buildPromptWithContext(input: string, contextLines: string[], labels: {
+  selectedContext: string;
+  operatorRequest: string;
+}) {
+  if (contextLines.length === 0) return input;
+  return `${labels.selectedContext}:\n${contextLines.map((line) => `- ${line}`).join('\n')}\n\n${labels.operatorRequest}:\n${input}`;
+}
+
 export default function HermesAssistant() {
   const navigate = useNavigate();
   const toast = useToast();
+  const { locale, t } = useLocale();
   const [activeMode, setActiveMode] = useState<HermesMode>('diagnose');
-  const [input, setInput] = useState(HERMES_MODES[0].prompts[0]);
+  const [input, setInput] = useState('');
+  const [activePromptKey, setActivePromptKey] = useState<MessageKey | null>(HERMES_MODES[0].promptKeys[0]);
   const [lastResult, setLastResult] = useState<AgentRunResponse | null>(null);
   const [activeTraceIndex, setActiveTraceIndex] = useState<number | null>(null);
+  const [selectedServerIds, setSelectedServerIds] = useState<string[]>([]);
+  const [selectedAlertId, setSelectedAlertId] = useState('');
+  const [selectedWorkflowId, setSelectedWorkflowId] = useState('');
+  const [selectedKnowledgeCategory, setSelectedKnowledgeCategory] = useState('');
 
   const { data: agents, isLoading, refetch } = useQuery({
     queryKey: ['agents'],
@@ -238,7 +331,46 @@ export default function HermesAssistant() {
     },
   });
 
+  const { data: servers } = useQuery({
+    queryKey: ['servers'],
+    queryFn: async () => {
+      const res = await api.get('/api/servers');
+      return res.data.data as ServerItem[];
+    },
+  });
+
+  const { data: alerts } = useQuery({
+    queryKey: ['alerts', 'hermes-context'],
+    queryFn: async () => {
+      const res = await api.get('/api/alerts', { params: { limit: 30 } });
+      return res.data.data as AlertItem[];
+    },
+  });
+
+  const { data: workflows } = useQuery({
+    queryKey: ['workflows'],
+    queryFn: async () => {
+      const res = await api.get('/api/workflows');
+      return res.data.data as WorkflowItem[];
+    },
+  });
+
+  const { data: knowledgeItems } = useQuery({
+    queryKey: ['knowledge', 'hermes-context'],
+    queryFn: async () => {
+      const res = await api.get('/api/knowledge');
+      return res.data.data as KnowledgeItem[];
+    },
+  });
+
   const mode = HERMES_MODES.find((item) => item.id === activeMode) || HERMES_MODES[0];
+
+  useEffect(() => {
+    if (activePromptKey) {
+      setInput(t(activePromptKey));
+    }
+  }, [activePromptKey, t]);
+
   const selectedAgent = useMemo(() => {
     return (agents || []).find((agent) => agent.name === mode.agentName) || null;
   }, [agents, mode.agentName]);
@@ -249,19 +381,88 @@ export default function HermesAssistant() {
     : [];
   const trace = lastResult?.trace || lastResult?.metadata?.trace || [];
   const traceLinks = collectTraceLinks(trace, lastResult?.metadata?.correlationId);
+  const enabledServers = useMemo(() => (servers || []).filter((server) => server.enabled === 1), [servers]);
+  const templateWorkflows = useMemo(() => (workflows || []).filter((workflow) => workflow.is_template === 1), [workflows]);
+  const knowledgeCategories = useMemo(() => {
+    return Array.from(new Set((knowledgeItems || []).map((item) => item.category).filter((category): category is string => Boolean(category)))).sort();
+  }, [knowledgeItems]);
+  const selectedServers = useMemo(
+    () => enabledServers.filter((server) => selectedServerIds.includes(server.id)),
+    [enabledServers, selectedServerIds]
+  );
+  const selectedAlert = useMemo(
+    () => (alerts || []).find((alert) => alert.id === selectedAlertId),
+    [alerts, selectedAlertId]
+  );
+  const selectedWorkflow = useMemo(
+    () => (workflows || []).find((workflow) => workflow.id === selectedWorkflowId),
+    [workflows, selectedWorkflowId]
+  );
+  const contextLabels = useMemo(() => ({
+    targetServers: t('hermes.context.targetServers'),
+    relatedAlert: t('hermes.context.relatedAlert'),
+    alertContent: t('hermes.context.alertContent'),
+    candidateWorkflow: t('hermes.context.candidateWorkflow'),
+    workflowDescription: t('hermes.context.workflowDescription'),
+    knowledgeCategory: t('hermes.context.knowledgeCategoryPriority'),
+    selectedContext: t('hermes.prompt.contextHeader'),
+    operatorRequest: t('hermes.prompt.operatorRequest'),
+  }), [t]);
+  const contextLines = buildContextLines({
+    servers: selectedServers,
+    alert: selectedAlert,
+    workflow: selectedWorkflow,
+    knowledgeCategory: selectedKnowledgeCategory || undefined,
+  }, contextLabels);
+
+  const toggleServer = (serverId: string) => {
+    setSelectedServerIds((current) => (
+      current.includes(serverId)
+        ? current.filter((id) => id !== serverId)
+        : [...current, serverId]
+    ));
+  };
+
+  const clearContext = () => {
+    setSelectedServerIds([]);
+    setSelectedAlertId('');
+    setSelectedWorkflowId('');
+    setSelectedKnowledgeCategory('');
+  };
 
   const runMutation = useMutation({
     mutationFn: async () => {
       if (!selectedAgent) {
-        throw new Error('未找到对应的 Hermes Agent');
+        throw new Error(t('hermes.error.agentNotFound'));
       }
       const correlationId = createCorrelationId();
+      const finalInput = buildPromptWithContext(input, contextLines, contextLabels);
       const res = await api.post(`/api/agents/${selectedAgent.id}/test`, {
-        input,
+        input: finalInput,
+        serverId: selectedServerIds[0],
+        serverIds: selectedServerIds,
         context: {
           source: 'hermes_assistant',
           mode: activeMode,
           correlationId,
+          serverIds: selectedServerIds,
+          serverId: selectedServerIds[0],
+          alertId: selectedAlertId || undefined,
+          alert: selectedAlert ? {
+            id: selectedAlert.id,
+            title: selectedAlert.title,
+            severity: selectedAlert.severity,
+            status: selectedAlert.status,
+            source: selectedAlert.source,
+          } : undefined,
+          workflowId: selectedWorkflowId || undefined,
+          workflow: selectedWorkflow ? {
+            id: selectedWorkflow.id,
+            name: selectedWorkflow.name,
+            description: selectedWorkflow.description,
+          } : undefined,
+          knowledgeCategory: selectedKnowledgeCategory || undefined,
+          selectedContext: contextLines,
         },
       });
       return res.data.data as AgentRunResponse;
@@ -269,14 +470,15 @@ export default function HermesAssistant() {
     onSuccess: (data) => {
       setLastResult(data);
       setActiveTraceIndex(null);
-      toast.success('Hermes 执行完成');
+      toast.success(t('hermes.toast.completed'));
     },
     onError: (error: unknown) => {
-      toast.error(error instanceof Error ? error.message : 'Hermes 执行失败');
+      toast.error(error instanceof Error ? error.message : t('hermes.toast.failed'));
     },
   });
 
   const ModeIcon = mode.icon;
+  const joinNames = (names: string[]) => names.join(locale === 'zh-CN' ? '、' : ', ');
 
   return (
     <div className="h-full overflow-auto p-6">
@@ -288,8 +490,8 @@ export default function HermesAssistant() {
                 <BrainCircuit className="w-5 h-5 text-primary" />
               </div>
               <div>
-                <h1 className="text-2xl font-bold text-text-primary">Hermes 运维助手</h1>
-                <p className="text-text-secondary">诊断、修复审批、复盘优化</p>
+                <h1 className="text-2xl font-bold text-text-primary">{t('hermes.title')}</h1>
+                <p className="text-text-secondary">{t('hermes.subtitle')}</p>
               </div>
             </div>
           </div>
@@ -301,7 +503,7 @@ export default function HermesAssistant() {
               className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-surface border border-border text-text-secondary hover:text-text-primary transition-colors"
             >
               <ShieldCheck className="w-4 h-4" />
-              工具审批
+              {t('hermes.nav.approvals')}
             </button>
             <button
               type="button"
@@ -309,7 +511,7 @@ export default function HermesAssistant() {
               className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-surface border border-border text-text-secondary hover:text-text-primary transition-colors"
             >
               <GitBranch className="w-4 h-4" />
-              任务执行
+              {t('hermes.nav.tasks')}
             </button>
             <button
               type="button"
@@ -317,7 +519,7 @@ export default function HermesAssistant() {
               className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-surface border border-border text-text-secondary hover:text-text-primary transition-colors"
             >
               <RefreshCw className="w-4 h-4" />
-              刷新
+              {t('common.refresh')}
             </button>
           </div>
         </div>
@@ -334,7 +536,7 @@ export default function HermesAssistant() {
                   type="button"
                   onClick={() => {
                     setActiveMode(item.id);
-                    setInput(item.prompts[0]);
+                    setActivePromptKey(item.promptKeys[0]);
                     setLastResult(null);
                     setActiveTraceIndex(null);
                   }}
@@ -351,14 +553,14 @@ export default function HermesAssistant() {
                     </div>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
-                        <h2 className="font-semibold text-text-primary">{item.title}</h2>
+                        <h2 className="font-semibold text-text-primary">{t(item.titleKey)}</h2>
                         {agent?.enabled === 1 ? (
                           <span className="w-2 h-2 rounded-full bg-status-success" />
                         ) : (
                           <span className="w-2 h-2 rounded-full bg-status-failed" />
                         )}
                       </div>
-                      <p className="text-xs text-text-secondary mt-1">{item.subtitle}</p>
+                      <p className="text-xs text-text-secondary mt-1">{t(item.subtitleKey)}</p>
                       <p className="text-xs text-text-tertiary mt-2 truncate">{item.agentName}</p>
                     </div>
                   </div>
@@ -369,10 +571,10 @@ export default function HermesAssistant() {
             <div className={clsx(panelClass, 'p-4')}>
               <div className="flex items-center gap-2 mb-3">
                 <Bot className="w-4 h-4 text-primary" />
-                <h3 className="text-sm font-semibold text-text-primary">当前 Agent</h3>
+                <h3 className="text-sm font-semibold text-text-primary">{t('hermes.currentAgent')}</h3>
               </div>
               {isLoading ? (
-                <div className="text-sm text-text-secondary">加载中...</div>
+                <div className="text-sm text-text-secondary">{t('common.loading')}</div>
               ) : selectedAgent ? (
                 <div className="space-y-3">
                   <div>
@@ -394,7 +596,7 @@ export default function HermesAssistant() {
                         ? 'bg-status-success/10 text-status-success border-status-success/20'
                         : 'bg-status-failed/10 text-status-failed border-status-failed/20'
                     )}>
-                      {selectedAgent.enabled === 1 ? '已启用' : '已停用'}
+                      {selectedAgent.enabled === 1 ? t('common.enabled') : t('common.disabled')}
                     </span>
                   </div>
                   {allowedTools.length > 0 && (
@@ -410,7 +612,7 @@ export default function HermesAssistant() {
               ) : (
                 <div className="flex items-start gap-2 text-sm text-status-warning">
                   <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
-                  <span>未找到 {mode.agentName}</span>
+                  <span>{t('hermes.notFound', { agent: mode.agentName })}</span>
                 </div>
               )}
             </div>
@@ -423,39 +625,208 @@ export default function HermesAssistant() {
                   <ModeIcon className="w-5 h-5" />
                 </div>
                 <div>
-                  <h2 className="text-lg font-semibold text-text-primary">{mode.title}</h2>
-                  <p className="text-sm text-text-secondary">{mode.subtitle}</p>
+                  <h2 className="text-lg font-semibold text-text-primary">{t(mode.titleKey)}</h2>
+                  <p className="text-sm text-text-secondary">{t(mode.subtitleKey)}</p>
                 </div>
               </div>
 
+              <div className="mb-5 rounded-xl bg-background border border-border p-4">
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between mb-4">
+                  <div>
+                    <h3 className="text-sm font-semibold text-text-primary">{t('hermes.context.title')}</h3>
+                    <p className="text-xs text-text-tertiary mt-1">{t('hermes.context.subtitle')}</p>
+                  </div>
+                  {(selectedServerIds.length > 0 || selectedAlertId || selectedWorkflowId || selectedKnowledgeCategory) && (
+                    <button
+                      type="button"
+                      onClick={clearContext}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface border border-border text-xs text-text-secondary hover:text-text-primary transition-colors"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                      {t('hermes.context.clear')}
+                    </button>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  <div>
+                    <div className="flex items-center gap-2 mb-2">
+                      <ServerIcon className="w-4 h-4 text-text-tertiary" />
+                      <label className="text-xs font-medium text-text-secondary">{t('hermes.context.targetServers')}</label>
+                    </div>
+                    <div className="max-h-32 overflow-y-auto rounded-lg border border-border bg-surface p-2">
+                      {enabledServers.length === 0 ? (
+                        <div className="px-2 py-3 text-xs text-text-tertiary">{t('hermes.context.noServers')}</div>
+                      ) : (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          {enabledServers.slice(0, 12).map((server) => {
+                            const checked = selectedServerIds.includes(server.id);
+                            return (
+                              <button
+                                key={server.id}
+                                type="button"
+                                onClick={() => toggleServer(server.id)}
+                                className={clsx(
+                                  'text-left rounded-lg border px-3 py-2 transition-colors min-w-0',
+                                  checked
+                                    ? 'bg-primary/10 border-primary/40 text-primary'
+                                    : 'bg-background border-border text-text-secondary hover:text-text-primary hover:border-primary/30'
+                                )}
+                              >
+                                <div className="flex items-center justify-between gap-2">
+                                  <span className="text-xs font-medium truncate">{server.name}</span>
+                                  {checked && <CheckCircle2 className="w-3.5 h-3.5 flex-shrink-0" />}
+                                </div>
+                                <div className="text-[11px] text-text-tertiary truncate mt-0.5">{server.hostname}</div>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-3">
+                    <div>
+                      <div className="flex items-center gap-2 mb-2">
+                        <Bell className="w-4 h-4 text-text-tertiary" />
+                        <label className="text-xs font-medium text-text-secondary">{t('hermes.context.relatedAlert')}</label>
+                      </div>
+                      <select
+                        value={selectedAlertId}
+                        onChange={(event) => setSelectedAlertId(event.target.value)}
+                        className="w-full px-3 py-2 rounded-lg bg-surface border border-border text-sm text-text-primary focus:outline-none focus:border-primary/60"
+                      >
+                        <option value="">{t('hermes.context.noAlert')}</option>
+                        {(alerts || []).slice(0, 30).map((alert) => (
+                          <option key={alert.id} value={alert.id}>
+                            [{alert.severity}] {alert.title}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <div className="flex items-center gap-2 mb-2">
+                        <GitBranch className="w-4 h-4 text-text-tertiary" />
+                        <label className="text-xs font-medium text-text-secondary">{t('hermes.context.candidateWorkflow')}</label>
+                      </div>
+                      <select
+                        value={selectedWorkflowId}
+                        onChange={(event) => setSelectedWorkflowId(event.target.value)}
+                        className="w-full px-3 py-2 rounded-lg bg-surface border border-border text-sm text-text-primary focus:outline-none focus:border-primary/60"
+                      >
+                        <option value="">{t('hermes.context.noWorkflow')}</option>
+                        {templateWorkflows.map((workflow) => (
+                          <option key={workflow.id} value={workflow.id}>
+                            {workflow.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <div className="flex items-center gap-2 mb-2">
+                        <FileSearch className="w-4 h-4 text-text-tertiary" />
+                        <label className="text-xs font-medium text-text-secondary">{t('hermes.context.knowledgeCategory')}</label>
+                      </div>
+                      <select
+                        value={selectedKnowledgeCategory}
+                        onChange={(event) => setSelectedKnowledgeCategory(event.target.value)}
+                        className="w-full px-3 py-2 rounded-lg bg-surface border border-border text-sm text-text-primary focus:outline-none focus:border-primary/60"
+                      >
+                        <option value="">{t('hermes.context.noCategory')}</option>
+                        {knowledgeCategories.map((category) => (
+                          <option key={category} value={category}>
+                            {category}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                </div>
+
+                {contextLines.length > 0 && (
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    {contextLines.map((line) => (
+                      <span key={line} className="max-w-full px-2 py-1 rounded-lg bg-primary/10 text-primary border border-primary/20 text-xs truncate">
+                        {line}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+
               <div className="mb-4 flex flex-wrap gap-2">
-                {mode.prompts.map((prompt) => (
+                {mode.promptKeys.map((promptKey) => (
                   <button
-                    key={prompt}
+                    key={promptKey}
                     type="button"
-                    onClick={() => setInput(prompt)}
+                    onClick={() => {
+                      setActivePromptKey(promptKey);
+                      setInput(t(promptKey));
+                    }}
                     className="px-3 py-1.5 rounded-lg bg-background border border-border text-xs text-text-secondary hover:text-text-primary hover:border-primary/40 transition-colors"
                   >
-                    {prompt}
+                    {t(promptKey)}
                   </button>
                 ))}
+                {selectedServers.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActivePromptKey(null);
+                      setInput(t('hermes.quick.diagnoseInput', { servers: joinNames(selectedServers.map((server) => server.name)) }));
+                    }}
+                    className="px-3 py-1.5 rounded-lg bg-primary/10 border border-primary/20 text-xs text-primary hover:bg-primary/15 transition-colors"
+                  >
+                    {t('hermes.quick.diagnoseSelected')}
+                  </button>
+                )}
+                {selectedAlert && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActivePromptKey(null);
+                      setInput(t('hermes.quick.alertInput', { alert: selectedAlert.title }));
+                    }}
+                    className="px-3 py-1.5 rounded-lg bg-amber-500/10 border border-amber-500/20 text-xs text-amber-300 hover:bg-amber-500/15 transition-colors"
+                  >
+                    {t('hermes.quick.analyzeAlert')}
+                  </button>
+                )}
+                {selectedWorkflow && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActivePromptKey(null);
+                      setInput(t('hermes.quick.workflowInput', { workflow: selectedWorkflow.name }));
+                    }}
+                    className="px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-300 hover:bg-emerald-500/15 transition-colors"
+                  >
+                    {t('hermes.quick.prepareWorkflow')}
+                  </button>
+                )}
               </div>
 
               <textarea
                 value={input}
-                onChange={(event) => setInput(event.target.value)}
+                onChange={(event) => {
+                  setActivePromptKey(null);
+                  setInput(event.target.value);
+                }}
                 rows={7}
                 className={clsx(inputClass, 'resize-none')}
-                placeholder="输入要交给 Hermes 处理的问题..."
+                placeholder={t('hermes.input.placeholder')}
               />
 
               <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div className="flex flex-wrap gap-2 text-xs text-text-tertiary">
                   <span className="px-2 py-1 rounded-lg bg-background border border-border">
-                    correlation 自动生成
+                    {t('hermes.badge.correlation')}
                   </span>
                   <span className="px-2 py-1 rounded-lg bg-background border border-border">
-                    trace 自动保存
+                    {t('hermes.badge.trace')}
                   </span>
                 </div>
                 <button
@@ -469,7 +840,7 @@ export default function HermesAssistant() {
                   ) : (
                     <Sparkles className="w-4 h-4" />
                   )}
-                  运行 Hermes
+                  {t('hermes.run')}
                 </button>
               </div>
             </div>
@@ -484,7 +855,7 @@ export default function HermesAssistant() {
                       ) : (
                         <AlertCircle className="w-5 h-5 text-status-failed" />
                       )}
-                      <h2 className="text-lg font-semibold text-text-primary">执行结果</h2>
+                      <h2 className="text-lg font-semibold text-text-primary">{t('hermes.result.title')}</h2>
                     </div>
                     <div className="mt-2 flex flex-wrap gap-2 text-xs">
                       <span className="px-2 py-1 rounded-lg bg-background border border-border text-text-secondary">
@@ -511,7 +882,7 @@ export default function HermesAssistant() {
                         onClick={() => navigate(`/tool-approvals?approvalId=${encodeURIComponent(approvalId)}`)}
                         className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500/10 text-amber-300 border border-amber-500/20 hover:bg-amber-500/20 text-xs"
                       >
-                        审批 {shortId(approvalId)}
+                        {t('hermes.link.approval', { id: shortId(approvalId) })}
                         <ExternalLink className="w-3 h-3" />
                       </button>
                     ))}
@@ -522,7 +893,7 @@ export default function HermesAssistant() {
                         onClick={() => navigate(`/tasks?taskId=${encodeURIComponent(taskId)}`)}
                         className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-green-500/10 text-green-300 border border-green-500/20 hover:bg-green-500/20 text-xs"
                       >
-                        任务 {shortId(taskId)}
+                        {t('hermes.link.task', { id: shortId(taskId) })}
                         <ExternalLink className="w-3 h-3" />
                       </button>
                     ))}
@@ -530,7 +901,7 @@ export default function HermesAssistant() {
                 </div>
 
                 <div className="rounded-xl bg-background border border-border p-4">
-                  <MarkdownOutput content={lastResult.output || '(无输出)'} />
+                  <MarkdownOutput content={lastResult.output || t('hermes.result.empty')} />
                 </div>
               </div>
             )}
@@ -540,9 +911,9 @@ export default function HermesAssistant() {
                 <div className="flex items-center justify-between mb-4">
                   <div className="flex items-center gap-2">
                     <Clock className="w-5 h-5 text-primary" />
-                    <h2 className="text-lg font-semibold text-text-primary">Trace 时间线</h2>
+                    <h2 className="text-lg font-semibold text-text-primary">{t('hermes.trace.title')}</h2>
                   </div>
-                  <span className="text-xs text-text-tertiary">{trace.length} 条</span>
+                  <span className="text-xs text-text-tertiary">{t('hermes.trace.count', { count: trace.length })}</span>
                 </div>
 
                 <div className="space-y-3">
@@ -612,7 +983,7 @@ export default function HermesAssistant() {
                                 onClick={() => navigate(`/tool-approvals?approvalId=${encodeURIComponent(summary.approvalId!)}`)}
                                 className="inline-flex items-center gap-1 px-2 py-1 rounded bg-amber-500/10 text-amber-300 border border-amber-500/20 hover:bg-amber-500/20"
                               >
-                                approval {shortId(summary.approvalId)}
+                                {t('hermes.link.approvalLower', { id: shortId(summary.approvalId) })}
                                 <ExternalLink className="w-3 h-3" />
                               </button>
                             )}
@@ -622,7 +993,7 @@ export default function HermesAssistant() {
                                 onClick={() => navigate(`/tasks?taskId=${encodeURIComponent(summary.taskId!)}`)}
                                 className="inline-flex items-center gap-1 px-2 py-1 rounded bg-green-500/10 text-green-300 border border-green-500/20 hover:bg-green-500/20"
                               >
-                                task {shortId(summary.taskId)}
+                                {t('hermes.link.taskLower', { id: shortId(summary.taskId) })}
                                 <ExternalLink className="w-3 h-3" />
                               </button>
                             )}
