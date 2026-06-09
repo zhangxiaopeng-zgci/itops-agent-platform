@@ -5,7 +5,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   Server, Bot, Play, Bell,
   Shield, Network, Cpu, MemoryStick, HardDrive,
-  CheckCircle, RefreshCcw, Globe, Terminal, FileCode,
+  CheckCircle, RefreshCcw, Terminal, FileCode,
   Maximize2, Minimize2, AlertCircle, ChevronRight,
   Clock, TrendingUp, Target,
 } from 'lucide-react';
@@ -215,7 +215,7 @@ export default function BigScreenDashboard() {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [dashboardTitle, setDashboardTitle] = useState(() => {
     const saved = localStorage.getItem('dashboardTitle');
-    return saved || 'ITOps 运维监控大屏';
+    return !saved || saved === 'ITOps 运维监控大屏' ? 'AIOps 运维监控大屏' : saved;
   });
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [titleInputValue, setTitleInputValue] = useState(dashboardTitle);
@@ -241,7 +241,7 @@ export default function BigScreenDashboard() {
   }, []);
 
   useEffect(() => {
-    if (dashboardTitle !== 'ITOps 运维监控大屏') {
+    if (dashboardTitle !== 'AIOps 运维监控大屏') {
       localStorage.setItem('dashboardTitle', dashboardTitle);
     }
   }, [dashboardTitle]);
@@ -619,7 +619,7 @@ export default function BigScreenDashboard() {
   return (
     <div
       ref={containerRef}
-      className={`relative ${isFullscreen ? 'fixed inset-0 z-50 bg-slate-950' : 'h-screen'} overflow-y-auto bg-gradient-to-br from-slate-950 via-blue-950/20 to-slate-950 ${criticalAlertCount > 0 ? 'before:content-[""] before:absolute before:inset-0 before:z-5 before:pointer-events-none before:border-4 before:border-red-500/40 before:rounded-lg before:animate-pulse' : ''}`}
+      className={`relative ${isFullscreen ? 'fixed inset-0 z-50 bg-background' : 'h-screen'} overflow-y-auto bg-background ${criticalAlertCount > 0 ? 'before:content-[""] before:absolute before:inset-0 before:z-5 before:pointer-events-none before:border-4 before:border-red-500/40 before:rounded-lg before:animate-pulse' : ''}`}
     >
       <ParticleBackground />
 
@@ -710,7 +710,6 @@ export default function BigScreenDashboard() {
           {/* 顶部中间快捷入口 */}
           <div className="flex items-center gap-2">
             {[
-              { icon: Globe, label: '官网', color: 'text-blue-400', href: 'https://www.zjzwfw.cloud/' },
               { icon: Terminal, label: '终端', color: 'text-green-400', href: '/terminal' },
               { icon: FileCode, label: '脚本', color: 'text-purple-400', href: '/scripts' },
               { icon: Shield, label: '审计', color: 'text-yellow-400', href: '/audit' },
@@ -719,11 +718,7 @@ export default function BigScreenDashboard() {
                 key={item.label}
                 className="flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-800/40 border border-slate-700/30 hover:border-slate-600/50 transition-all cursor-pointer"
                 onClick={() => {
-                  if (item.href.startsWith('http')) {
-                    window.open(item.href, '_blank');
-                  } else {
-                    navigate(item.href);
-                  }
+                  navigate(item.href);
                 }}
               >
                 <item.icon className={`w-4 h-4 ${item.color}`} />
@@ -1289,7 +1284,7 @@ export default function BigScreenDashboard() {
             </span>
           </div>
           <div className="flex items-center gap-4">
-            <span>ITOps Agent Platform v3.0.1</span>
+            <span>AIOps Agent Platform v3.0.1</span>
             <span>© 2026</span>
           </div>
         </footer>

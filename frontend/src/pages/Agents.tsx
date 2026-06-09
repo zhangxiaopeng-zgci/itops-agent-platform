@@ -398,15 +398,15 @@ export default function Agents() {
             {filteredAgents.map((agent) => (
               <div
                 key={agent.id}
-                className="group relative bg-gradient-to-br from-slate-800/70 to-slate-900/70 backdrop-blur-xl rounded-2xl p-6 border border-slate-700/50 hover:border-blue-500/50 hover:shadow-xl hover:shadow-blue-500/10 transition-all duration-300 transform hover:-translate-y-1"
+                className="group relative bg-gradient-to-br from-slate-800/70 to-slate-900/70 backdrop-blur-xl rounded-2xl p-6 border border-slate-700/50 hover:border-primary/50 hover:shadow-xl hover:shadow-black/20 transition-all duration-300 transform hover:-translate-y-1"
               >
                 {/* Background glow effect */}
-                <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-blue-500/10 to-purple-500/10 rounded-full blur-2xl -z-10 group-hover:opacity-100 opacity-50 transition-opacity" />
+                <div className="absolute top-0 right-0 w-32 h-32 bg-primary/10 rounded-full blur-2xl -z-10 group-hover:opacity-100 opacity-50 transition-opacity" />
                 
                 <div className="flex items-start justify-between mb-5">
                   <div className="flex items-center gap-4 cursor-pointer" onClick={() => setShowDetail(agent.id)}>
                     <div className="relative">
-                      <div className="w-14 h-14 flex items-center justify-center rounded-2xl bg-gradient-to-br from-blue-500/20 to-purple-500/20 border border-blue-400/30 shadow-lg shadow-blue-500/20 text-3xl">
+                      <div className="w-14 h-14 flex items-center justify-center rounded-2xl bg-primary/10 border border-primary/30 shadow-lg shadow-black/20 text-3xl">
                         {agent.avatar}
                       </div>
                       <div className="absolute -bottom-1 -right-1">
@@ -417,13 +417,13 @@ export default function Agents() {
                       </div>
                     </div>
                     <div>
-                      <h3 className="font-bold text-white tracking-tight group-hover:text-blue-300 transition-colors">{agent.name}</h3>
+                      <h3 className="font-bold text-white tracking-tight group-hover:text-primary transition-colors">{agent.name}</h3>
                       <p className="text-sm text-slate-400 mt-1">{agent.role}</p>
                     </div>
                   </div>
                   <div className="flex flex-col gap-2 items-end">
                     {agent.is_preset === 1 && (
-                      <span className="px-3 py-1 bg-gradient-to-r from-blue-600/20 to-purple-600/20 text-blue-400 text-xs rounded-full border border-blue-500/30 font-medium">
+                      <span className="px-3 py-1 bg-primary/10 text-primary text-xs rounded-full border border-primary/30 font-medium">
                         预设
                       </span>
                     )}
@@ -1478,7 +1478,7 @@ function AgentModal({ agent, onClose }: { agent: Agent | null; onClose: () => vo
             <button
               type="button"
               onClick={() => setShowTestModal(true)}
-              className="px-5 py-2.5 bg-gradient-to-r from-blue-600/20 to-purple-600/20 text-blue-400 border border-blue-500/30 rounded-xl hover:from-blue-600/30 hover:to-purple-600/30 transition-all font-semibold"
+              className="px-5 py-2.5 bg-primary/10 text-primary border border-primary/30 rounded-xl hover:bg-primary/15 transition-all font-semibold"
             >
               🧪 测试 Agent
             </button>

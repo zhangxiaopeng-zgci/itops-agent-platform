@@ -3,7 +3,7 @@ import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Bell, Database, Shield, Loader2, CheckCircle2, AlertCircle, Sun, Moon, Lock, BookOpen, Upload, FileText, Globe, Wifi, Brain } from 'lucide-react';
 import clsx from 'clsx';
-import { useTheme } from '../hooks/useTheme';
+import { BackgroundStyle, useTheme } from '../contexts/ThemeContext';
 import api from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
 import { validatePassword, getPasswordStrength } from '../utils/passwordValidator';
@@ -20,7 +20,7 @@ export default function Settings() {
   const [searchParams] = useSearchParams();
   const [activeTab, setActiveTab] = useState('models');
   const queryClient = useQueryClient();
-  const { theme, toggleTheme } = useTheme();
+  const { theme, backgroundStyle, toggleTheme, setBackgroundStyle } = useTheme();
   const { user, login, updateUser } = useAuth();
   const navigate = useNavigate();
 
@@ -419,6 +419,26 @@ export default function Settings() {
     { id: 'notifications', name: '通知设置', icon: Bell },
     { id: 'database', name: '数据库', icon: Database },
     { id: 'security', name: '安全设置', icon: Shield },
+  ];
+  const backgroundOptions: Array<{ id: BackgroundStyle; name: string; description: string; swatches: string[] }> = [
+    {
+      id: 'graphite',
+      name: '石墨绿',
+      description: '克制、稳定，适合长时间运维值守',
+      swatches: ['#10130f', '#1b211d', '#0f766e']
+    },
+    {
+      id: 'steel',
+      name: '钢蓝灰',
+      description: '冷静、技术感，适合监控和网络场景',
+      swatches: ['#111827', '#1f2937', '#0e7490']
+    },
+    {
+      id: 'amber',
+      name: '暖琥珀',
+      description: '低刺激、偏暖，适合弱光环境',
+      swatches: ['#14120e', '#211d17', '#b45309']
+    }
   ];
 
   return (
@@ -1263,6 +1283,40 @@ export default function Settings() {
                     </div>
 
                     <div className="bg-background rounded-lg p-4">
+                      <h4 className="font-medium text-text-primary mb-2">背景风格</h4>
+                      <p className="text-sm text-text-secondary mb-4">
+                        选择适合当前使用环境的界面基调
+                      </p>
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                        {backgroundOptions.map((option) => (
+                          <button
+                            key={option.id}
+                            type="button"
+                            onClick={() => setBackgroundStyle(option.id)}
+                            className={clsx(
+                              'text-left rounded-lg border p-3 transition-all',
+                              backgroundStyle === option.id
+                                ? 'border-primary bg-primary/10'
+                                : 'border-border bg-surface hover:border-primary/50'
+                            )}
+                          >
+                            <div className="flex items-center gap-2 mb-3">
+                              {option.swatches.map((color) => (
+                                <span
+                                  key={color}
+                                  className="w-5 h-5 rounded-full border border-white/10"
+                                  style={{ backgroundColor: color }}
+                                />
+                              ))}
+                            </div>
+                            <div className="font-medium text-text-primary">{option.name}</div>
+                            <div className="text-xs text-text-secondary mt-1">{option.description}</div>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="bg-background rounded-lg p-4">
                       <h4 className="font-medium text-text-primary mb-2">CORS配置</h4>
                       <p className="text-sm text-text-secondary mb-3">
                         允许的前端域名
@@ -1280,19 +1334,6 @@ export default function Settings() {
           </div>
         </div>
 
-        {/* 微信公众号二维码 */}
-        <div className="bg-surface rounded-xl p-6 border border-border">
-          <h3 className="text-lg font-semibold text-text-primary mb-4">关注我们</h3>
-          <p className="text-sm text-text-secondary mb-4">扫码关注微信公众号，获取更多运维资讯</p>
-          <div className="flex justify-center">
-            <img
-              src="/wechaterweima.png"
-              alt="微信公众号二维码"
-              className="max-w-full h-auto rounded-lg border border-border"
-              style={{ maxHeight: '300px', objectFit: 'contain' }}
-            />
-          </div>
-        </div>
       </div>
     </div>
   );

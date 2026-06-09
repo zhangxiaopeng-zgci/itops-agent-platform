@@ -5,7 +5,7 @@ export default function NotFound() {
   const navigate = useNavigate();
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-blue-950/20 to-slate-950 flex items-center justify-center p-6">
+    <div className="min-h-screen bg-background flex items-center justify-center p-6">
       <div className="text-center max-w-lg">
         <div className="relative mb-8">
           <div className="w-32 h-32 mx-auto rounded-full bg-gradient-to-br from-red-500/20 to-yellow-500/20 flex items-center justify-center border border-red-500/30">
@@ -29,7 +29,7 @@ export default function NotFound() {
           </button>
           <button
             onClick={() => navigate('/')}
-            className="flex items-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl shadow-lg shadow-blue-600/30 transition-all"
+            className="flex items-center gap-2 px-6 py-3 bg-primary hover:bg-primary/90 text-white rounded-xl shadow-lg shadow-black/25 transition-all"
           >
             <Home className="w-4 h-4" />
             返回首页

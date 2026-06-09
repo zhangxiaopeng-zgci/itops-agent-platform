@@ -154,7 +154,7 @@ export default function ChatWidget() {
     return (
       <button
         onClick={() => setIsOpen(true)}
-        className="fixed bottom-6 right-6 w-14 h-14 bg-gradient-to-r from-blue-600 to-purple-600 rounded-full shadow-lg shadow-blue-500/30 hover:shadow-xl hover:shadow-blue-500/40 transition-all duration-300 flex items-center justify-center text-white hover:scale-[1.05] active:scale-[0.95] z-50"
+        className="fixed bottom-6 right-6 w-14 h-14 bg-primary rounded-full shadow-lg shadow-black/25 hover:shadow-xl hover:shadow-black/35 transition-all duration-300 flex items-center justify-center text-white hover:scale-[1.05] active:scale-[0.95] z-50"
       >
         <Bot className="w-7 h-7" />
       </button>
@@ -184,10 +184,10 @@ export default function ChatWidget() {
     <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end">
       {!isMinimized && (
         <div className={`w-[420px] h-[600px] ${bgMain} rounded-2xl shadow-2xl border ${borderColor} flex flex-col mb-3 overflow-hidden animate-slide-up`}>
-          <div className="flex items-center justify-between px-4 py-3 bg-gradient-to-r from-blue-600 to-purple-600 flex-shrink-0">
+          <div className="flex items-center justify-between px-4 py-3 bg-primary flex-shrink-0">
             <div className="flex items-center gap-2">
               <Bot className="w-5 h-5 text-white" />
-              <h3 className="font-semibold text-white">IT运维助手</h3>
+              <h3 className="font-semibold text-white">AIOps 助手</h3>
             </div>
             <div className="flex items-center gap-1">
               <button
@@ -211,7 +211,7 @@ export default function ChatWidget() {
                 onClick={() => {
                   createConversationMutation.mutate();
                 }}
-                className="m-2 px-3 py-2 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 disabled:opacity-50 text-white text-xs rounded-lg flex items-center justify-center gap-1.5 transition-all font-medium"
+                className="m-2 px-3 py-2 bg-primary hover:bg-primary/90 disabled:opacity-50 text-white text-xs rounded-lg flex items-center justify-center gap-1.5 transition-all font-medium"
                 disabled={createConversationMutation.isPending}
               >
                 {createConversationMutation.isPending ? (
@@ -229,7 +229,7 @@ export default function ChatWidget() {
                     onClick={() => setCurrentConversationId(c.id)}
                     className={`p-2 rounded-lg cursor-pointer transition-all text-xs ${
                       c.id === currentConversationId
-                        ? 'bg-gradient-to-r from-blue-600 to-purple-600 text-white shadow-lg shadow-blue-500/20'
+                        ? 'bg-primary text-white shadow-lg shadow-black/20'
                         : `${cardBg} ${textSecondary} ${hoverBg}`
                     }`}
                   >
@@ -261,7 +261,7 @@ export default function ChatWidget() {
                     <div>
                       <p className="text-yellow-300 font-medium text-sm">需要修改密码</p>
                       <p className="text-yellow-200/80 text-xs mt-1">
-                        请先去设置页面修改初始密码，然后再使用IT运维助手
+                        请先去设置页面修改初始密码，然后再使用 AIOps 助手
                       </p>
                     </div>
                   </div>
@@ -269,7 +269,7 @@ export default function ChatWidget() {
               )}
               {!currentConversationId ? (
                 <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
-                  <Bot className="w-12 h-12 text-blue-500 mb-4" />
+                  <Bot className="w-12 h-12 text-primary mb-4" />
                   <h3 className={`text-lg font-semibold ${textPrimary} mb-2`}>需要帮助？</h3>
                   <p className={`${textSecondary} text-sm mb-6`}>
                     选择或创建对话开始
@@ -298,13 +298,13 @@ export default function ChatWidget() {
                       >
                         <div className="flex items-start gap-2 max-w-[85%]">
                           {msg.role === 'assistant' && (
-                            <div className="w-7 h-7 bg-gradient-to-r from-blue-600 to-purple-600 rounded-full flex items-center justify-center flex-shrink-0 shadow-lg shadow-blue-500/20">
+                            <div className="w-7 h-7 bg-primary rounded-full flex items-center justify-center flex-shrink-0 shadow-lg shadow-black/20">
                               <Bot className="w-4 h-4 text-white" />
                             </div>
                           )}
                           <div className={`p-3 rounded-xl ${
                             msg.role === 'user'
-                              ? 'bg-gradient-to-r from-blue-600 to-purple-600 text-white shadow-lg shadow-blue-500/20'
+                              ? 'bg-primary text-white shadow-lg shadow-black/20'
                               : `${msgBg} ${textSecondary} border ${msgBorder}`
                           }`}>
                             {msg.role === 'assistant' && msg.content ? (
@@ -324,14 +324,14 @@ export default function ChatWidget() {
                     {sendMessageMutation.isPending && (
                       <div className="flex justify-start animate-fade-in">
                         <div className="flex items-center gap-2">
-                          <div className="w-7 h-7 bg-gradient-to-r from-blue-600 to-purple-600 rounded-full flex items-center justify-center shadow-lg shadow-blue-500/20">
+                          <div className="w-7 h-7 bg-primary rounded-full flex items-center justify-center shadow-lg shadow-black/20">
                             <Loader2 className="w-4 h-4 text-white animate-spin" />
                           </div>
                           <div className={`p-3 ${msgBg} ${textSecondary} rounded-xl border ${msgBorder} flex items-center gap-2`}>
                             <div className="flex gap-1">
-                              <span className="w-1.5 h-1.5 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                              <span className="w-1.5 h-1.5 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                              <span className="w-1.5 h-1.5 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                              <span className="w-1.5 h-1.5 bg-primary rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                              <span className="w-1.5 h-1.5 bg-primary rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                              <span className="w-1.5 h-1.5 bg-primary rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
                             </div>
                           </div>
                         </div>
@@ -348,12 +348,12 @@ export default function ChatWidget() {
                         onChange={(e) => setInputValue(e.target.value)}
                         onKeyDown={(e) => e.key === 'Enter' && handleSend()}
                         placeholder="输入您的问题..."
-                        className={`flex-1 ${inputBg} border ${inputBorder} rounded-xl px-3 py-2.5 text-sm ${textPrimary} placeholder:${textMuted} focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500/50 transition-all`}
+                        className={`flex-1 ${inputBg} border ${inputBorder} rounded-xl px-3 py-2.5 text-sm ${textPrimary} placeholder:${textMuted} focus:outline-none focus:ring-2 focus:ring-primary/25 focus:border-primary/45 transition-all`}
                       />
                       <button
                         onClick={() => handleSend()}
                         disabled={!inputValue.trim()}
-                        className="px-3 py-2.5 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl text-white transition-all shadow-lg shadow-blue-500/20"
+                        className="px-3 py-2.5 bg-primary hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl text-white transition-all shadow-lg shadow-black/20"
                       >
                         <Send className="w-4 h-4" />
                       </button>

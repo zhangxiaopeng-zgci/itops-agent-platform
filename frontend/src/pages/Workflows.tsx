@@ -611,7 +611,7 @@ export default function Workflows() {
                       <button
                         onClick={() => handleExecute(workflow)}
                         disabled={executingWorkflow === workflow.id || (workflow.nodes?.length || 0) === 0}
-                        className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-gradient-to-r from-primary to-purple-600 text-white rounded-xl hover:from-primary/90 hover:to-purple-600/90 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-md shadow-primary/25"
+                        className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-primary text-white rounded-xl hover:bg-primary/90 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-md shadow-primary/25"
                       >
                         <Play className="w-4 h-4" />
                         {executingWorkflow === workflow.id ? '执行中...' : '立即执行'}

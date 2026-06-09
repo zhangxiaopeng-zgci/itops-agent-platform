@@ -180,23 +180,23 @@ export default function Layout() {
   };
 
   return (
-    <div className={clsx('flex h-screen', theme === 'dark' ? 'bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950' : 'bg-gray-50')}>
+    <div className={clsx('flex h-screen', theme === 'dark' ? 'bg-background' : 'bg-gray-50')}>
       <aside className={clsx('w-56 flex flex-col backdrop-blur-xl shadow-2xl border-r',
         theme === 'dark'
-          ? 'bg-gradient-to-b from-slate-900/95 via-slate-900/90 to-slate-950/95 border-slate-700/50'
+          ? 'bg-surface/95 border-border'
           : 'bg-white/95 border-gray-200'
       )}>
         <div className={clsx('p-4 border-b',
-          theme === 'dark' ? 'border-slate-700/50' : 'border-gray-200'
+          theme === 'dark' ? 'border-border' : 'border-gray-200'
         )}>
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-lg overflow-hidden flex items-center justify-center bg-gradient-to-br from-blue-600 to-purple-600 shadow-lg shadow-blue-500/30 flex-shrink-0">
+            <div className="w-9 h-9 rounded-lg overflow-hidden flex items-center justify-center bg-secondary shadow-lg shadow-black/20 border border-border flex-shrink-0">
               <img src="/logo.jpg" alt="Logo" className="w-full h-full object-contain" />
             </div>
             <div>
               <h1 className={clsx('text-base font-bold tracking-tight',
                 theme === 'dark' ? 'text-white' : 'text-gray-900'
-              )}>ITOps Agent</h1>
+              )}>AIOps Agent</h1>
               <p className={clsx('text-[11px]',
                 theme === 'dark' ? 'text-slate-400' : 'text-gray-500'
               )}>多Agent自动化平台</p>
@@ -235,7 +235,7 @@ export default function Layout() {
                         clsx(
                           'flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-all duration-200 group',
                           isActive
-                            ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white shadow-lg shadow-blue-500/25'
+                            ? 'bg-primary text-white shadow-lg shadow-black/20'
                             : theme === 'dark'
                               ? 'text-slate-400 hover:bg-slate-800/80 hover:text-white'
                               : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
@@ -253,7 +253,7 @@ export default function Layout() {
         </nav>
 
         <div className={clsx('border-t',
-          theme === 'dark' ? 'border-slate-700/50' : 'border-gray-200'
+          theme === 'dark' ? 'border-border' : 'border-gray-200'
         )}>
           <div className="p-3">
             {user && (
@@ -261,8 +261,8 @@ export default function Layout() {
                 <div className={clsx('flex items-center gap-2 p-2 rounded-lg flex-1 min-w-0',
                   theme === 'dark' ? 'bg-slate-800/50' : 'bg-gray-100'
                 )}>
-                  <div className="w-7 h-7 rounded-full bg-gradient-to-br from-blue-500/20 to-purple-500/20 flex items-center justify-center border border-blue-400/30 flex-shrink-0">
-                    <UserIcon className="w-3.5 h-3.5 text-blue-400" />
+                  <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center border border-primary/25 flex-shrink-0">
+                    <UserIcon className="w-3.5 h-3.5 text-primary" />
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className={clsx('text-xs font-semibold truncate leading-tight',
@@ -287,11 +287,11 @@ export default function Layout() {
 
             <div className={clsx('flex items-center justify-between rounded-lg px-3 py-2.5',
               theme === 'dark'
-                ? 'bg-gradient-to-br from-slate-800/80 to-slate-900/80 border border-slate-700/50'
+                ? 'bg-secondary border border-border'
                 : 'bg-gray-50 border border-gray-200'
             )}>
               <div className="flex items-center gap-2">
-                <div className="w-1.5 h-1.5 rounded-full bg-gradient-to-r from-green-500 to-emerald-500 animate-pulse shadow shadow-green-500/30" />
+                <div className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse shadow shadow-green-500/30" />
                 <div>
                   <span className={clsx('text-xs font-semibold leading-tight',
                     theme === 'dark' ? 'text-white' : 'text-gray-900'
@@ -306,7 +306,7 @@ export default function Layout() {
                 className={clsx('p-1.5 rounded-lg transition-all duration-200 flex-shrink-0',
                   theme === 'dark'
                     ? 'text-slate-400 hover:text-amber-300 hover:bg-slate-700/60'
-                    : 'text-gray-400 hover:text-purple-600 hover:bg-gray-200'
+                    : 'text-gray-400 hover:text-teal-700 hover:bg-gray-200'
                 )}
                 title={theme === 'dark' ? '切换浅色模式' : '切换深色模式'}
               >
