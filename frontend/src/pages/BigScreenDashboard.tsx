@@ -538,7 +538,7 @@ export default function BigScreenDashboard() {
   const serverMetrics = useMemo(() => {
     if (serverMetricsData?.has_real_data && serverMetricsData.servers.length > 0) {
       return serverMetricsData.servers.slice(0, 6).map((s, i) => ({
-        label: s.server_name.substring(0, 8),
+        label: s.server_name,
         value: s.cpu_usage ?? 0,
         color: SERVER_COLORS[i],
       }));
@@ -548,7 +548,7 @@ export default function BigScreenDashboard() {
         .filter(s => s.enabled === 1)
         .slice(0, 6)
         .map((s, i) => ({
-          label: s.name.substring(0, 8),
+          label: s.name,
           value: SERVER_METRICS_RANDOM_VALUES[i],
           color: SERVER_COLORS[i],
         }));
@@ -855,7 +855,7 @@ export default function BigScreenDashboard() {
                 服务器负载
               </h2>
               {serverMetrics.length > 0 ? (
-                <AnimatedBarChart data={serverMetrics} height={180} />
+                <AnimatedBarChart data={serverMetrics} height={180} fitLabels />
               ) : (
                 <div className="flex items-center justify-center h-[180px] text-slate-500 text-sm">
                   暂无已启用的服务器

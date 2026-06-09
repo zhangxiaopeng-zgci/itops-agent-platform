@@ -4,12 +4,14 @@ interface AnimatedBarChartProps {
   data: Array<{ label: string; value: number; color: string }>;
   height?: number;
   maxValue?: number;
+  fitLabels?: boolean;
 }
 
 export default function AnimatedBarChart({
   data,
   height = 200,
   maxValue,
+  fitLabels = false,
 }: AnimatedBarChartProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -36,6 +38,25 @@ export default function AnimatedBarChart({
     const max = maxValue || Math.max(...data.map(d => d.value)) * 1.1;
     const barWidth = (chartWidth / data.length) * 0.6;
     const gap = (chartWidth / data.length) * 0.4;
+    const slotWidth = chartWidth / data.length;
+
+    const drawLabel = (label: string, centerX: number, y: number) => {
+      const baseFontSize = 11;
+      const minFontSize = 8;
+      let fontSize = baseFontSize;
+      ctx.font = `${fontSize}px Inter, system-ui, sans-serif`;
+
+      if (fitLabels) {
+        const maxLabelWidth = Math.max(slotWidth - 4, 20);
+        const measuredWidth = ctx.measureText(label).width;
+        if (measuredWidth > maxLabelWidth) {
+          fontSize = Math.max(minFontSize, Math.floor(baseFontSize * (maxLabelWidth / measuredWidth)));
+          ctx.font = `${fontSize}px Inter, system-ui, sans-serif`;
+        }
+      }
+
+      ctx.fillText(label, centerX, y);
+    };
 
     data.forEach((item, index) => {
       const barHeight = (item.value / max) * chartHeight;
@@ -58,11 +79,11 @@ export default function AnimatedBarChart({
       ctx.fillStyle = gradient;
       ctx.fill();
 
-      ctx.font = '11px Inter, system-ui, sans-serif';
       ctx.fillStyle = '#94a3b8';
       ctx.textAlign = 'center';
-      ctx.fillText(item.label, x + barWidth / 2, padding.top + chartHeight + 20);
+      drawLabel(item.label, x + barWidth / 2, padding.top + chartHeight + 20);
 
+      ctx.font = '11px Inter, system-ui, sans-serif';
       ctx.fillStyle = '#ffffff';
       ctx.textAlign = 'center';
       ctx.fillText(item.value.toFixed(0), x + barWidth / 2, y - 8);
@@ -74,7 +95,7 @@ export default function AnimatedBarChart({
     ctx.strokeStyle = 'rgba(51, 65, 85, 0.5)';
     ctx.lineWidth = 1;
     ctx.stroke();
-  }, [data, height, maxValue]);
+  }, [data, height, maxValue, fitLabels]);
 
   return (
     <canvas
