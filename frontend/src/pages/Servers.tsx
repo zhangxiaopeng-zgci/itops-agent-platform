@@ -7,7 +7,7 @@ import {
   Upload, RefreshCw, ChevronRight, ChevronDown, Cpu,
   HardDrive, MemoryStick, Monitor, FolderPlus, MonitorPlay,
   Bot, Key, Search, Settings,
-  Sparkles, X, AlertTriangle,
+  Sparkles, X, AlertTriangle, User,
 } from 'lucide-react';
 import clsx from 'clsx';
 import api from '../lib/api';
@@ -22,6 +22,7 @@ interface Server {
   port: number;
   username: string;
   use_ssh_key: number;
+  ssh_key_id?: string | null;
   description?: string;
   tags?: string[];
   enabled: number;
@@ -80,6 +81,17 @@ interface ComplianceCheck {
   created_at: string;
 }
 
+type AuthCredential = {
+  id: string;
+  name: string;
+  auth_type: 'key' | 'password';
+  key_type: string;
+  fingerprint: string | null;
+  username: string | null;
+  description: string | null;
+  usage_count: number;
+};
+
 export default function Servers() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -94,6 +106,7 @@ export default function Servers() {
     password: '',
     private_key: '',
     use_ssh_key: false,
+    ssh_key_id: '',
     description: '',
     tags: '',
     os_type: 'linux' as 'linux' | 'windows',
@@ -147,7 +160,7 @@ export default function Servers() {
     queryKey: ['ssh-keys'],
     queryFn: async () => {
       const res = await api.get('/api/ssh-keys');
-      return res.data.data as Array<{ id: string; name: string; key_type: string; fingerprint: string | null; usage_count: number }>;
+      return res.data.data as AuthCredential[];
     },
   });
   const [selectedSshKeyId, setSelectedSshKeyId] = useState<string>('');
@@ -230,19 +243,43 @@ export default function Servers() {
       .flatMap((server: Server) => Array.isArray(server.tags) ? server.tags : [])
   )).sort();
 
-  // 过滤认证凭证列表（按名称、类型或指纹搜索）
+  const getCredentialTypeLabel = useCallback((credential: AuthCredential) => {
+    return credential.auth_type === 'password' ? '账号密码' : (credential.key_type || 'SSH 私钥');
+  }, []);
+
+  const getCredentialSearchLabel = useCallback((credential: AuthCredential) => {
+    return `${credential.name} (${getCredentialTypeLabel(credential)})`;
+  }, [getCredentialTypeLabel]);
+
+  const selectedCredential = useMemo(() => {
+    if (!selectedSshKeyId || !sshKeys) return null;
+    return sshKeys.find((credential) => credential.id === selectedSshKeyId) || null;
+  }, [selectedSshKeyId, sshKeys]);
+
+  useEffect(() => {
+    if (selectedCredential) {
+      setSshKeySearchQuery(getCredentialSearchLabel(selectedCredential));
+    }
+  }, [getCredentialSearchLabel, selectedCredential]);
+
+  // 过滤认证凭证列表（按名称、类型、用户名或指纹搜索）
   const filteredSshKeys = useMemo(() => {
     if (!sshKeys) return [];
     if (!sshKeySearchQuery) return sshKeys;
     const query = sshKeySearchQuery.toLowerCase();
     return sshKeys.filter((key) => {
+      const typeLabel = getCredentialTypeLabel(key);
       return (
         key.name.toLowerCase().includes(query) ||
+        key.auth_type.toLowerCase().includes(query) ||
+        typeLabel.toLowerCase().includes(query) ||
         (key.key_type || '').toLowerCase().includes(query) ||
+        (key.username || '').toLowerCase().includes(query) ||
+        (key.description || '').toLowerCase().includes(query) ||
         (key.fingerprint || '').toLowerCase().includes(query)
       );
     });
-  }, [sshKeys, sshKeySearchQuery]);
+  }, [getCredentialTypeLabel, sshKeys, sshKeySearchQuery]);
 
   // 过滤后的标签建议（排除已选的，按输入过滤）
   const filteredTagSuggestions = () => {
@@ -283,13 +320,38 @@ export default function Servers() {
     enabled: !!selectedServer && activeTab === 'compliance-history',
   });
 
+  const buildServerPayload = (data: typeof formData, isEdit = false) => {
+    const usingSavedCredential = data.use_ssh_key && !!data.ssh_key_id;
+    const payload: Record<string, unknown> = {
+      ...data,
+      tags: data.tags ? data.tags.split(',').map((t: string) => t.trim()).filter(Boolean) : (isEdit ? undefined : []),
+      ssh_key_id: usingSavedCredential ? data.ssh_key_id : null,
+    };
+
+    if (usingSavedCredential) {
+      delete payload.password;
+      delete payload.private_key;
+      return payload;
+    }
+
+    if (data.use_ssh_key) {
+      delete payload.password;
+      if (isEdit && !data.private_key) {
+        delete payload.private_key;
+      }
+      return payload;
+    }
+
+    delete payload.private_key;
+    if (isEdit && !data.password) {
+      delete payload.password;
+    }
+    return payload;
+  };
+
   const createMutation = useMutation({
     mutationFn: async (data: any) => {
-      const payload = {
-        ...data,
-        tags: data.tags ? data.tags.split(',').map((t: string) => t.trim()) : [],
-        ssh_key_id: selectedSshKeyId || undefined
-      };
+      const payload = buildServerPayload(data);
       const res = await api.post('/api/servers', payload);
       return res.data;
     },
@@ -306,17 +368,7 @@ export default function Servers() {
 
   const updateMutation = useMutation({
     mutationFn: async ({ id, data }: { id: string; data: any }) => {
-      const payload: Record<string, unknown> = {
-        ...data,
-        tags: data.tags ? data.tags.split(',').map((t: string) => t.trim()) : undefined,
-        ssh_key_id: selectedSshKeyId || undefined
-      };
-      // 编辑模式下 private_key 为空则不发送，避免覆盖已有密钥
-      if (data.private_key) {
-        payload.private_key = data.private_key;
-      } else {
-        delete payload.private_key;
-      }
+      const payload = buildServerPayload(data, true);
       const res = await api.put(`/api/servers/${id}`, payload);
       return res.data;
     },
@@ -462,6 +514,7 @@ export default function Servers() {
       password: '',
       private_key: '',
       use_ssh_key: false,
+      ssh_key_id: '',
       description: '',
       tags: '',
       os_type: 'linux' as 'linux' | 'windows',
@@ -491,7 +544,7 @@ export default function Servers() {
     if (serverSshKeyId && sshKeys) {
       const key = sshKeys.find(k => k.id === serverSshKeyId);
       if (key) {
-        setSshKeySearchQuery(`${key.name} (${key.key_type})`);
+        setSshKeySearchQuery(getCredentialSearchLabel(key));
       }
     } else {
       setSshKeySearchQuery('');
@@ -505,6 +558,7 @@ export default function Servers() {
       password: '',
       private_key: '',
       use_ssh_key: !!server.use_ssh_key,
+      ssh_key_id: serverSshKeyId,
       description: server.description || '',
       tags: server.tags ? server.tags.join(', ') : '',
       os_type: (server as any).os_type || 'linux',
@@ -1759,118 +1813,146 @@ ${serverInfo.disk_gb ? `磁盘大小：${serverInfo.disk_gb}GB` : ''}
                   </div>
                 ) : (
                   <div>
-                    <label className="block text-sm font-medium text-text-secondary mb-2">SSH 私钥</label>
-                    {sshKeys && sshKeys.length > 0 && (
-                      <div className="mb-3">
-                        <div className="flex items-center gap-2 mb-2">
-                          <Key className="w-3.5 h-3.5 text-text-tertiary" />
-                          <span className="text-xs text-text-tertiary">从已有密钥中选择</span>
-                        </div>
-                        
-                        <div className="relative">
-                          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-tertiary pointer-events-none" />
-                          <input
-                            type="text"
-                            value={sshKeySearchQuery}
-                            onChange={(e) => setSshKeySearchQuery(e.target.value)}
-                            onFocus={() => setShowSshKeyDropdown(true)}
-                            onBlur={() => {
-                              setTimeout(() => setShowSshKeyDropdown(false), 200);
-                            }}
-                            placeholder="搜索密钥名称、类型或指纹..."
-                            className="w-full pl-10 pr-10 py-2 bg-background border border-border rounded-lg focus:outline-none focus:border-primary text-text-primary text-sm"
-                          />
-                          {selectedSshKeyId && sshKeys.find(k => k.id === selectedSshKeyId) && (
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setSelectedSshKeyId('');
-                                setSshKeySearchQuery('');
-                                setFormData({ ...formData, private_key: '' });
-                              }}
-                              className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-text-tertiary hover:text-text-primary transition-colors"
-                            >
-                              <X className="w-4 h-4" />
-                            </button>
-                          )}
-                        </div>
+                    <label className="block text-sm font-medium text-text-secondary mb-2">认证凭证</label>
+                    <div className="mb-3">
+                      <div className="flex items-center gap-2 mb-2">
+                        <Key className="w-3.5 h-3.5 text-text-tertiary" />
+                        <span className="text-xs text-text-tertiary">从已有认证凭证中选择</span>
+                      </div>
 
-                        {showSshKeyDropdown && (
-                          <div className="mt-1 max-h-48 overflow-y-auto bg-surface border border-border rounded-lg shadow-lg z-10">
-                            {filteredSshKeys.length === 0 ? (
-                              <div className="px-4 py-3 text-sm text-text-tertiary text-center">
-                                未找到匹配的密钥
-                              </div>
-                            ) : (
-                              filteredSshKeys.map((key) => (
-                                <button
-                                  key={key.id}
-                                  type="button"
-                                  onMouseDown={(e) => e.preventDefault()}
-                                  onClick={async () => {
-                                    try {
-                                      const res = await api.get(`/api/ssh-keys/${key.id}`);
-                                      setSelectedSshKeyId(key.id);
-                                      setSshKeySearchQuery(`${key.name} (${key.key_type})`);
-                                      setFormData({ ...formData, private_key: res.data.data.private_key });
-                                      setShowSshKeyDropdown(false);
-                                    } catch {
-                                      toast.error('获取 SSH 私钥失败');
-                                    }
-                                  }}
-                                  className={clsx(
-                                    'w-full px-4 py-2.5 text-left hover:bg-primary/5 transition-colors border-b border-border/50 last:border-b-0',
-                                    selectedSshKeyId === key.id && 'bg-primary/10'
-                                  )}
-                                >
-                                  <div className="flex items-center justify-between">
-                                    <span className="text-sm text-text-primary font-medium">{key.name}</span>
-                                    <span className="text-xs text-text-tertiary">{key.key_type}</span>
-                                  </div>
-                                  {key.fingerprint && (
-                                    <div className="text-xs text-text-tertiary mt-0.5 font-mono">
-                                      {key.fingerprint.slice(0, 30)}...
-                                    </div>
-                                  )}
-                                  {key.usage_count > 0 && (
-                                    <div className="text-xs text-status-success mt-0.5">
-                                      已用于 {key.usage_count} 台服务器
-                                    </div>
-                                  )}
-                                </button>
-                              ))
-                            )}
-                          </div>
-                        )}
-
-                        {selectedSshKeyId && sshKeys.find(k => k.id === selectedSshKeyId) && !showSshKeyDropdown && (
-                          <div className="mt-2 flex items-center gap-1.5 text-xs text-status-success">
-                            <CheckCircle2 className="w-3 h-3" />
-                            <span>当前已选择: {sshKeys.find((k) => k.id === selectedSshKeyId)?.name}</span>
-                          </div>
-                        )}
-                        <div className="flex items-center gap-2 mt-2">
+                      <div className="relative">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-tertiary pointer-events-none" />
+                        <input
+                          type="text"
+                          value={sshKeySearchQuery}
+                          onChange={(e) => setSshKeySearchQuery(e.target.value)}
+                          onFocus={() => setShowSshKeyDropdown(true)}
+                          onBlur={() => {
+                            setTimeout(() => setShowSshKeyDropdown(false), 200);
+                          }}
+                          placeholder="搜索凭证名称、类型、用户名或指纹..."
+                          className="w-full pl-10 pr-10 py-2 bg-background border border-border rounded-lg focus:outline-none focus:border-primary text-text-primary text-sm"
+                        />
+                        {selectedCredential && (
                           <button
                             type="button"
-                            onClick={() => { resetForm(); setIsModalOpen(false); navigate('/ssh-keys'); }}
-                            className="text-xs text-primary hover:underline"
+                            title="清除已选凭证"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedSshKeyId('');
+                              setSshKeySearchQuery('');
+                              setFormData({ ...formData, ssh_key_id: '', private_key: '' });
+                            }}
+                            className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-text-tertiary hover:text-text-primary transition-colors"
                           >
-                            + 管理认证凭证
+                            <X className="w-4 h-4" />
                           </button>
+                        )}
+                      </div>
+
+                      {showSshKeyDropdown && (
+                        <div className="mt-1 max-h-56 overflow-y-auto bg-surface border border-border rounded-lg shadow-lg z-10">
+                          {filteredSshKeys.length === 0 ? (
+                            <div className="px-4 py-3 text-sm text-text-tertiary text-center">
+                              未找到匹配的认证凭证
+                            </div>
+                          ) : (
+                            filteredSshKeys.map((credential) => (
+                              <button
+                                key={credential.id}
+                                type="button"
+                                onMouseDown={(e) => e.preventDefault()}
+                                onClick={() => {
+                                  setSelectedSshKeyId(credential.id);
+                                  setSshKeySearchQuery(getCredentialSearchLabel(credential));
+                                  setFormData({
+                                    ...formData,
+                                    ssh_key_id: credential.id,
+                                    username: credential.auth_type === 'password' && credential.username ? credential.username : formData.username,
+                                    password: '',
+                                    private_key: '',
+                                  });
+                                  setShowSshKeyDropdown(false);
+                                }}
+                                className={clsx(
+                                  'w-full px-4 py-2.5 text-left hover:bg-primary/5 transition-colors border-b border-border/50 last:border-b-0',
+                                  selectedSshKeyId === credential.id && 'bg-primary/10'
+                                )}
+                              >
+                                <div className="flex items-center justify-between gap-3">
+                                  <div className="flex items-center gap-2 min-w-0">
+                                    {credential.auth_type === 'password' ? (
+                                      <User className="w-4 h-4 text-text-tertiary flex-shrink-0" />
+                                    ) : (
+                                      <Key className="w-4 h-4 text-text-tertiary flex-shrink-0" />
+                                    )}
+                                    <span className="text-sm text-text-primary font-medium truncate">{credential.name}</span>
+                                  </div>
+                                  <span className="text-xs text-text-tertiary flex-shrink-0">{getCredentialTypeLabel(credential)}</span>
+                                </div>
+                                {credential.auth_type === 'password' && credential.username && (
+                                  <div className="text-xs text-text-tertiary mt-0.5">
+                                    用户名: {credential.username}
+                                  </div>
+                                )}
+                                {credential.fingerprint && (
+                                  <div className="text-xs text-text-tertiary mt-0.5 font-mono">
+                                    {credential.fingerprint.slice(0, 30)}...
+                                  </div>
+                                )}
+                                {credential.usage_count > 0 && (
+                                  <div className="text-xs text-status-success mt-0.5">
+                                    已用于 {credential.usage_count} 台服务器
+                                  </div>
+                                )}
+                              </button>
+                            ))
+                          )}
                         </div>
+                      )}
+
+                      {selectedCredential && !showSshKeyDropdown && (
+                        <div className="mt-2 rounded-lg border border-status-success/30 bg-status-success/5 px-3 py-2">
+                          <div className="flex items-center gap-1.5 text-xs text-status-success">
+                            <CheckCircle2 className="w-3 h-3" />
+                            <span>已选择认证凭证: {selectedCredential.name} ({getCredentialTypeLabel(selectedCredential)})</span>
+                          </div>
+                          <p className="mt-1 text-xs text-text-tertiary">
+                            服务器连接时将从凭证中心读取认证信息，不会把密钥或密码复制到服务器表单。
+                          </p>
+                        </div>
+                      )}
+
+                      <div className="flex items-center gap-2 mt-2">
+                        <button
+                          type="button"
+                          onClick={() => { resetForm(); setIsModalOpen(false); navigate('/ssh-keys'); }}
+                          className="text-xs text-primary hover:underline"
+                        >
+                          + 管理认证凭证
+                        </button>
+                      </div>
+                    </div>
+
+                    {!selectedCredential && (
+                      <div>
+                        <label className="block text-xs font-medium text-text-secondary mb-2">或手动粘贴 SSH 私钥</label>
+                        <textarea
+                          value={formData.private_key}
+                          onChange={(e) => {
+                            setSelectedSshKeyId('');
+                            setSshKeySearchQuery('');
+                            setFormData({ ...formData, ssh_key_id: '', private_key: e.target.value });
+                          }}
+                          placeholder={selectedServer ? '留空以保持不变' : '粘贴您的 SSH 私钥内容...'}
+                          rows={6}
+                          className="w-full px-4 py-2 bg-background border border-border rounded-lg focus:outline-none focus:border-primary text-text-primary font-mono text-sm"
+                        />
+                        <p className="mt-1 text-xs text-text-tertiary">
+                          粘贴私钥后将按旧方式保存到服务器记录。推荐优先选择上方认证凭证。
+                        </p>
                       </div>
                     )}
-                    <textarea
-                      value={formData.private_key}
-                      onChange={(e) => {
-                        setSelectedSshKeyId('');
-                        setFormData({ ...formData, private_key: e.target.value });
-                      }}
-                      placeholder={selectedServer && !selectedSshKeyId ? '留空以保持不变' : selectedSshKeyId ? '已选择上方密钥，手动编辑可覆盖' : '粘贴您的私钥，或从上方选择已有密钥...'}
-                      rows={6}
-                      className="w-full px-4 py-2 bg-background border border-border rounded-lg focus:outline-none focus:border-primary text-text-primary font-mono text-sm"
-                    />
                   </div>
                 )}
 

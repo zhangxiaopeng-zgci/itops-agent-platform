@@ -25,7 +25,7 @@ export const serverSchemas = {
     description: z.string().max(500).optional(),
     os_type: z.enum(['linux', 'windows', 'unknown']).default('linux'),
     tags: z.array(z.string()).optional(),
-    ssh_key_id: z.string().uuid().optional(),
+    ssh_key_id: z.string().uuid().nullable().optional(),
   }),
   updateServer: z.object({
     name: z.string().min(1).max(100).optional(),
@@ -33,12 +33,13 @@ export const serverSchemas = {
     port: z.coerce.number().int().min(1).max(65535).optional(),
     username: z.string().min(1).max(64).optional(),
     password: z.string().max(255).optional(),
+    private_key: z.string().optional(),
     use_ssh_key: z.coerce.number().int().min(0).max(1).optional(),
     description: z.string().max(500).optional(),
     enabled: z.coerce.number().int().min(0).max(1).optional(),
     os_type: z.enum(['linux', 'windows', 'unknown']).optional(),
     tags: z.array(z.string()).optional(),
-    ssh_key_id: z.string().uuid().optional(),
+    ssh_key_id: z.string().uuid().nullable().optional(),
   }),
   serverId: z.object({
     id: z.string().uuid('无效的服务器ID'),

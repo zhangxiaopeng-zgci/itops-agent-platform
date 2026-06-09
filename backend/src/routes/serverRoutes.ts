@@ -75,6 +75,7 @@ router.put('/:id', validateParams(serverSchemas.serverId), validateBody(serverSc
     }
 
     const { name, hostname, port, username, password, private_key, use_ssh_key, description, enabled, os_type, ssh_key_id } = req.body as Record<string, unknown>;
+    const hasSshKeyId = Object.prototype.hasOwnProperty.call(req.body, 'ssh_key_id');
     const tags = (req.body as Record<string, unknown>).tags;
     const tagsJson = tags ? JSON.stringify(tags) : undefined;
 
@@ -102,7 +103,7 @@ router.put('/:id', validateParams(serverSchemas.serverId), validateBody(serverSc
            tags = COALESCE(?, tags),
            enabled = COALESCE(?, enabled),
            os_type = COALESCE(?, os_type),
-           ssh_key_id = COALESCE(?, ssh_key_id),
+           ssh_key_id = CASE WHEN ? THEN ? ELSE ssh_key_id END,
            updated_at = CURRENT_TIMESTAMP
        WHERE id = ?`
     ).run(
@@ -112,7 +113,7 @@ router.put('/:id', validateParams(serverSchemas.serverId), validateBody(serverSc
       private_key !== undefined ? encryptedPrivateKey : undefined,
       private_key !== undefined ? encryptedPrivateKey : undefined,
       use_ssh_key !== undefined ? (use_ssh_key ? 1 : 0) : undefined,
-      description, tagsJson, enabled, os_type, ssh_key_id !== undefined ? ssh_key_id : undefined, req.params.id
+      description, tagsJson, enabled, os_type, hasSshKeyId ? 1 : 0, ssh_key_id ?? null, req.params.id
     );
 
     res.json({ success: true });
