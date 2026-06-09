@@ -2,15 +2,16 @@ import { useEffect } from 'react';
 import { useLocale } from '../../contexts/LocaleContext';
 import { hasChineseText, translateZhText } from '../../i18n/domTranslations';
 
-const SKIP_TAGS = new Set(['SCRIPT', 'STYLE', 'TEXTAREA', 'CODE', 'PRE', 'KBD', 'SAMP']);
+const SKIP_TEXT_TAGS = new Set(['SCRIPT', 'STYLE', 'TEXTAREA', 'CODE', 'PRE', 'KBD', 'SAMP']);
+const SKIP_ATTRIBUTE_TAGS = new Set(['SCRIPT', 'STYLE', 'CODE', 'PRE', 'KBD', 'SAMP']);
 const TRANSLATABLE_ATTRIBUTES = ['placeholder', 'title', 'aria-label', 'alt'];
 const originalText = new WeakMap<Text, string>();
 const translatedAttributeNames = ['data-i18n-original-placeholder', 'data-i18n-original-title', 'data-i18n-original-aria-label', 'data-i18n-original-alt'];
 
-function shouldSkipElement(element: Element | null): boolean {
+function shouldSkipElement(element: Element | null, skipTags: Set<string>): boolean {
   let current = element;
   while (current) {
-    if (SKIP_TAGS.has(current.tagName)) return true;
+    if (skipTags.has(current.tagName)) return true;
     if (current.getAttribute('data-i18n-skip') === 'true') return true;
     current = current.parentElement;
   }
@@ -18,7 +19,7 @@ function shouldSkipElement(element: Element | null): boolean {
 }
 
 function translateTextNode(node: Text, locale: string) {
-  if (shouldSkipElement(node.parentElement)) return;
+  if (shouldSkipElement(node.parentElement, SKIP_TEXT_TAGS)) return;
 
   if (locale === 'en-US') {
     const current = node.nodeValue || '';
@@ -44,7 +45,7 @@ function translateTextNode(node: Text, locale: string) {
 }
 
 function translateAttributes(element: Element, locale: string) {
-  if (shouldSkipElement(element)) return;
+  if (shouldSkipElement(element, SKIP_ATTRIBUTE_TAGS)) return;
 
   for (const attr of TRANSLATABLE_ATTRIBUTES) {
     const current = element.getAttribute(attr);
@@ -87,7 +88,7 @@ function translateTree(root: ParentNode, locale: string) {
     NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT,
     {
       acceptNode(node) {
-        if (node.nodeType === Node.ELEMENT_NODE && shouldSkipElement(node as Element)) {
+        if (node.nodeType === Node.ELEMENT_NODE && shouldSkipElement(node as Element, SKIP_TEXT_TAGS)) {
           return NodeFilter.FILTER_REJECT;
         }
         return NodeFilter.FILTER_ACCEPT;
@@ -111,7 +112,18 @@ export default function LocaleDomTranslator() {
 
   useEffect(() => {
     const run = () => translateTree(document.body, locale);
-    run();
+    const runSoon = () => window.requestAnimationFrame(run);
+    const timeouts = [0, 50, 150, 350, 800, 1500, 3000].map((delay) => window.setTimeout(run, delay));
+    runSoon();
+
+    const handleUserEvent = () => {
+      window.setTimeout(run, 0);
+      window.setTimeout(run, 120);
+      window.setTimeout(run, 500);
+    };
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') handleUserEvent();
+    };
 
     const observer = new MutationObserver((mutations) => {
       const seen = new Set<Node>();
@@ -150,7 +162,17 @@ export default function LocaleDomTranslator() {
       attributeFilter: TRANSLATABLE_ATTRIBUTES,
     });
 
-    return () => observer.disconnect();
+    window.addEventListener('click', handleUserEvent, true);
+    window.addEventListener('focusin', handleUserEvent, true);
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    return () => {
+      observer.disconnect();
+      timeouts.forEach((timeout) => window.clearTimeout(timeout));
+      window.removeEventListener('click', handleUserEvent, true);
+      window.removeEventListener('focusin', handleUserEvent, true);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
   }, [locale]);
 
   return null;
