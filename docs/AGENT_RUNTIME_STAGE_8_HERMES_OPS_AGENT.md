@@ -48,6 +48,31 @@ HERMES_API_BASE
 HERMES_API_KEY
 ```
 
+### Hermes 修复编排 Agent
+
+平台也会确保存在一个更专注的修复编排 Agent：
+
+```text
+Hermes 修复编排 Agent
+```
+
+它与 `Hermes 诊断修复 Agent` 的区别：
+
+- 诊断修复 Agent 偏“发现问题、收集证据、提出方案”。
+- 修复编排 Agent 偏“确认工作流、提交审批、追踪任务、验证修复”。
+
+默认配置仍然使用 `hermes` runtime 和 `approval_required` 自主级别。它可以请求：
+
+```text
+list_workflows
+submit_remediation_for_approval
+run_workflow
+get_task_status
+verify_remediation
+```
+
+其中 `run_workflow` 仍必须进入工具审批队列。
+
 ### list_workflows 工具
 
 阶段 7 的 `run_workflow` 需要 `workflowId`。阶段 8 增加只读工具：
@@ -61,7 +86,7 @@ list_workflows
 ## 执行闭环
 
 ```text
-Hermes 诊断修复 Agent
+Hermes 诊断修复 Agent / Hermes 修复编排 Agent
   -> query_alerts / list_servers / search_knowledge_base / run_readonly_command
   -> list_workflows
   -> run_workflow
@@ -82,7 +107,7 @@ Hermes 诊断修复 Agent
 ## 使用建议
 
 1. 配置服务端环境变量 `HERMES_API_BASE` 和 `HERMES_API_KEY`。
-2. 在 Agent 管理中找到 `Hermes 诊断修复 Agent`。
+2. 在 Agent 管理中找到 `Hermes 诊断修复 Agent` 或 `Hermes 修复编排 Agent`。
 3. 用连接测试确认 Hermes endpoint 可用。
 4. 输入告警、服务器或故障现象，让 Agent 先诊断。
 5. 当 Agent 返回审批单时，在工具审批页面批准或拒绝。

@@ -340,14 +340,18 @@ Implemented additions:
 
 ```text
 Hermes 诊断修复 Agent
+Hermes 修复编排 Agent
 list_workflows
 ```
 
 Default loop:
 
 ```text
-read-only diagnosis
+Hermes 诊断修复 Agent
+  -> read-only diagnosis
   -> list_workflows
+  -> hand off remediation intent
+Hermes 修复编排 Agent
   -> run_workflow approval
   -> get_task_status
   -> verify_remediation

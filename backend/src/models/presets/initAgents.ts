@@ -22,12 +22,23 @@ interface PresetAgent {
 }
 
 const HERMES_OPS_AGENT_NAME = 'Hermes 诊断修复 Agent';
+const HERMES_REMEDIATION_ORCHESTRATOR_AGENT_NAME = 'Hermes 修复编排 Agent';
 const HERMES_OPS_ALLOWED_TOOLS = [
   'list_servers',
   'query_alerts',
   'search_knowledge_base',
   'list_workflows',
   'run_readonly_command',
+  'submit_remediation_for_approval',
+  'run_workflow',
+  'get_task_status',
+  'verify_remediation'
+];
+const HERMES_REMEDIATION_ORCHESTRATOR_ALLOWED_TOOLS = [
+  'list_servers',
+  'query_alerts',
+  'search_knowledge_base',
+  'list_workflows',
   'submit_remediation_for_approval',
   'run_workflow',
   'get_task_status',
@@ -103,6 +114,52 @@ function buildHermesOpsAgent(): PresetAgent {
   };
 }
 
+function buildHermesRemediationOrchestratorAgent(): PresetAgent {
+  return {
+    id: randomUUID(),
+    name: HERMES_REMEDIATION_ORCHESTRATOR_AGENT_NAME,
+    avatar: '🛠️',
+    role: 'Hermes 审批式修复工作流编排专家',
+    category: '修复编排',
+    description: '将已确认的修复方案转成受控工作流审批、任务追踪和修复验证',
+    system_prompt: `你是 ITOps 平台中的 Hermes 审批式修复工作流编排专家。
+
+你的职责：
+1. 接收用户、诊断 Agent 或告警上下文给出的修复意图，先确认目标、风险、回滚和验证要求。
+2. 使用 list_workflows 查找合适的工作流模板，必要时用 query_alerts、list_servers 和 search_knowledge_base 补齐上下文。
+3. 只有当 workflowId、目标对象、输入参数、回滚说明和验证目标足够明确时，才调用 run_workflow 提交审批。
+4. run_workflow 返回 approval_required 时，必须明确输出审批单 id、correlation id、工作流名称、目标对象、审批原因和下一步。
+5. 审批执行后，使用 get_task_status 和 verify_remediation 跟踪任务，不要声称修复完成，除非验证工具结果证明通过。
+
+安全边界：
+- 你不直接执行生产变更，只能通过 Tool API 请求受控工作流。
+- run_workflow 是 medium_risk，必须进入人工审批，不能绕过审批。
+- 缺少关键上下文时，先列出缺口，不要猜测 workflowId 或目标对象。
+- 不请求 destructive 操作，不读取密钥、私钥或敏感凭据。
+
+输出要求：
+- 使用中文。
+- 优先给出“编排状态”：待补充 / 已提交审批 / 等待审批 / 执行中 / 验证通过 / 验证失败。
+- 对每次审批型动作列出：workflowId、approvalId、taskId（如已有）、correlationId（如已有）、风险和回滚要点。`,
+    model: 'smart-router',
+    temperature: 0.1,
+    is_preset: 1,
+    enabled: 1,
+    api_provider: 'openai',
+    runtime: 'hermes',
+    runtime_config: {
+      model: 'smart-router',
+      apiKeyEnv: 'HERMES_API_KEY',
+      timeoutMs: 300000,
+      maxToolRounds: 6,
+      temperature: 0.1,
+      allowedTools: HERMES_REMEDIATION_ORCHESTRATOR_ALLOWED_TOOLS
+    },
+    autonomy_level: 'approval_required',
+    tool_policy_id: 'default-human-approval'
+  };
+}
+
 function insertPresetAgent(agent: PresetAgent): boolean {
   const existing = db.prepare('SELECT id FROM agents WHERE name = ?').get(agent.name) as { id: string } | undefined;
   if (existing) {
@@ -141,6 +198,19 @@ export function ensureHermesOpsAgent(): void {
   if (insertPresetAgent(buildHermesOpsAgent())) {
     logger.info(`✅ 成功创建预设 Agent: ${HERMES_OPS_AGENT_NAME}`);
   }
+}
+
+export function ensureHermesRuntimeAgents(): void {
+  const agents = [
+    buildHermesOpsAgent(),
+    buildHermesRemediationOrchestratorAgent()
+  ];
+
+  agents.forEach(agent => {
+    if (insertPresetAgent(agent)) {
+      logger.info(`✅ 成功创建预设 Agent: ${agent.name}`);
+    }
+  });
 }
 
 export function initializePresetAgents() {
@@ -333,7 +403,8 @@ export function initializePresetAgents() {
       is_preset: 1,
       enabled: 1
     },
-    buildHermesOpsAgent()
+    buildHermesOpsAgent(),
+    buildHermesRemediationOrchestratorAgent()
   ];
 
   let createdCount = 0;

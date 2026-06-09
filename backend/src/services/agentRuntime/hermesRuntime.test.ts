@@ -27,6 +27,15 @@ describe('HermesAgentRuntime', () => {
 
     expect(agent).toBeTruthy();
 
+    const orchestrator = db.prepare(`
+      SELECT id, runtime, runtime_config
+      FROM agents
+      WHERE name = ?
+    `).get('Hermes 修复编排 Agent') as { id: string; runtime: string; runtime_config: string } | undefined;
+
+    expect(orchestrator?.runtime).toBe('hermes');
+    expect(JSON.parse(orchestrator?.runtime_config || '{}').allowedTools).toContain('run_workflow');
+
     vi.spyOn(axios, 'post')
       .mockResolvedValueOnce({
         data: {

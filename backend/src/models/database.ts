@@ -6,7 +6,7 @@ import bcrypt from 'bcryptjs';
 import { env } from '../utils/env';
 import { logger } from '../utils/logger';
 import { runMigrations } from './migrations';
-import { ensureHermesOpsAgent, initializePresetAgents } from './presets/initAgents';
+import { ensureHermesRuntimeAgents, initializePresetAgents } from './presets/initAgents';
 import { initializePresetWorkflows } from './presets/initWorkflows';
 import { initializePresetReportTemplates } from './presets/initReports';
 import { initializePresetKnowledge } from './presets/initKnowledge';
@@ -373,7 +373,7 @@ function initializeDefaultData(): void {
   if (presetCount.count === 0) {
     initializePresetAgents();
   }
-  ensureHermesOpsAgent();
+  ensureHermesRuntimeAgents();
   
   logger.info('🔄 Updating preset agent model configurations...');
   

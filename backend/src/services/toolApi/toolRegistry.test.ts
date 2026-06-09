@@ -46,6 +46,28 @@ describe('toolRegistry', () => {
     expect(runtimeConfig.allowedTools).toContain('verify_remediation');
   });
 
+  it('seeds a dedicated Hermes remediation orchestrator agent', async () => {
+    const agent = db.prepare(`
+      SELECT name, runtime, runtime_config, autonomy_level, category
+      FROM agents
+      WHERE name = ?
+    `).get('Hermes 修复编排 Agent') as
+      | { name: string; runtime: string; runtime_config: string; autonomy_level: string; category: string }
+      | undefined;
+
+    expect(agent).toBeTruthy();
+    expect(agent?.runtime).toBe('hermes');
+    expect(agent?.category).toBe('修复编排');
+    expect(agent?.autonomy_level).toBe('approval_required');
+
+    const runtimeConfig = JSON.parse(agent?.runtime_config || '{}') as { allowedTools?: string[]; temperature?: number };
+    expect(runtimeConfig.temperature).toBe(0.1);
+    expect(runtimeConfig.allowedTools).toContain('list_workflows');
+    expect(runtimeConfig.allowedTools).toContain('run_workflow');
+    expect(runtimeConfig.allowedTools).toContain('get_task_status');
+    expect(runtimeConfig.allowedTools).toContain('verify_remediation');
+  });
+
   it('queues medium-risk workflow execution for approval before touching workflows', async () => {
     const result = await invokeTool(
       'run_workflow',
