@@ -1,7 +1,8 @@
 import { createAuditLog } from '../auditService';
+import { createToolApproval } from './approvalService';
 import { evaluateToolPolicy } from './policyGuard';
 import { toolDefinitions } from './tools';
-import { ToolContext, ToolDefinition, ToolDescriptor, ToolInvocationResult } from './types';
+import { ToolContext, ToolDefinition, ToolDescriptor, ToolInvocationOptions, ToolInvocationResult } from './types';
 
 const tools = new Map<string, ToolDefinition>();
 
@@ -51,7 +52,8 @@ export function getTool(name: string): ToolDefinition | undefined {
 export async function invokeTool(
   name: string,
   input: Record<string, unknown>,
-  context: ToolContext
+  context: ToolContext,
+  options: ToolInvocationOptions = {}
 ): Promise<ToolInvocationResult> {
   const tool = getTool(name);
   if (!tool) {
@@ -64,7 +66,28 @@ export async function invokeTool(
   }
 
   const decision = evaluateToolPolicy(tool, context);
-  if (decision.status !== 'allowed') {
+  if (decision.status === 'approval_required' && !options.skipApproval) {
+    const approval = createToolApproval({
+      toolName: name,
+      input,
+      context,
+      decision
+    });
+
+    const result: Omit<ToolInvocationResult, 'auditId'> = {
+      success: false,
+      tool: name,
+      decision,
+      data: {
+        approval
+      },
+      error: decision.reason || 'Tool execution requires approval',
+      approvalId: approval.id
+    };
+    return { ...result, auditId: auditToolInvocation(context, name, result, input) };
+  }
+
+  if (decision.status !== 'allowed' && !options.skipApproval) {
     const result: Omit<ToolInvocationResult, 'auditId'> = {
       success: false,
       tool: name,
@@ -74,6 +97,10 @@ export async function invokeTool(
     return { ...result, auditId: auditToolInvocation(context, name, result, input) };
   }
 
+  const executionDecision = options.skipApproval && decision.status === 'approval_required'
+    ? { ...decision, status: 'allowed' as const, reason: 'Approved by human reviewer' }
+    : decision;
+
   try {
     const output = await tool.execute(input, context);
     const normalized: Omit<ToolInvocationResult, 'auditId'> = isToolInvocationResult(output)
@@ -81,14 +108,14 @@ export async function invokeTool(
       : {
         success: true,
         tool: name,
-        decision,
+        decision: executionDecision,
         data: output
       };
 
     const result = {
       ...normalized,
       tool: name,
-      decision: normalized.decision || decision
+      decision: normalized.decision || executionDecision
     };
 
     return { ...result, auditId: auditToolInvocation(context, name, result, input) };
@@ -96,7 +123,7 @@ export async function invokeTool(
     const result: Omit<ToolInvocationResult, 'auditId'> = {
       success: false,
       tool: name,
-      decision,
+      decision: executionDecision,
       error: error instanceof Error ? error.message : String(error)
     };
     return { ...result, auditId: auditToolInvocation(context, name, result, input) };

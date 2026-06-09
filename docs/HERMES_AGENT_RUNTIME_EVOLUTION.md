@@ -279,6 +279,31 @@ Agent test execution now stores:
 }
 ```
 
+## Phase 6: Tool Approval Workflow
+
+Objectives:
+
+- Persist `approval_required` tool calls as reviewable approval records.
+- Add human approve/reject APIs.
+- Add a frontend approval queue.
+- Execute an approved tool request through ITOps, not through the external runtime.
+
+Implemented:
+
+```text
+backend/src/models/migrations/v008_add_tool_approvals.ts
+backend/src/services/toolApi/approvalService.ts
+backend/src/routes/toolApprovalRoutes.ts
+frontend/src/pages/ToolApprovals.tsx
+docs/AGENT_RUNTIME_STAGE_6_APPROVALS.md
+```
+
+Initial approval-only tool:
+
+```text
+submit_remediation_for_approval
+```
+
 Suggested backend structure:
 
 ```text

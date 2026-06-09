@@ -198,9 +198,45 @@ export const runReadOnlyCommandTool: ToolDefinition = {
   }
 };
 
+export const submitRemediationForApprovalTool: ToolDefinition = {
+  name: 'submit_remediation_for_approval',
+  description: 'Submit a proposed remediation action for human approval before any operational change is executed.',
+  riskLevel: 'medium_risk',
+  inputSchema: {
+    type: 'object',
+    required: ['title', 'description'],
+    properties: {
+      title: { type: 'string' },
+      description: { type: 'string' },
+      targetType: { type: 'string' },
+      targetId: { type: 'string' },
+      proposedAction: { type: 'string' },
+      rollbackPlan: { type: 'string' },
+      verificationPlan: { type: 'string' },
+      riskNotes: { type: 'string' }
+    }
+  },
+  execute(input: Record<string, unknown>, context: ToolContext) {
+    return {
+      approved: true,
+      submittedBy: context.userId || 'unknown',
+      title: requireString(input, 'title'),
+      description: requireString(input, 'description'),
+      targetType: typeof input.targetType === 'string' ? input.targetType : null,
+      targetId: typeof input.targetId === 'string' ? input.targetId : null,
+      proposedAction: typeof input.proposedAction === 'string' ? input.proposedAction : null,
+      rollbackPlan: typeof input.rollbackPlan === 'string' ? input.rollbackPlan : null,
+      verificationPlan: typeof input.verificationPlan === 'string' ? input.verificationPlan : null,
+      riskNotes: typeof input.riskNotes === 'string' ? input.riskNotes : null,
+      message: 'Remediation proposal approved. Stage 6 records approval only; execution wiring is added in the next phase.'
+    };
+  }
+};
+
 export const toolDefinitions = [
   listServersTool,
   queryAlertsTool,
   searchKnowledgeBaseTool,
-  runReadOnlyCommandTool
+  runReadOnlyCommandTool,
+  submitRemediationForApprovalTool
 ];

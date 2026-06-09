@@ -37,4 +37,9 @@ export interface ToolInvocationResult<TOutput = unknown> {
   data?: TOutput;
   error?: string;
   auditId?: string | null;
+  approvalId?: string | null;
+}
+
+export interface ToolInvocationOptions {
+  skipApproval?: boolean;
 }

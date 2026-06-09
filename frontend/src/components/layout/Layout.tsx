@@ -40,6 +40,7 @@ import {
   ServerCog,
   Zap,
   AlertTriangle,
+  ShieldAlert,
   ShieldCheck,
   BookMarked,
   Cog,
@@ -74,6 +75,7 @@ const navigationGroups = [
     icon: Zap,
     items: [
       { name: 'Agent管理', href: '/agents', icon: Bot },
+      { name: '工具审批', href: '/tool-approvals', icon: ShieldAlert },
       { name: '工作流', href: '/workflows', icon: GitBranch },
       { name: '任务执行', href: '/tasks', icon: Play },
       { name: '脚本中心', href: '/scripts', icon: FileCode },
