@@ -4,6 +4,8 @@
 
 阶段 0-10 已经完成 runtime、Tool API、审批、任务、trace 和 correlation 基础能力。阶段 11-16 不重新设计执行核心，而是围绕现有能力做产品化、闭环化和权限收口。
 
+阶段 17-21 将继续把 Hermes 管理面升级为 Channel、MCP、Skills 和生产持久化能力，详见 `docs/AGENT_RUNTIME_STAGE_17_21_HERMES_CHANNEL_ROADMAP.md`。
+
 ## 总体原则
 
 - Hermes 负责诊断、规划、复盘和提出受控动作。
@@ -408,20 +410,28 @@ hermes_sessions
 
 这一步完成后，Hermes 对操作者就从“隐藏 runtime”变成“可使用功能”。
 
-## 下一步：阶段 13 切片建议
+## 下一步：阶段 17-21
 
-阶段 13 建议拆成三个小提交：
+阶段 11-16 已经让 Hermes 对操作者可用，并形成审批、任务、trace、会话和权限闭环。下一步不建议继续把能力配置堆在 Agent 的 `runtime_config` 中，而是抽象出 Hermes Channel：
 
-1. 关联状态读取
-   - 根据当前 run 的 `approvalId`、`taskId`、`correlationId` 拉取审批、任务和链路数据。
-   - 先只展示，不提供审批操作。
+```text
+Hermes Channel
+  -> Runtime endpoint / model / secret ref
+  -> Tool allowlist
+  -> MCP servers
+  -> Skill packs
+  -> Policy
+  -> Health check
+```
 
-2. 审批操作嵌入
-   - 在 Hermes 页面内支持 approve/reject。
-   - 操作后刷新审批和任务状态。
+推荐顺序：
 
-3. 验证修复闭环
-   - 增加 `verify_remediation` 按钮。
-   - 将验证结果展示并保存在当前页面状态中。
+```text
+阶段 17：Hermes Channel 管理入口
+阶段 20：Channel 与 Agent 绑定
+阶段 21：部署、密钥和持久化生产化
+阶段 18：MCP Server Registry
+阶段 19：Skill Pack Registry
+```
 
-这样可以先把信息聚合做稳，再放开页面内操作。
+详细计划见 `docs/AGENT_RUNTIME_STAGE_17_21_HERMES_CHANNEL_ROADMAP.md`。
