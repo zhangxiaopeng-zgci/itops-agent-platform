@@ -2,6 +2,52 @@ import { db } from '../database';
 import { randomUUID } from 'crypto';
 import { logger } from '../../utils/logger';
 
+interface WorkflowAgentNodeSpec {
+  name: string;
+  avatar: string;
+  allowFailure?: boolean;
+}
+
+interface WorkflowTemplateSpec {
+  name: string;
+  description: string;
+  nodes: WorkflowAgentNodeSpec[];
+}
+
+const HERMES_WORKFLOW_TEMPLATES: WorkflowTemplateSpec[] = [
+  {
+    name: 'Hermes 告警诊断与修复闭环',
+    description: 'Hermes 先完成告警诊断和证据收集，再结合日志、服务器命令和修复编排 Agent 形成审批式修复闭环，最后生成处理报告。',
+    nodes: [
+      { name: 'Hermes 诊断修复 Agent', avatar: '🧠' },
+      { name: '日志分析 Agent', avatar: '📝' },
+      { name: '服务器命令执行 Agent', avatar: '💻' },
+      { name: 'Hermes 修复编排 Agent', avatar: '🛠️' },
+      { name: '文档生成 Agent', avatar: '📄' }
+    ]
+  },
+  {
+    name: 'Hermes 故障诊断与审批修复',
+    description: '面向明确故障的 Hermes 增强流程：诊断修复 Agent 判断根因，命令执行 Agent 补充事实，修复编排 Agent 提交审批式工作流，复盘进化 Agent 输出改进建议。',
+    nodes: [
+      { name: 'Hermes 诊断修复 Agent', avatar: '🧠' },
+      { name: '服务器命令执行 Agent', avatar: '💻' },
+      { name: 'Hermes 修复编排 Agent', avatar: '🛠️' },
+      { name: 'Hermes 复盘进化 Agent', avatar: '🧬' }
+    ]
+  },
+  {
+    name: 'Hermes 巡检复盘与优化建议',
+    description: '用于巡检后的复盘与优化：系统巡检和命令执行收集事实，文档生成 Agent 形成报告，Hermes 复盘进化 Agent 输出可审批的优化 proposal。',
+    nodes: [
+      { name: '系统巡检 Agent', avatar: '🔎' },
+      { name: '服务器命令执行 Agent', avatar: '💻' },
+      { name: '文档生成 Agent', avatar: '📄' },
+      { name: 'Hermes 复盘进化 Agent', avatar: '🧬' }
+    ]
+  }
+];
+
 export function initializePresetWorkflows() {
   const alertAgent = db.prepare("SELECT id FROM agents WHERE name = '告警处理 Agent'").get() as { id: string } | undefined;
   const diagnosticAgent = db.prepare("SELECT id FROM agents WHERE name = '故障诊断 Agent'").get() as { id: string } | undefined;
@@ -166,4 +212,63 @@ export function initializePresetWorkflows() {
   });
 
   logger.info(`✅ 成功创建 ${presetWorkflows.length} 个预设工作流`);
+}
+
+export function ensureHermesWorkflowTemplates(): void {
+  const agents = db.prepare('SELECT id, name FROM agents').all() as Array<{ id: string; name: string }>;
+  const agentMap = new Map(agents.map(agent => [agent.name, agent.id]));
+  const existingWorkflows = db.prepare('SELECT name FROM workflows WHERE is_template = 1').all() as Array<{ name: string }>;
+  const existingNames = new Set(existingWorkflows.map(workflow => workflow.name));
+
+  const insertWorkflow = db.prepare(`
+    INSERT INTO workflows (id, name, description, nodes, edges, is_template)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `);
+
+  let createdCount = 0;
+  HERMES_WORKFLOW_TEMPLATES.forEach(template => {
+    if (existingNames.has(template.name)) {
+      return;
+    }
+
+    const { nodes, edges } = buildLinearAgentWorkflow(template.nodes, agentMap);
+    insertWorkflow.run(
+      randomUUID(),
+      template.name,
+      template.description,
+      JSON.stringify(nodes),
+      JSON.stringify(edges),
+      1
+    );
+    createdCount += 1;
+  });
+
+  if (createdCount > 0) {
+    logger.info(`✅ 成功创建 ${createdCount} 个 Hermes 增强版工作流模板`);
+  }
+}
+
+function buildLinearAgentWorkflow(
+  nodeSpecs: WorkflowAgentNodeSpec[],
+  agentMap: Map<string, string>
+) {
+  const nodes = nodeSpecs.map((spec, index) => ({
+    id: randomUUID(),
+    type: 'agent',
+    position: { x: 100 + index * 300, y: 100 },
+    data: {
+      label: spec.name,
+      agentId: agentMap.get(spec.name) || null,
+      avatar: spec.avatar,
+      allowFailure: spec.allowFailure || false
+    }
+  }));
+
+  const edges = nodes.slice(0, -1).map((node, index) => ({
+    id: randomUUID(),
+    source: node.id,
+    target: nodes[index + 1].id
+  }));
+
+  return { nodes, edges };
 }

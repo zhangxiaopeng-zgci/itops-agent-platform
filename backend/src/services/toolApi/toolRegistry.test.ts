@@ -27,6 +27,35 @@ describe('toolRegistry', () => {
     );
   });
 
+  it('seeds Hermes-enhanced workflow templates without replacing legacy templates', () => {
+    const workflows = db.prepare(`
+      SELECT name, nodes, is_template
+      FROM workflows
+      WHERE is_template = 1
+    `).all() as Array<{ name: string; nodes: string; is_template: number }>;
+
+    const names = workflows.map(workflow => workflow.name);
+    expect(names).toContain('日常健康检查');
+    expect(names).toContain('告警处理');
+    expect(names).toContain('Hermes 告警诊断与修复闭环');
+    expect(names).toContain('Hermes 故障诊断与审批修复');
+    expect(names).toContain('Hermes 巡检复盘与优化建议');
+
+    const alertWorkflow = workflows.find(workflow => workflow.name === 'Hermes 告警诊断与修复闭环');
+    expect(alertWorkflow).toBeTruthy();
+
+    const nodes = JSON.parse(alertWorkflow?.nodes || '[]') as Array<{ type?: string; data?: { label?: string; agentId?: string | null } }>;
+    expect(nodes.map(node => node.data?.label)).toEqual([
+      'Hermes 诊断修复 Agent',
+      '日志分析 Agent',
+      '服务器命令执行 Agent',
+      'Hermes 修复编排 Agent',
+      '文档生成 Agent'
+    ]);
+    expect(nodes.every(node => node.type === 'agent')).toBe(true);
+    expect(nodes.every(node => typeof node.data?.agentId === 'string' && node.data.agentId.length > 0)).toBe(true);
+  });
+
   it('seeds a Hermes diagnosis and remediation agent with approval-loop tools', async () => {
     const agent = db.prepare(`
       SELECT name, runtime, runtime_config, autonomy_level

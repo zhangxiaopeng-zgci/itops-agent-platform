@@ -7,7 +7,7 @@ import { env } from '../utils/env';
 import { logger } from '../utils/logger';
 import { runMigrations } from './migrations';
 import { ensureHermesRuntimeAgents, initializePresetAgents } from './presets/initAgents';
-import { initializePresetWorkflows } from './presets/initWorkflows';
+import { ensureHermesWorkflowTemplates, initializePresetWorkflows } from './presets/initWorkflows';
 import { initializePresetReportTemplates } from './presets/initReports';
 import { initializePresetKnowledge } from './presets/initKnowledge';
 import { initializePresetScripts } from './presets/initScripts';
@@ -430,6 +430,7 @@ function initializeDefaultData(): void {
   if (workflowCount.count === 0) {
     initializePresetWorkflows();
   }
+  ensureHermesWorkflowTemplates();
 
   // 预设报告模板
   const reportTemplatesCount = db.prepare('SELECT COUNT(*) as count FROM reports WHERE is_preset = 1 AND type = \'template\'').get() as { count: number };
