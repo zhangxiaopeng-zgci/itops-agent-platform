@@ -21,6 +21,7 @@ import {
   Sparkles,
   Wrench,
   X,
+  XCircle,
 } from 'lucide-react';
 import clsx from 'clsx';
 import api from '../lib/api';
@@ -424,6 +425,8 @@ export default function HermesAssistant() {
   const [selectedAlertId, setSelectedAlertId] = useState('');
   const [selectedWorkflowId, setSelectedWorkflowId] = useState('');
   const [selectedKnowledgeCategory, setSelectedKnowledgeCategory] = useState('');
+  const [approvalActionId, setApprovalActionId] = useState('');
+  const [approvalComment, setApprovalComment] = useState('');
 
   const { data: agents, isLoading, refetch } = useQuery({
     queryKey: ['agents'],
@@ -646,6 +649,8 @@ export default function HermesAssistant() {
     onSuccess: (data) => {
       setLastResult(data);
       setActiveTraceIndex(null);
+      setApprovalActionId('');
+      setApprovalComment('');
       toast.success(t('hermes.toast.completed'));
     },
     onError: (error: unknown) => {
@@ -691,6 +696,39 @@ export default function HermesAssistant() {
     refetchApprovals();
     refetchTasks();
   };
+  const approveApprovalMutation = useMutation({
+    mutationFn: async (approvalId: string) => {
+      const res = await api.post(`/api/tool-approvals/${approvalId}/approve`, { comment: approvalComment });
+      return res.data.data as ToolApprovalItem;
+    },
+    onSuccess: () => {
+      setApprovalActionId('');
+      setApprovalComment('');
+      toast.success(t('hermes.closure.approveSuccess'));
+      refreshClosure();
+    },
+    onError: (error: unknown) => {
+      refreshClosure();
+      toast.error(error instanceof Error ? error.message : t('hermes.closure.approveFailed'));
+    },
+  });
+  const rejectApprovalMutation = useMutation({
+    mutationFn: async (approvalId: string) => {
+      const res = await api.post(`/api/tool-approvals/${approvalId}/reject`, { comment: approvalComment });
+      return res.data.data as ToolApprovalItem;
+    },
+    onSuccess: () => {
+      setApprovalActionId('');
+      setApprovalComment('');
+      toast.success(t('hermes.closure.rejectSuccess'));
+      refreshClosure();
+    },
+    onError: (error: unknown) => {
+      refreshClosure();
+      toast.error(error instanceof Error ? error.message : t('hermes.closure.rejectFailed'));
+    },
+  });
+  const isApprovalActionPending = approveApprovalMutation.isPending || rejectApprovalMutation.isPending;
 
   return (
     <div className="h-full overflow-auto p-6">
@@ -1210,7 +1248,60 @@ export default function HermesAssistant() {
                                   <ExternalLink className="w-3 h-3" />
                                 </button>
                               )}
+                              {approval.status === 'pending' && approvalActionId !== approval.id && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setApprovalActionId(approval.id);
+                                    setApprovalComment('');
+                                  }}
+                                  className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-primary/10 text-primary border border-primary/20 hover:bg-primary/20 text-xs"
+                                >
+                                  {t('hermes.closure.handleApproval')}
+                                </button>
+                              )}
                             </div>
+                            {approval.status === 'pending' && approvalActionId === approval.id && (
+                              <div className="mt-3 pt-3 border-t border-border space-y-3">
+                                <textarea
+                                  value={approvalComment}
+                                  onChange={(event) => setApprovalComment(event.target.value)}
+                                  placeholder={t('hermes.closure.commentPlaceholder')}
+                                  className="w-full min-h-20 px-3 py-2 rounded-lg bg-background border border-border text-sm text-text-primary placeholder-text-tertiary focus:outline-none focus:border-primary/60 resize-none"
+                                />
+                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setApprovalActionId('');
+                                      setApprovalComment('');
+                                    }}
+                                    disabled={isApprovalActionPending}
+                                    className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-background text-text-secondary border border-border hover:text-text-primary disabled:opacity-50 text-xs"
+                                  >
+                                    {t('common.cancel')}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => rejectApprovalMutation.mutate(approval.id)}
+                                    disabled={isApprovalActionPending}
+                                    className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-red-500/10 text-red-400 border border-red-500/30 hover:bg-red-500/20 disabled:opacity-50 text-xs"
+                                  >
+                                    {rejectApprovalMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <XCircle className="w-3.5 h-3.5" />}
+                                    {t('hermes.closure.reject')}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => approveApprovalMutation.mutate(approval.id)}
+                                    disabled={isApprovalActionPending}
+                                    className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-green-500/10 text-green-400 border border-green-500/30 hover:bg-green-500/20 disabled:opacity-50 text-xs"
+                                  >
+                                    {approveApprovalMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
+                                    {t('hermes.closure.approveAndRun')}
+                                  </button>
+                                </div>
+                              </div>
+                            )}
                           </div>
                         ))}
                       </div>
