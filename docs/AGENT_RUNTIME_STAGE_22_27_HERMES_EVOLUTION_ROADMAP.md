@@ -146,6 +146,8 @@ evolution_proposals
 
 ## 阶段 25：自动评估与回放
 
+状态：已进入实现收口。
+
 新增 eval harness：
 
 - 从历史 trace 抽样。
@@ -155,6 +157,15 @@ evolution_proposals
 - 计算 score。
 
 只有评估通过的 proposal 才能进入审批。
+
+当前阶段 25 基线实现：
+
+- 新增 `evolution_proposal_evaluations`。
+- 新增 `POST /api/evolution-proposals/:id/evaluate`。
+- 使用 deterministic evaluation harness，先不依赖模型自评。
+- 评分维度为 Safety、Evidence、Completeness、Replay。
+- `score >= 75` 且无 critical finding 时自动回写 `eval_passed`，否则回写 `eval_failed`。
+- `/evolution-proposals` 页面展示分数、finding 和 replay samples。
 
 ## 阶段 26：审批发布与版本化
 

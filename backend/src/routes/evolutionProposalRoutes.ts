@@ -8,6 +8,10 @@ import {
   listEvolutionProposals,
   updateEvolutionProposalStatus
 } from '../services/evolutionProposalService';
+import {
+  evaluateEvolutionProposal,
+  listEvolutionProposalEvaluations
+} from '../services/evolutionEvaluationService';
 
 interface AuthenticatedRequest extends Request {
   user?: {
@@ -44,7 +48,8 @@ router.get('/:id', requireRole('admin', 'operator', 'viewer'), (req: Request, re
       success: true,
       data: {
         proposal,
-        events: listEvolutionProposalEvents(req.params.id)
+        events: listEvolutionProposalEvents(req.params.id),
+        evaluations: listEvolutionProposalEvaluations(req.params.id)
       }
     });
   } catch (error) {
@@ -90,6 +95,19 @@ router.post('/generate', requireRole('admin', 'operator'), async (req: Authentic
     res.status(201).json({ success: true, data: proposal });
   } catch (error) {
     res.status(400).json({ success: false, error: error instanceof Error ? error.message : 'Failed to generate evolution proposal' });
+  }
+});
+
+router.post('/:id/evaluate', requireRole('admin', 'operator'), (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const evaluation = evaluateEvolutionProposal({
+      proposalId: req.params.id,
+      actorId: req.user?.id || null
+    });
+
+    return res.json({ success: true, data: evaluation });
+  } catch (error) {
+    return res.status(400).json({ success: false, error: error instanceof Error ? error.message : 'Failed to evaluate evolution proposal' });
   }
 });
 

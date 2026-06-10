@@ -1,6 +1,6 @@
 import { type ReactNode, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Archive, CheckCircle2, Clock, FileText, PlayCircle, RefreshCw, ShieldCheck, Sparkles, XCircle } from 'lucide-react';
+import { Archive, CheckCircle2, Clock, FileText, Gauge, PlayCircle, RefreshCw, ShieldCheck, Sparkles, XCircle } from 'lucide-react';
 import clsx from 'clsx';
 import api from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
@@ -45,6 +45,35 @@ interface ProposalEvent {
   actor_id?: string | null;
   comment?: string | null;
   metadata: unknown;
+  created_at: string;
+}
+
+interface EvaluationFinding {
+  severity: 'info' | 'warning' | 'critical';
+  code: string;
+  message: string;
+}
+
+interface ReplaySample {
+  source: string;
+  id: string;
+  status?: string | null;
+  correlationId?: string | null;
+  summary: string;
+}
+
+interface ProposalEvaluation {
+  id: string;
+  status: string;
+  passed: number;
+  score: number;
+  safety_score: number;
+  evidence_score: number;
+  completeness_score: number;
+  replay_score: number;
+  replay_sample_count: number;
+  findings: EvaluationFinding[];
+  replay_samples: ReplaySample[];
   created_at: string;
 }
 
@@ -113,7 +142,7 @@ export default function EvolutionProposals() {
     enabled: Boolean(selectedProposal?.id),
     queryFn: async () => {
       const res = await api.get(`/api/evolution-proposals/${selectedProposal!.id}`);
-      return res.data.data as { proposal: EvolutionProposal; events: ProposalEvent[] };
+      return res.data.data as { proposal: EvolutionProposal; events: ProposalEvent[]; evaluations: ProposalEvaluation[] };
     }
   });
 
@@ -157,6 +186,21 @@ export default function EvolutionProposals() {
     },
     onError: (error: unknown) => {
       toast.error(error instanceof Error ? error.message : t('evolution.toast.statusFailed'));
+    }
+  });
+
+  const evaluateMutation = useMutation({
+    mutationFn: async (proposalId: string) => {
+      const res = await api.post(`/api/evolution-proposals/${proposalId}/evaluate`);
+      return res.data.data as ProposalEvaluation;
+    },
+    onSuccess: (_evaluation, proposalId) => {
+      toast.success(t('evolution.toast.evaluated'));
+      queryClient.invalidateQueries({ queryKey: ['evolution-proposals'] });
+      queryClient.invalidateQueries({ queryKey: ['evolution-proposal-detail', proposalId] });
+    },
+    onError: (error: unknown) => {
+      toast.error(error instanceof Error ? error.message : t('evolution.toast.evaluateFailed'));
     }
   });
 
@@ -321,6 +365,12 @@ export default function EvolutionProposals() {
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <ActionButton
+                    label={evaluateMutation.isPending ? t('evolution.evaluating') : t('evolution.action.evaluate')}
+                    icon={<Gauge className="w-4 h-4" />}
+                    disabled={!canGenerate || evaluateMutation.isPending}
+                    onClick={() => evaluateMutation.mutate(activeProposal.id)}
+                  />
+                  <ActionButton
                     label={t('evolution.action.evalPending')}
                     icon={<Clock className="w-4 h-4" />}
                     disabled={statusMutation.isPending}
@@ -371,6 +421,8 @@ export default function EvolutionProposals() {
 
               <InfoGrid proposal={activeProposal} />
 
+              <EvaluationPanel evaluations={detail?.evaluations || []} />
+
               <DetailSection title={t('evolution.body')} icon={<FileText className="w-4 h-4" />}>
                 <pre className="whitespace-pre-wrap break-words text-sm text-text-secondary leading-6">{activeProposal.proposal_body}</pre>
               </DetailSection>
@@ -399,6 +451,80 @@ export default function EvolutionProposals() {
         </section>
       </div>
     </div>
+  );
+}
+
+function EvaluationPanel({ evaluations }: { evaluations: ProposalEvaluation[] }) {
+  const { t } = useLocale();
+  const latest = evaluations[0];
+  if (!latest) {
+    return (
+      <DetailSection title={t('evolution.eval.title')} icon={<Gauge className="w-4 h-4" />}>
+        <div className="text-sm text-text-tertiary">{t('evolution.eval.empty')}</div>
+      </DetailSection>
+    );
+  }
+
+  const scores = [
+    [t('evolution.eval.safety'), latest.safety_score],
+    [t('evolution.eval.evidence'), latest.evidence_score],
+    [t('evolution.eval.completeness'), latest.completeness_score],
+    [t('evolution.eval.replay'), latest.replay_score]
+  ];
+
+  return (
+    <DetailSection title={t('evolution.eval.title')} icon={<Gauge className="w-4 h-4" />}>
+      <div className="grid grid-cols-1 lg:grid-cols-[160px_minmax(0,1fr)] gap-4">
+        <div className="rounded-lg bg-background border border-border p-4">
+          <div className="text-xs text-text-tertiary">{t('evolution.eval.score')}</div>
+          <div className="text-3xl font-semibold text-text-primary mt-1">{latest.score}</div>
+          <div className={clsx(
+            'mt-2 inline-flex px-2 py-1 rounded-full border text-xs font-medium',
+            latest.passed
+              ? 'bg-status-success/10 text-status-success border-status-success/30'
+              : 'bg-status-failed/10 text-status-failed border-status-failed/30'
+          )}>
+            {latest.passed ? t('evolution.eval.passed') : t('evolution.eval.failed')}
+          </div>
+        </div>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          {scores.map(([label, value]) => (
+            <div key={label} className="rounded-lg bg-background border border-border px-3 py-2">
+              <div className="text-xs text-text-tertiary">{label}</div>
+              <div className="text-lg font-semibold text-text-primary mt-1">{value}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="mt-4 grid grid-cols-1 xl:grid-cols-2 gap-4">
+        <div>
+          <div className="text-xs font-medium text-text-tertiary mb-2">{t('evolution.eval.findings')}</div>
+          <div className="space-y-2">
+            {latest.findings.length === 0 && <div className="text-sm text-text-tertiary">{t('evolution.eval.noFindings')}</div>}
+            {latest.findings.map((finding) => (
+              <div key={`${finding.code}-${finding.message}`} className="rounded-lg bg-background border border-border px-3 py-2">
+                <div className="text-xs text-text-tertiary">{finding.severity} · {finding.code}</div>
+                <div className="text-sm text-text-secondary mt-1">{finding.message}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div>
+          <div className="text-xs font-medium text-text-tertiary mb-2">{t('evolution.eval.replaySamples', { count: latest.replay_sample_count })}</div>
+          <div className="space-y-2 max-h-64 overflow-y-auto">
+            {latest.replay_samples.slice(0, 8).map((sample) => (
+              <div key={`${sample.source}-${sample.id}`} className="rounded-lg bg-background border border-border px-3 py-2">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-xs text-text-tertiary">{sample.source}</span>
+                  <span className="text-xs text-text-tertiary">{sample.status || '-'}</span>
+                </div>
+                <div className="text-sm text-text-secondary mt-1 truncate">{sample.summary}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </DetailSection>
   );
 }
 
