@@ -1,6 +1,7 @@
 import axios, { AxiosError } from 'axios';
 import db from '../../models/database';
 import { logger } from '../../utils/logger';
+import { resolveHermesRuntimeConfigForAgent } from '../hermesChannelService';
 import { ToolContext, ToolDescriptor } from '../toolApi/types';
 import { AgentRunRequest, AgentRunResult, AgentRuntime, AgentTraceEvent, RuntimeAgentRecord } from './types';
 
@@ -9,6 +10,8 @@ const DEFAULT_TIMEOUT_MS = 300000;
 const DEFAULT_MAX_TOOL_ROUNDS = 3;
 
 interface HermesRuntimeConfig {
+  channelId?: string;
+  channelName?: string;
   baseUrl?: string;
   model?: string;
   apiKeyEnv?: string;
@@ -79,7 +82,7 @@ export class HermesAgentRuntime implements AgentRuntime {
       throw new Error(`Agent not found: ${request.agentId}`);
     }
 
-    const config = parseRuntimeConfig(agent.runtime_config);
+    const config = resolveHermesRuntimeConfigForAgent(agent.id, agent.runtime_config);
     const configuredBaseUrl = config.baseUrl || process.env.HERMES_API_BASE;
     if (!configuredBaseUrl) {
       throw new Error('Hermes runtime requires runtime_config.baseUrl or HERMES_API_BASE');
@@ -153,6 +156,8 @@ export class HermesAgentRuntime implements AgentRuntime {
           metadata: {
             runtime: this.type,
             model,
+            channelId: config.channelId,
+            channelName: config.channelName,
             agentName: agent.name,
             correlationId,
             usage: lastUsage,

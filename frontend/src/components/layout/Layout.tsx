@@ -6,6 +6,7 @@ import {
   LayoutDashboard,
   Bot,
   Brain,
+  Cable,
   GitBranch,
   Play,
   Bell,
@@ -86,6 +87,7 @@ const navigationGroups: Array<{
     items: [
       { labelKey: 'nav.agents', href: '/agents', icon: Bot },
       { labelKey: 'nav.hermes', href: '/hermes', icon: Brain },
+      { labelKey: 'nav.hermesChannels', href: '/hermes-channels', icon: Cable },
       { labelKey: 'nav.toolApprovals', href: '/tool-approvals', icon: ShieldAlert },
       { labelKey: 'nav.workflows', href: '/workflows', icon: GitBranch },
       { labelKey: 'nav.tasks', href: '/tasks', icon: Play },

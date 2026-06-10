@@ -15,8 +15,9 @@ function getRequestRole(req: Request): string {
 }
 
 function isRuntimeManagementRequest(body: Record<string, unknown>): boolean {
-  return body.runtime === 'hermes' ||
+    return body.runtime === 'hermes' ||
     (body.runtime_config !== undefined && body.runtime_config !== null) ||
+    (body.channel_id !== undefined && body.channel_id !== null && body.channel_id !== '') ||
     (body.tool_policy_id !== undefined && body.tool_policy_id !== null && body.tool_policy_id !== '') ||
     (body.autonomy_level !== undefined && body.autonomy_level !== null && body.autonomy_level !== 'suggest');
 }
@@ -189,7 +190,7 @@ router.get('/:id/executions', (req: Request, res: Response) => {
 
 router.post('/', requireRole('admin', 'operator'), (req: Request, res: Response) => {
   try {
-    const { name, avatar, role, system_prompt, model, temperature, enabled, category, tags, description, api_provider, primary_model_id, fallback_model_id, runtime, runtime_config, autonomy_level, tool_policy_id } = req.body;
+    const { name, avatar, role, system_prompt, model, temperature, enabled, category, tags, description, api_provider, primary_model_id, fallback_model_id, runtime, runtime_config, autonomy_level, tool_policy_id, channel_id } = req.body;
     if (getRequestRole(req) !== 'admin' && isRuntimeManagementRequest(req.body || {})) {
       return res.status(403).json({ success: false, error: 'Only admins can configure Hermes runtime, autonomy level, or allowed tools' });
     }
@@ -200,9 +201,9 @@ router.post('/', requireRole('admin', 'operator'), (req: Request, res: Response)
       INSERT INTO agents (
         id, name, avatar, role, system_prompt, model, temperature, enabled, is_preset,
         category, tags, description, api_provider, primary_model_id, fallback_model_id,
-        runtime, runtime_config, autonomy_level, tool_policy_id
+        runtime, runtime_config, autonomy_level, tool_policy_id, channel_id
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       id, 
       name, 
@@ -222,7 +223,8 @@ router.post('/', requireRole('admin', 'operator'), (req: Request, res: Response)
       defaultRuntimeForName(name, runtime),
       serializeRuntimeConfig(runtime_config),
       autonomy_level || 'suggest',
-      tool_policy_id || null
+      tool_policy_id || null,
+      channel_id || null
     );
     
     const agent = db.prepare('SELECT * FROM agents WHERE id = ?').get(id);
@@ -417,7 +419,7 @@ router.get('/:id/test-input', (req: Request, res: Response) => {
 
 router.put('/:id', requireRole('admin', 'operator'), (req: Request, res: Response) => {
   try {
-    const { name, avatar, role, system_prompt, model, temperature, enabled, category, tags, description, api_provider, primary_model_id, fallback_model_id, runtime, runtime_config, autonomy_level, tool_policy_id } = req.body;
+    const { name, avatar, role, system_prompt, model, temperature, enabled, category, tags, description, api_provider, primary_model_id, fallback_model_id, runtime, runtime_config, autonomy_level, tool_policy_id, channel_id } = req.body;
     if (getRequestRole(req) !== 'admin' && isRuntimeManagementRequest(req.body || {})) {
       return res.status(403).json({ success: false, error: 'Only admins can configure Hermes runtime, autonomy level, or allowed tools' });
     }
@@ -432,6 +434,7 @@ router.put('/:id', requireRole('admin', 'operator'), (req: Request, res: Respons
           runtime_config = COALESCE(?, runtime_config),
           autonomy_level = COALESCE(?, autonomy_level, 'suggest'),
           tool_policy_id = COALESCE(?, tool_policy_id),
+          channel_id = COALESCE(?, channel_id),
           updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
     `).run(
@@ -444,6 +447,7 @@ router.put('/:id', requireRole('admin', 'operator'), (req: Request, res: Respons
       runtime_config === undefined ? null : serializeRuntimeConfig(runtime_config),
       autonomy_level === undefined ? null : autonomy_level,
       tool_policy_id === undefined ? null : tool_policy_id,
+      channel_id === undefined ? null : channel_id,
       req.params.id
     );
     

@@ -37,4 +37,5 @@ export interface RuntimeAgentRecord {
   runtime_config?: string | null;
   autonomy_level?: AgentAutonomyLevel | string | null;
   tool_policy_id?: string | null;
+  channel_id?: string | null;
 }
