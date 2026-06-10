@@ -124,3 +124,9 @@ Hermes Agent 执行 metadata 新增：
 ## 阶段 22 结论
 
 阶段 22 完成后，Hermes 具备真实三实例 Runtime 架构。后续阶段 23 可以继续补 Worker heartbeat、run history、错误率和版本观测。
+
+阶段 23 已在此基础上补充 Worker registry、heartbeat 和 run history，详见：
+
+```text
+docs/AGENT_RUNTIME_STAGE_23_WORKER_OBSERVABILITY.md
+```

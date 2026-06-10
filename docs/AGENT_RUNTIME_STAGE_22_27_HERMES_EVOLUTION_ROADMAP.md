@@ -80,6 +80,8 @@ POST /run
 
 ## 阶段 23：Worker 状态与观测
 
+状态：已进入实现收口。
+
 新增：
 
 ```text
@@ -98,6 +100,20 @@ hermes_worker_runs
 - mcp bundle version
 - latency / error rate
 - last run
+
+控制面补充：
+
+- `/api/hermes-workers` 返回健康状态、24 小时调用统计和最近一次 run。
+- `/api/hermes-workers/runs` 返回 Worker run history。
+- `/api/hermes-workers/heartbeats` 返回 Worker heartbeat history。
+- Hermes 控制台展示三个 Worker 的 run/fallback/latency 摘要。
+
+边界：
+
+- 观测数据只由 backend 持久化，Worker 仍不连接平台数据库。
+- heartbeat 保留 7 天。
+- run history 保留 30 天。
+- fallback 也必须记录，避免“看起来成功但实际绕过 Worker”的盲区。
 
 ## 阶段 24：Evolution Proposal
 

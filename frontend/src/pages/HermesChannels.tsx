@@ -102,6 +102,22 @@ interface HermesWorkerStatus {
   model?: string;
   upstreamConfigured?: boolean;
   error?: string;
+  runStats?: {
+    totalRuns: number;
+    successRuns: number;
+    failedRuns: number;
+    fallbackRuns: number;
+    avgLatencyMs: number | null;
+    lastRunAt: string | null;
+  };
+  lastRun?: {
+    id: string;
+    status: string;
+    latency_ms: number | null;
+    fallback_used: number;
+    error?: string | null;
+    created_at: string;
+  } | null;
 }
 
 interface ChannelFormState {
@@ -493,12 +509,33 @@ function WorkerStatusPanel({ workers }: { workers: HermesWorkerStatus[] }) {
                 {worker.latencyMs ? `${worker.latencyMs}ms` : '-'}
               </span>
             </div>
+            <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+              <MetricChip label={t('hermesChannels.workerRuns24h')} value={String(worker.runStats?.totalRuns ?? 0)} />
+              <MetricChip label={t('hermesChannels.workerFallbacks')} value={String(worker.runStats?.fallbackRuns ?? 0)} />
+              <MetricChip
+                label={t('hermesChannels.workerAvgLatency')}
+                value={worker.runStats?.avgLatencyMs != null ? `${worker.runStats.avgLatencyMs}ms` : '-'}
+              />
+              <MetricChip
+                label={t('hermesChannels.workerLastRun')}
+                value={worker.lastRun?.status || '-'}
+              />
+            </div>
             <div className="mt-2 text-xs text-text-tertiary truncate">
               {worker.url || t('hermesChannels.workerNoUrl')}
             </div>
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+function MetricChip({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-md bg-surface border border-border px-2 py-1 min-w-0">
+      <div className="text-[10px] uppercase text-text-tertiary truncate">{label}</div>
+      <div className="text-xs font-medium text-text-primary truncate">{value}</div>
     </div>
   );
 }

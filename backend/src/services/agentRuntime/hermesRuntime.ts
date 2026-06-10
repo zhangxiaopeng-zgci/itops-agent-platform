@@ -7,7 +7,9 @@ import { McpRuntimeContext } from '../mcpServerService';
 import { SkillRuntimeContext } from '../skillService';
 import {
   HermesWorkerRunMetadata,
+  HermesWorkerRunTelemetry,
   isHermesWorkerFallbackEnabled,
+  recordHermesWorkerRun,
   resolveHermesWorkerForChannel,
   runHermesWorker
 } from '../hermesWorkerService';
@@ -142,7 +144,12 @@ export class HermesAgentRuntime implements AgentRuntime {
           tool_choice: tools.length > 0 ? 'auto' : undefined,
           temperature: config.temperature
         },
-        timeoutMs: config.timeoutMs || DEFAULT_TIMEOUT_MS
+        timeoutMs: config.timeoutMs || DEFAULT_TIMEOUT_MS,
+        telemetry: {
+          agentId: agent.id,
+          channelId: config.channelId,
+          correlationId
+        }
       });
       const response = completion.response;
       lastWorker = completion.worker;
@@ -255,29 +262,50 @@ async function callHermesCompletion({
   baseUrl,
   apiKey,
   body,
-  timeoutMs
+  timeoutMs,
+  telemetry
 }: {
   config: HermesRuntimeConfig;
   baseUrl: string;
   apiKey: string;
   body: Record<string, unknown>;
   timeoutMs: number;
+  telemetry?: HermesWorkerRunTelemetry;
 }): Promise<{ response: ChatCompletionResponse; worker?: HermesWorkerRunMetadata }> {
   const worker = resolveHermesWorkerForChannel(config.channelType);
   if (worker?.url) {
     try {
-      const workerResult = await runHermesWorker(worker, { ...body, timeoutMs }, timeoutMs);
+      const workerResult = await runHermesWorker(worker, { ...body, timeoutMs }, timeoutMs, telemetry);
       return {
         response: workerResult.data as ChatCompletionResponse,
         worker: workerResult.metadata
       };
     } catch (error) {
+      const workerError = error instanceof Error ? error.message : String(error);
       if (!isHermesWorkerFallbackEnabled()) {
+        recordHermesWorkerRun({
+          workerRole: worker.role,
+          workerUrl: worker.url,
+          status: 'failed',
+          fallbackUsed: false,
+          error: workerError,
+          telemetry
+        });
         throw error;
       }
 
       logger.warn(`Hermes worker ${worker.role} failed, falling back to backend runtime`, error as Error);
+      const fallbackStart = Date.now();
       const response = await callChatCompletions(baseUrl, apiKey, body, timeoutMs);
+      recordHermesWorkerRun({
+        workerRole: worker.role,
+        workerUrl: worker.url,
+        status: 'fallback',
+        latencyMs: Date.now() - fallbackStart,
+        fallbackUsed: true,
+        error: workerError,
+        telemetry
+      });
       return {
         response,
         worker: {
@@ -286,10 +314,21 @@ async function callHermesCompletion({
           fallbackUsed: true,
           role: worker.role,
           url: worker.url,
-          error: error instanceof Error ? error.message : String(error)
+          error: workerError
         }
       };
     }
+  }
+
+  if (worker && !worker.url) {
+    recordHermesWorkerRun({
+      workerRole: worker.role,
+      workerUrl: null,
+      status: 'not_configured',
+      fallbackUsed: false,
+      error: `Hermes worker URL is not configured for role: ${worker.role}`,
+      telemetry
+    });
   }
 
   const response = await callChatCompletions(baseUrl, apiKey, body, timeoutMs);
