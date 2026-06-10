@@ -438,121 +438,40 @@ hermes-runtime
 Hermes should produce plans and tool-call requests. ITOps should execute or
 reject those requests through policy.
 
-## Future Backlog: Phase 10+
+## Operator Roadmap: Phase 11-16
 
-The completed implementation has reached Phase 9. The remaining items below are
-the recommended backlog for Phase 10 and later, not the already delivered phase
-sequence.
+Phase 10 has provided the correlation foundation. The next product line is to
+turn Hermes from a hidden runtime into an operator-facing AIOps workspace.
 
-### Phase 10: Correlated Observability
-
-Objectives:
-
-- Assign a stable correlation id to each Hermes tool-call loop.
-- Propagate the correlation id through agent executions, tool approvals,
-  workflow tasks, and audit logs.
-- Add backend APIs for querying a full incident/action chain by correlation id.
-- Add a single frontend trace view that links the agent answer, approval record,
-  task execution, verification, and audit entry.
-
-### Phase 11: Mixed Workflow Nodes
-
-Objectives:
-
-- Expand workflows beyond agent-only nodes.
-- Support tool calls, approvals, conditions, verification, rollback, and report
-  nodes.
-
-Target node types:
+Detailed plan:
 
 ```text
-agent_node
-tool_node
-approval_node
-condition_node
-verify_node
-rollback_node
-report_node
+docs/AGENT_RUNTIME_STAGE_11_16_HERMES_OPERATOR_ROADMAP.md
 ```
 
-Example incident flow:
+Recommended sequence:
 
 ```text
-alert
-  -> Hermes diagnosis
-  -> read-only inspection tools
-  -> Hermes remediation plan
-  -> risk decision
-  -> approval
-  -> remediation workflow
-  -> verification
-  -> report and knowledge capture
+Phase 11: Hermes 使用入口梳理
+Phase 12: 诊断上下文增强
+Phase 13: 审批与任务闭环嵌入
+Phase 14: Hermes 工作流模板化
+Phase 15: Trace 与会话持久化
+Phase 16: 产品化和权限边界
 ```
 
-### Phase 12: Controlled Self-Evolution
+Key boundary:
 
-Objectives:
+- Phase 11-13 primarily expose and compose existing runtime, approval, task,
+  trace, and correlation capabilities.
+- Phase 14 adds Hermes-enhanced workflow templates without replacing legacy
+  templates.
+- Phase 15 strengthens persistence and correlation evidence.
+- Phase 16 closes role-based permissions, risk visibility, and product safety.
 
-- Generate improvement proposals from execution history, failed tasks, and
-  operator feedback.
-- Use the read-only `Hermes 复盘进化 Agent` as the proposal author, not as a
-  production change executor.
-- Evaluate proposals offline before approval.
-- Publish versioned changes with rollback.
+## Historical First Implementation Slice
 
-Suggested data model:
-
-```text
-agent_versions
-evolution_proposals
-eval_cases
-eval_runs
-tool_usage_logs
-```
-
-Allowed proposal types:
-
-- Prompt changes.
-- Knowledge base entries.
-- Script proposals.
-- Workflow proposals.
-- Tool policy recommendations.
-
-Production mutation must require evaluation and human approval.
-
-### Phase 13: Deployment And Validation
-
-Test host:
-
-```text
-ubuntu@10.1.132.58
-```
-
-Suggested deployment path:
-
-```text
-/opt/itops-agent-platform/
-  docker-compose.yml
-  .env
-  data/
-  logs/
-  backups/
-```
-
-Validation scenarios:
-
-1. Existing LLM agent still works.
-2. Existing server command and inspection agents still work.
-3. Existing workflow execution still works.
-4. A custom HTTP runtime agent can be invoked.
-5. Hermes agent can diagnose a simulated alert using only read-only tools.
-6. Medium-risk remediation requires approval.
-7. Verification and rollback paths are recorded.
-8. Audit logs contain agent runtime and tool-call context.
-
-## First Implementation Slice
-
-The first slice should include only:
+The first implementation slice was intentionally limited to:
 
 - Phase 0 preparation.
 - Phase 1 runtime abstraction.
@@ -560,4 +479,5 @@ The first slice should include only:
 - No behavior change for existing agents.
 - Tests or build checks for the refactor.
 
-This keeps the foundation small, reviewable, and easy to roll back.
+That kept the runtime foundation small, reviewable, and easy to roll back. The
+current active product roadmap is Phase 11-16 above.
