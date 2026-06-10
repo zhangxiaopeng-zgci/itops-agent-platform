@@ -1,6 +1,6 @@
-import { type ReactNode, useEffect, useMemo, useState } from 'react';
+import { type ChangeEvent, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Activity, BookOpenCheck, Cable, CheckCircle2, Clock, PlugZap, RefreshCw, Save, ShieldCheck, Wrench, XCircle } from 'lucide-react';
+import { Activity, BookOpenCheck, Cable, CheckCircle2, Clock, Download, PlugZap, RefreshCw, Save, ShieldCheck, Upload, Wrench, XCircle } from 'lucide-react';
 import clsx from 'clsx';
 import api from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
@@ -132,6 +132,7 @@ export default function HermesChannels() {
   const toast = useToast();
   const canManage = user?.role === 'admin';
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const capabilityImportRef = useRef<HTMLInputElement | null>(null);
 
   const { data: channels, isLoading } = useQuery({
     queryKey: ['hermes-channels'],
@@ -262,21 +263,96 @@ export default function HermesChannels() {
     }
   });
 
+  const exportCapabilities = async () => {
+    try {
+      const response = await api.get('/api/import-export/hermes-capabilities/export', {
+        responseType: 'blob'
+      });
+      const contentDisposition = response.headers['content-disposition'];
+      let filename = `hermes-capabilities-${new Date().toISOString()}.json`;
+      if (contentDisposition) {
+        const match = contentDisposition.match(/filename="?(.+?)"?$/);
+        if (match) filename = match[1];
+      }
+
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', filename);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+      toast.success(t('hermesChannels.toast.capabilityExported'));
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : t('hermesChannels.toast.capabilityExportFailed'));
+    }
+  };
+
+  const importCapabilities = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+
+    try {
+      const text = await file.text();
+      const bundle = JSON.parse(text) as unknown;
+      const response = await api.post('/api/import-export/hermes-capabilities/import', { bundle });
+      const imported = response.data.data?.imported;
+      toast.success(t('hermesChannels.toast.capabilityImported', {
+        skills: imported?.skills || 0,
+        mcp: imported?.mcpServers || 0
+      }));
+      queryClient.invalidateQueries({ queryKey: ['skill-packs'] });
+      queryClient.invalidateQueries({ queryKey: ['mcp-servers'] });
+      queryClient.invalidateQueries({ queryKey: ['hermes-channels'] });
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : t('hermesChannels.toast.capabilityImportFailed'));
+    }
+  };
+
   return (
     <div className="h-full overflow-auto p-6">
       <div className="space-y-6">
-        <div className="flex items-center justify-between gap-4">
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold text-text-primary">{t('hermesChannels.title')}</h1>
             <p className="text-text-secondary">{t('hermesChannels.subtitle')}</p>
           </div>
-          <button
-            onClick={() => queryClient.invalidateQueries({ queryKey: ['hermes-channels'] })}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-surface border border-border text-text-secondary hover:text-text-primary transition-colors"
-          >
-            <RefreshCw className="w-4 h-4" />
-            {t('common.refresh')}
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              onClick={() => queryClient.invalidateQueries({ queryKey: ['hermes-channels'] })}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-surface border border-border text-text-secondary hover:text-text-primary transition-colors"
+            >
+              <RefreshCw className="w-4 h-4" />
+              {t('common.refresh')}
+            </button>
+            {canManage && (
+              <>
+              <button
+                onClick={exportCapabilities}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-surface border border-border text-text-secondary hover:text-text-primary transition-colors"
+              >
+                <Download className="w-4 h-4" />
+                {t('hermesChannels.exportCapabilities')}
+              </button>
+              <button
+                onClick={() => capabilityImportRef.current?.click()}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-white hover:bg-primary/90 transition-colors"
+              >
+                <Upload className="w-4 h-4" />
+                {t('hermesChannels.importCapabilities')}
+              </button>
+              <input
+                ref={capabilityImportRef}
+                type="file"
+                accept="application/json,.json"
+                className="hidden"
+                onChange={importCapabilities}
+              />
+              </>
+            )}
+          </div>
         </div>
 
         <div className="grid grid-cols-1 xl:grid-cols-[360px_minmax(0,1fr)] gap-6">

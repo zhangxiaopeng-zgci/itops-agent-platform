@@ -342,6 +342,23 @@ export class HealthService {
       });
     }
 
+    try {
+      const channels = db.prepare('SELECT COUNT(*) as count FROM hermes_channels WHERE enabled = 1').get() as { count: number };
+      const skills = db.prepare('SELECT COUNT(*) as count FROM skills WHERE enabled = 1').get() as { count: number };
+      const mcpServers = db.prepare('SELECT COUNT(*) as count FROM mcp_servers WHERE enabled = 1').get() as { count: number };
+      services.push({
+        name: 'hermes_capability_registry',
+        status: channels.count > 0 ? 'healthy' : 'degraded',
+        message: `${channels.count} enabled channels, ${skills.count} enabled skills, ${mcpServers.count} enabled MCP servers`
+      });
+    } catch (error) {
+      services.push({
+        name: 'hermes_capability_registry',
+        status: 'unhealthy',
+        message: 'Hermes capability registry check failed'
+      });
+    }
+
     return services;
   }
 

@@ -6,6 +6,10 @@ import {
   exportAuditLogs,
   exportReports
 } from '../services/importExportService';
+import {
+  exportHermesCapabilityBundle,
+  importHermesCapabilityBundle
+} from '../services/hermesCapabilityTransferService';
 import { requireRole } from '../middleware/auth';
 import { logger } from '../utils/logger';
 
@@ -116,6 +120,39 @@ router.get('/reports/export', requireRole('admin'), (req: Request, res: Response
     res.send(result.content);
   } catch (error) {
     logger.error('Failed to export reports', error as Error);
+    res.status(500).json({
+      success: false,
+      message: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+router.get('/hermes-capabilities/export', requireRole('admin'), (_req: Request, res: Response) => {
+  try {
+    const result = exportHermesCapabilityBundle();
+    res.setHeader('Content-Type', result.mimeType);
+    res.setHeader('Content-Disposition', `attachment; filename="${result.filename}"`);
+    res.send(result.content);
+  } catch (error) {
+    logger.error('Failed to export Hermes capabilities', error as Error);
+    res.status(500).json({
+      success: false,
+      message: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+router.post('/hermes-capabilities/import', requireRole('admin'), (req: Request, res: Response) => {
+  try {
+    const bundle = req.body?.bundle || req.body;
+    const result = importHermesCapabilityBundle(bundle);
+    res.status(result.success ? 200 : 400).json({
+      success: result.success,
+      message: result.success ? 'Hermes capability bundle imported' : 'Hermes capability bundle import completed with errors',
+      data: result
+    });
+  } catch (error) {
+    logger.error('Failed to import Hermes capabilities', error as Error);
     res.status(500).json({
       success: false,
       message: error instanceof Error ? error.message : 'Unknown error'

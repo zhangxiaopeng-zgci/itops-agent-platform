@@ -256,6 +256,13 @@ export class BackupService {
       if (!fs.existsSync(sourcePath)) {
         throw new Error(`Source database file not found: ${sourcePath}`);
       }
+
+      try {
+        logger.info('Running SQLite WAL checkpoint before backup');
+        db.pragma('wal_checkpoint(TRUNCATE)');
+      } catch (checkpointError) {
+        logger.warn('SQLite WAL checkpoint before backup failed, continuing with file copy', checkpointError as Error);
+      }
       
       // 复制文件
       fs.copyFileSync(sourcePath, filePath);

@@ -325,7 +325,7 @@ Skill 不等于 Tool：
 
 ## 阶段 21：部署、密钥和持久化生产化
 
-状态：21a 前置收口已完成。详情见 `docs/AGENT_RUNTIME_STAGE_21A_DEPLOYMENT_HARDENING.md`。21b 完整生产化仍待继续。
+状态：21a 前置收口已完成，21b 运维化收口已完成基线实现。详情见 `docs/AGENT_RUNTIME_STAGE_21A_DEPLOYMENT_HARDENING.md` 和 `docs/AGENT_RUNTIME_STAGE_21B_OPERATIONS_RUNBOOK.md`。
 
 目标：把当前验证部署收口为可长期运行、可备份恢复、密钥不裸露的生产形态。
 
@@ -339,12 +339,18 @@ Skill 不等于 Tool：
 - 当前部署不再通过 `docker inspect` 暴露 `HERMES_API_KEY=...` 明文。
 - 已创建一次手动备份，并验证 gzip 可读。
 
-21b 仍需继续：
+21b 已收口：
+
+- 补充备份恢复演练手册。
+- 新增 Hermes capability bundle 导入导出。
+- 健康巡检补充 Hermes Channel / Skill / MCP Registry 状态。
+- Hermes 控制台新增能力包导入导出入口。
+
+21c 或后续仍可继续：
 
 - 当前测试机只有 `backend` 和 `frontend` 两个容器，没有 Hermes 独立容器。
 - 当前仍是开发式启动命令，不是正式 compose/systemd 管理。
-- 需要补正式 healthcheck、日志轮转和恢复演练。
-- 需要补 WAL checkpoint / restore 流程。
+- 可继续补正式 compose/systemd、容器 healthcheck 和日志轮转配置文件。
 
 工作项：
 
