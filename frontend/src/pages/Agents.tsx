@@ -34,6 +34,7 @@ interface Agent {
   runtime_config?: string | Record<string, unknown> | null;
   autonomy_level?: string;
   tool_policy_id?: string;
+  channel_id?: string | null;
 }
 
 interface AIModel {
@@ -73,6 +74,19 @@ interface HermesRuntimeConfig {
   timeoutMs?: number;
   maxToolRounds?: number;
   allowedTools?: string[];
+}
+
+interface HermesChannel {
+  id: string;
+  name: string;
+  description?: string | null;
+  type: string;
+  model: string;
+  api_key_ref: string;
+  enabled: number;
+  health_status: string;
+  last_checked_at?: string | null;
+  tools: Array<{ tool_name: string; enabled: number }>;
 }
 
 interface TraceSummary {
@@ -1079,6 +1093,14 @@ function AgentModal({ agent, onClose }: { agent: Agent | null; onClose: () => vo
       return res.data.data as AIModel[];
     }
   });
+
+  const { data: hermesChannels } = useQuery({
+    queryKey: ['hermes-channels'],
+    queryFn: async () => {
+      const res = await api.get('/api/hermes-channels');
+      return res.data.data as HermesChannel[];
+    }
+  });
   
   const [formData, setFormData] = useState({
     name: agent?.name || '',
@@ -1095,7 +1117,10 @@ function AgentModal({ agent, onClose }: { agent: Agent | null; onClose: () => vo
     runtime: agent?.runtime || 'llm',
     autonomy_level: agent?.autonomy_level || 'suggest',
     tool_policy_id: agent?.tool_policy_id || '',
+    channel_id: agent?.channel_id || '',
   });
+
+  const selectedChannel = (hermesChannels || []).find((channel) => channel.id === formData.channel_id) || null;
 
   const mutation = useMutation({
     mutationFn: async (data: typeof formData & { tags?: string[], runtime_config?: HermesRuntimeConfig | null }) => {
@@ -1105,6 +1130,7 @@ function AgentModal({ agent, onClose }: { agent: Agent | null; onClose: () => vo
         delete payload.runtime_config;
         delete payload.autonomy_level;
         delete payload.tool_policy_id;
+        delete payload.channel_id;
       }
       if (agent) {
         await api.put(`/api/agents/${agent.id}`, payload);
@@ -1121,7 +1147,13 @@ function AgentModal({ agent, onClose }: { agent: Agent | null; onClose: () => vo
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const tags = tagsInput.split(',').map(t => t.trim()).filter(Boolean);
-    mutation.mutate({ ...formData, tags, runtime_config: canManageRuntime ? buildRuntimeConfig() : undefined });
+    mutation.mutate({
+      ...formData,
+      tags,
+      runtime_config: canManageRuntime && formData.runtime === 'hermes' && !formData.channel_id
+        ? buildRuntimeConfig()
+        : undefined
+    });
   };
 
   const buildRuntimeConfig = (): HermesRuntimeConfig | null => {
@@ -1143,9 +1175,11 @@ function AgentModal({ agent, onClose }: { agent: Agent | null; onClose: () => vo
     setConnectionLoading(true);
     setConnectionResult(null);
     try {
-      const res = await api.post('/api/agents/runtime/hermes/test-connection', {
-        runtime_config: buildRuntimeConfig()
-      });
+      const res = formData.channel_id
+        ? await api.post(`/api/hermes-channels/${formData.channel_id}/test`)
+        : await api.post('/api/agents/runtime/hermes/test-connection', {
+          runtime_config: buildRuntimeConfig()
+        });
       const data = res.data.data;
       setConnectionResult({
         success: true,
@@ -1350,7 +1384,12 @@ function AgentModal({ agent, onClose }: { agent: Agent | null; onClose: () => vo
                   value={formData.runtime}
                   onChange={(e) => {
                     setConnectionResult(null);
-                    setFormData({ ...formData, runtime: e.target.value });
+                    const nextRuntime = e.target.value;
+                    setFormData({
+                      ...formData,
+                      runtime: nextRuntime,
+                      channel_id: nextRuntime === 'hermes' ? (formData.channel_id || hermesChannels?.[0]?.id || '') : ''
+                    });
                   }}
                   className={inputClass}
                 >
@@ -1376,71 +1415,60 @@ function AgentModal({ agent, onClose }: { agent: Agent | null; onClose: () => vo
 
             {formData.runtime === 'hermes' && (
               <div className="space-y-4 pt-3 border-t border-border">
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs text-text-tertiary mb-1">Base URL</label>
-                    <input
-                      type="text"
-                      value={hermesConfig.baseUrl}
-                      onChange={(e) => setHermesConfig({ ...hermesConfig, baseUrl: e.target.value })}
-                      className={inputClass}
-                      placeholder={t('agents.baseUrlPlaceholder')}
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-text-tertiary mb-1">Model</label>
-                    <input
-                      type="text"
-                      value={hermesConfig.model}
-                      onChange={(e) => setHermesConfig({ ...hermesConfig, model: e.target.value })}
-                      className={inputClass}
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-3 gap-4">
-                  <div>
-                    <label className="block text-xs text-text-tertiary mb-1">API Key Env</label>
-                    <input
-                      type="text"
-                      value={hermesConfig.apiKeyEnv}
-                      onChange={(e) => setHermesConfig({ ...hermesConfig, apiKeyEnv: e.target.value })}
-                      className={inputClass}
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-text-tertiary mb-1">Timeout ms</label>
-                    <input
-                      type="number"
-                      min="1000"
-                      max="300000"
-                      value={hermesConfig.timeoutMs}
-                      onChange={(e) => setHermesConfig({ ...hermesConfig, timeoutMs: parseInt(e.target.value, 10) || 300000 })}
-                      className={inputClass}
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-text-tertiary mb-1">Tool rounds</label>
-                    <input
-                      type="number"
-                      min="0"
-                      max="8"
-                      value={hermesConfig.maxToolRounds}
-                      onChange={(e) => setHermesConfig({ ...hermesConfig, maxToolRounds: parseInt(e.target.value, 10) || 3 })}
-                      className={inputClass}
-                    />
-                  </div>
-                </div>
-
                 <div>
-                  <label className="block text-xs text-text-tertiary mb-1">Allowed tools</label>
-                  <input
-                    type="text"
-                    value={hermesConfig.allowedTools}
-                    onChange={(e) => setHermesConfig({ ...hermesConfig, allowedTools: e.target.value })}
+                  <label className="block text-xs text-text-tertiary mb-1">{t('agents.hermesChannel')}</label>
+                  <select
+                    value={formData.channel_id}
+                    onChange={(e) => {
+                      setConnectionResult(null);
+                      setFormData({ ...formData, channel_id: e.target.value });
+                    }}
                     className={inputClass}
-                  />
+                  >
+                    <option value="">{t('agents.noHermesChannel')}</option>
+                    {(hermesChannels || []).map((channel) => (
+                      <option key={channel.id} value={channel.id}>
+                        {channel.name}
+                      </option>
+                    ))}
+                  </select>
                 </div>
+
+                {selectedChannel ? (
+                  <div className="rounded-xl bg-background border border-border p-3 space-y-3">
+                    <div className="grid grid-cols-2 gap-3 text-xs">
+                      <div>
+                        <div className="text-text-tertiary">{t('hermesChannels.model')}</div>
+                        <div className="font-medium text-text-primary mt-1">{selectedChannel.model}</div>
+                      </div>
+                      <div>
+                        <div className="text-text-tertiary">{t('hermesChannels.secretRef')}</div>
+                        <div className="font-medium text-text-primary mt-1">{selectedChannel.api_key_ref}</div>
+                      </div>
+                      <div>
+                        <div className="text-text-tertiary">{t('common.status')}</div>
+                        <div className="font-medium text-text-primary mt-1">{selectedChannel.health_status}</div>
+                      </div>
+                      <div>
+                        <div className="text-text-tertiary">{t('hermesChannels.tools')}</div>
+                        <div className="font-medium text-text-primary mt-1">
+                          {selectedChannel.tools.filter((tool) => tool.enabled === 1).length}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {selectedChannel.tools.filter((tool) => tool.enabled === 1).slice(0, 10).map((tool) => (
+                        <span key={tool.tool_name} className="px-2 py-1 rounded-md bg-surface border border-border text-[11px] text-text-tertiary">
+                          {tool.tool_name}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="rounded-xl bg-amber-500/10 border border-amber-500/25 p-3 text-xs text-amber-300">
+                    {t('agents.legacyHermesConfig')}
+                  </div>
+                )}
 
                 {connectionResult && (
                   <div className={clsx(

@@ -40,6 +40,20 @@ interface Agent {
   runtime?: string | null;
   runtime_config?: string | Record<string, unknown> | null;
   autonomy_level?: string | null;
+  channel_id?: string | null;
+}
+
+interface HermesChannel {
+  id: string;
+  name: string;
+  description?: string | null;
+  type: string;
+  model: string;
+  api_key_ref: string;
+  enabled: number;
+  health_status: string;
+  last_checked_at?: string | null;
+  tools: Array<{ tool_name: string; enabled: number }>;
 }
 
 interface TraceEvent {
@@ -542,6 +556,14 @@ export default function HermesAssistant() {
     },
   });
 
+  const { data: hermesChannels } = useQuery({
+    queryKey: ['hermes-channels'],
+    queryFn: async () => {
+      const res = await api.get('/api/hermes-channels');
+      return res.data.data as HermesChannel[];
+    },
+  });
+
   const mode = HERMES_MODES.find((item) => item.id === activeMode) || HERMES_MODES[0];
   const currentRole = user?.role || 'viewer';
   const canSubmitRemediation = currentRole === 'admin' || currentRole === 'operator';
@@ -558,10 +580,17 @@ export default function HermesAssistant() {
     return (agents || []).find((agent) => agent.name === mode.agentName) || null;
   }, [agents, mode.agentName]);
 
+  const selectedChannel = useMemo(() => {
+    if (!selectedAgent?.channel_id) return null;
+    return (hermesChannels || []).find((channel) => channel.id === selectedAgent.channel_id) || null;
+  }, [hermesChannels, selectedAgent?.channel_id]);
+
   const runtimeConfig = parseRuntimeConfig(selectedAgent?.runtime_config);
-  const allowedTools = Array.isArray(runtimeConfig.allowedTools)
-    ? runtimeConfig.allowedTools.filter((tool): tool is string => typeof tool === 'string')
-    : [];
+  const allowedTools = selectedChannel
+    ? selectedChannel.tools.filter((tool) => tool.enabled === 1).map((tool) => tool.tool_name)
+    : Array.isArray(runtimeConfig.allowedTools)
+      ? runtimeConfig.allowedTools.filter((tool): tool is string => typeof tool === 'string')
+      : [];
   const safetyModeKey: MessageKey = currentRole === 'viewer' || activeMode === 'diagnose' || activeMode === 'review' || selectedAgent?.autonomy_level === 'read_only'
     ? 'hermes.safety.mode.readOnly'
     : selectedAgent?.autonomy_level === 'auto'
@@ -1003,6 +1032,27 @@ export default function HermesAssistant() {
                       {selectedAgent.enabled === 1 ? t('common.enabled') : t('common.disabled')}
                     </span>
                   </div>
+                  {selectedChannel && (
+                    <div className="rounded-xl bg-background border border-border p-3 space-y-2 text-xs">
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-text-tertiary">{t('hermes.channel.current')}</span>
+                        <span className="font-semibold text-text-primary">{selectedChannel.name}</span>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <div className="text-text-tertiary">{t('hermesChannels.model')}</div>
+                          <div className="font-medium text-text-primary mt-0.5">{selectedChannel.model}</div>
+                        </div>
+                        <div>
+                          <div className="text-text-tertiary">{t('common.status')}</div>
+                          <div className="font-medium text-text-primary mt-0.5">{selectedChannel.health_status}</div>
+                        </div>
+                      </div>
+                      <div className="text-text-secondary">
+                        {t('hermes.channel.summary', { tools: allowedTools.length, secret: selectedChannel.api_key_ref })}
+                      </div>
+                    </div>
+                  )}
                   {allowedTools.length > 0 && (
                     <div className="flex flex-wrap gap-1.5">
                       {allowedTools.slice(0, 10).map((tool) => (
