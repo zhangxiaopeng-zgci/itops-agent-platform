@@ -69,6 +69,7 @@ export interface HermesChannelInput {
 export interface HermesRuntimeChannelConfig {
   channelId?: string;
   channelName?: string;
+  channelType?: string;
   baseUrl?: string;
   model?: string;
   apiKeyEnv?: string;
@@ -248,6 +249,7 @@ export function channelToRuntimeConfig(channel: HermesChannelRecord): HermesRunt
   return {
     channelId: channel.id,
     channelName: channel.name,
+    channelType: channel.type,
     baseUrl: channel.base_url || undefined,
     model: channel.model,
     apiKeyEnv: channel.api_key_ref,
@@ -418,6 +420,7 @@ function parseLegacyRuntimeConfig(rawConfig?: string | null): HermesRuntimeChann
     const parsed = JSON.parse(rawConfig) as Record<string, unknown>;
     return {
       baseUrl: typeof parsed.baseUrl === 'string' ? parsed.baseUrl : undefined,
+      channelType: typeof parsed.channelType === 'string' ? parsed.channelType : undefined,
       model: typeof parsed.model === 'string' ? parsed.model : undefined,
       apiKeyEnv: typeof parsed.apiKeyEnv === 'string' ? parsed.apiKeyEnv : undefined,
       timeoutMs: typeof parsed.timeoutMs === 'number' ? parsed.timeoutMs : undefined,

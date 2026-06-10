@@ -33,7 +33,7 @@ backend
 frontend
 ```
 
-当前没有单独的 Hermes 容器。Hermes 是通过 backend 中的 Hermes Runtime Adapter 调用外部 OpenAI-compatible endpoint。
+阶段 22 前没有单独的 Hermes 容器。阶段 22 起新增 `hermes-diagnose`、`hermes-remediate`、`hermes-evolve` 三个 Worker 容器；backend 仍保留内置 Hermes Runtime fallback。
 
 ## MCP / Skill 能力包导入导出
 

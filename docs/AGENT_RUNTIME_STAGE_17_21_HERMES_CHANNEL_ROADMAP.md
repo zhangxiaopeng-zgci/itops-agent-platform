@@ -400,6 +400,7 @@ Skill 不等于 Tool：
 阶段 21：部署、密钥和持久化生产化
 阶段 18：MCP Server Registry
 阶段 19：Skill Pack Registry
+阶段 22：Hermes 三 Worker Runtime 基线
 ```
 
 原因：
@@ -421,3 +422,5 @@ Skill 不等于 Tool：
 ```
 
 这一切片完成后，Hermes 管理会从“改 Agent 表单里的 runtime_config”升级为“管理 Channel”。
+
+阶段 22 之后的 Worker 和受控进化路线详见 `docs/AGENT_RUNTIME_STAGE_22_27_HERMES_EVOLUTION_ROADMAP.md` 与 `docs/AGENT_RUNTIME_STAGE_22_HERMES_WORKERS.md`。

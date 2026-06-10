@@ -5,6 +5,12 @@ import { logger } from '../../utils/logger';
 import { resolveHermesRuntimeConfigForAgent } from '../hermesChannelService';
 import { McpRuntimeContext } from '../mcpServerService';
 import { SkillRuntimeContext } from '../skillService';
+import {
+  HermesWorkerRunMetadata,
+  isHermesWorkerFallbackEnabled,
+  resolveHermesWorkerForChannel,
+  runHermesWorker
+} from '../hermesWorkerService';
 import { ToolContext, ToolDescriptor } from '../toolApi/types';
 import { AgentRunRequest, AgentRunResult, AgentRuntime, AgentTraceEvent, RuntimeAgentRecord } from './types';
 
@@ -15,6 +21,7 @@ const DEFAULT_MAX_TOOL_ROUNDS = 3;
 interface HermesRuntimeConfig {
   channelId?: string;
   channelName?: string;
+  channelType?: string;
   baseUrl?: string;
   model?: string;
   apiKeyEnv?: string;
@@ -110,10 +117,12 @@ export class HermesAgentRuntime implements AgentRuntime {
     const correlationId = typeof request.context?.correlationId === 'string' ? request.context.correlationId : undefined;
     const runtimeSkills = config.skills || [];
     const runtimeMcpServers = config.mcpServers || [];
+    let lastWorker: HermesWorkerRunMetadata | undefined;
 
     logger.info(`🧠 Calling Hermes runtime for agent ${agent.name}`, {
       baseUrl,
       model,
+      channelType: config.channelType,
       tools: tools.map(tool => tool.function.name),
       skills: runtimeSkills.map(skill => skill.id),
       mcpServers: runtimeMcpServers.map(server => server.id)
@@ -122,13 +131,21 @@ export class HermesAgentRuntime implements AgentRuntime {
     let lastUsage: Record<string, unknown> | undefined;
 
     for (let round = 0; round <= maxToolRounds; round++) {
-      const response = await callChatCompletions(baseUrl, apiKey, {
-        model,
-        messages,
-        tools,
-        tool_choice: tools.length > 0 ? 'auto' : undefined,
-        temperature: config.temperature
-      }, config.timeoutMs || DEFAULT_TIMEOUT_MS);
+      const completion = await callHermesCompletion({
+        config,
+        baseUrl,
+        apiKey,
+        body: {
+          model,
+          messages,
+          tools,
+          tool_choice: tools.length > 0 ? 'auto' : undefined,
+          temperature: config.temperature
+        },
+        timeoutMs: config.timeoutMs || DEFAULT_TIMEOUT_MS
+      });
+      const response = completion.response;
+      lastWorker = completion.worker;
 
       const choice = response.choices?.[0];
       const message = choice?.message;
@@ -167,8 +184,10 @@ export class HermesAgentRuntime implements AgentRuntime {
             model,
             channelId: config.channelId,
             channelName: config.channelName,
+            channelType: config.channelType,
             agentName: agent.name,
             correlationId,
+            worker: lastWorker,
             skills: runtimeSkills.map(skill => ({
               id: skill.id,
               name: skill.name,
@@ -231,6 +250,59 @@ export class HermesAgentRuntime implements AgentRuntime {
   }
 }
 
+async function callHermesCompletion({
+  config,
+  baseUrl,
+  apiKey,
+  body,
+  timeoutMs
+}: {
+  config: HermesRuntimeConfig;
+  baseUrl: string;
+  apiKey: string;
+  body: Record<string, unknown>;
+  timeoutMs: number;
+}): Promise<{ response: ChatCompletionResponse; worker?: HermesWorkerRunMetadata }> {
+  const worker = resolveHermesWorkerForChannel(config.channelType);
+  if (worker?.url) {
+    try {
+      const workerResult = await runHermesWorker(worker, { ...body, timeoutMs }, timeoutMs);
+      return {
+        response: workerResult.data as ChatCompletionResponse,
+        worker: workerResult.metadata
+      };
+    } catch (error) {
+      if (!isHermesWorkerFallbackEnabled()) {
+        throw error;
+      }
+
+      logger.warn(`Hermes worker ${worker.role} failed, falling back to backend runtime`, error as Error);
+      const response = await callChatCompletions(baseUrl, apiKey, body, timeoutMs);
+      return {
+        response,
+        worker: {
+          attempted: true,
+          used: false,
+          fallbackUsed: true,
+          role: worker.role,
+          url: worker.url,
+          error: error instanceof Error ? error.message : String(error)
+        }
+      };
+    }
+  }
+
+  const response = await callChatCompletions(baseUrl, apiKey, body, timeoutMs);
+  return {
+    response,
+    worker: {
+      attempted: false,
+      used: false,
+      fallbackUsed: false
+    }
+  };
+}
+
 function parseRuntimeConfig(rawConfig?: string | null): HermesRuntimeConfig {
   if (!rawConfig) {
     return {};
@@ -251,6 +323,9 @@ function parseRuntimeConfig(rawConfig?: string | null): HermesRuntimeConfig {
 
   if (config.baseUrl !== undefined && typeof config.baseUrl !== 'string') {
     throw new Error('hermes runtime_config.baseUrl must be a string');
+  }
+  if (config.channelType !== undefined && typeof config.channelType !== 'string') {
+    throw new Error('hermes runtime_config.channelType must be a string');
   }
   if (config.model !== undefined && typeof config.model !== 'string') {
     throw new Error('hermes runtime_config.model must be a string');
@@ -273,6 +348,7 @@ function parseRuntimeConfig(rawConfig?: string | null): HermesRuntimeConfig {
 
   return {
     baseUrl: config.baseUrl,
+    channelType: config.channelType,
     model: config.model,
     apiKeyEnv: config.apiKeyEnv,
     timeoutMs: config.timeoutMs,

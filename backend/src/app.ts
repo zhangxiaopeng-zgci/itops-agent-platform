@@ -51,6 +51,7 @@ import hermesSessionRoutes from './routes/hermesSessionRoutes';
 import hermesChannelRoutes from './routes/hermesChannelRoutes';
 import skillRoutes from './routes/skillRoutes';
 import mcpServerRoutes from './routes/mcpServerRoutes';
+import hermesWorkerRoutes from './routes/hermesWorkerRoutes';
 import { schedulerService } from './services/schedulerService';
 import { reportService } from './services/reportService';
 import { copilotService } from './services/copilotService';
@@ -209,6 +210,7 @@ app.use('/api/tool-approvals', rateLimiter, toolApprovalRoutes);
 app.use('/api/correlations', rateLimiter, correlationRoutes);
 app.use('/api/hermes-sessions', rateLimiter, hermesSessionRoutes);
 app.use('/api/hermes-channels', rateLimiter, hermesChannelRoutes);
+app.use('/api/hermes-workers', rateLimiter, hermesWorkerRoutes);
 app.use('/api/skills', rateLimiter, skillRoutes);
 app.use('/api/mcp-servers', rateLimiter, mcpServerRoutes);
 

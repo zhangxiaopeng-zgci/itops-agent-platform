@@ -90,6 +90,20 @@ interface McpServer {
   last_checked_at?: string | null;
 }
 
+interface HermesWorkerStatus {
+  role: string;
+  name: string;
+  channelType: string;
+  url?: string;
+  configured: boolean;
+  healthy: boolean;
+  latencyMs: number;
+  status: string;
+  model?: string;
+  upstreamConfigured?: boolean;
+  error?: string;
+}
+
 interface ChannelFormState {
   name: string;
   description: string;
@@ -164,6 +178,15 @@ export default function HermesChannels() {
       const res = await api.get('/api/mcp-servers?enabled=true');
       return res.data.data as McpServer[];
     }
+  });
+
+  const { data: workers } = useQuery({
+    queryKey: ['hermes-workers'],
+    queryFn: async () => {
+      const res = await api.get('/api/hermes-workers');
+      return res.data.data as HermesWorkerStatus[];
+    },
+    refetchInterval: 30000
   });
 
   const selectedChannel = useMemo(() => {
@@ -355,6 +378,8 @@ export default function HermesChannels() {
           </div>
         </div>
 
+        <WorkerStatusPanel workers={workers || []} />
+
         <div className="grid grid-cols-1 xl:grid-cols-[360px_minmax(0,1fr)] gap-6">
           <div className={`${panelClass} overflow-hidden`}>
             <div className="p-4 border-b border-border">
@@ -425,6 +450,54 @@ export default function HermesChannels() {
             />
           )}
         </div>
+      </div>
+    </div>
+  );
+}
+
+function WorkerStatusPanel({ workers }: { workers: HermesWorkerStatus[] }) {
+  const { t } = useLocale();
+  const ordered = ['diagnose', 'remediate', 'evolve']
+    .map((role) => workers.find((worker) => worker.role === role))
+    .filter((worker): worker is HermesWorkerStatus => Boolean(worker));
+
+  if (ordered.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className={`${panelClass} p-5`}>
+      <div className="flex items-center justify-between gap-4 mb-4">
+        <div>
+          <h2 className="text-sm font-semibold text-text-primary">{t('hermesChannels.workers')}</h2>
+          <p className="text-xs text-text-tertiary mt-1">{t('hermesChannels.workersDesc')}</p>
+        </div>
+        <Activity className="w-5 h-5 text-primary" />
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+        {ordered.map((worker) => (
+          <div key={worker.role} className="rounded-lg bg-background border border-border p-3">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="font-medium text-text-primary truncate">{worker.name}</div>
+                <div className="text-xs text-text-tertiary mt-1">{worker.role} / {worker.channelType}</div>
+              </div>
+              <HealthBadge status={!worker.configured ? 'unknown' : worker.healthy ? 'healthy' : 'failed'} />
+            </div>
+            <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+              <span className="rounded-md bg-surface border border-border px-2 py-1 text-text-secondary truncate">
+                {worker.configured ? worker.status : t('hermesChannels.workerNotConfigured')}
+              </span>
+              <span className="rounded-md bg-surface border border-border px-2 py-1 text-text-secondary truncate">
+                {worker.latencyMs ? `${worker.latencyMs}ms` : '-'}
+              </span>
+            </div>
+            <div className="mt-2 text-xs text-text-tertiary truncate">
+              {worker.url || t('hermesChannels.workerNoUrl')}
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   );
