@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import db from '../models/database';
 import { requireRole } from '../middleware/auth';
+import { listHermesSessionsByCorrelation } from '../services/hermesSessionService';
 
 const router = Router();
 
@@ -21,6 +22,8 @@ router.get('/:id', requireRole('admin', 'operator'), (req: Request, res: Respons
       ORDER BY created_at DESC
       LIMIT 50
     `).all(pattern).map(parseAgentExecution);
+
+    const hermesSessions = listHermesSessionsByCorrelation(correlationId);
 
     const approvals = db.prepare(`
       SELECT *
@@ -52,6 +55,7 @@ router.get('/:id', requireRole('admin', 'operator'), (req: Request, res: Respons
       success: true,
       data: {
         correlationId,
+        hermesSessions,
         agentExecutions,
         approvals,
         tasks,

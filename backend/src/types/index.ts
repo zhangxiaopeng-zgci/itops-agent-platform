@@ -49,6 +49,14 @@ export interface NodeResult {
   metadata?: {
     thinkingProcess?: string;
     executionTime?: number;
+    runtime?: string | null;
+    runtimeMetadata?: Record<string, unknown>;
+    trace?: Array<{
+      type?: string;
+      content?: string;
+      timestamp?: string;
+      metadata?: Record<string, unknown>;
+    }>;
   };
 }
 

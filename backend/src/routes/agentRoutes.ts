@@ -6,6 +6,7 @@ import { testHermesConnection } from '../services/agentRuntime/hermesRuntime';
 import { inferLegacyRuntimeType } from '../services/agentRuntime/registry';
 import { requireRole } from '../middleware/auth';
 import { AgentRunResult } from '../services/agentRuntime/types';
+import { createHermesSession, HermesSessionRecord } from '../services/hermesSessionService';
 
 const router = Router();
 
@@ -252,6 +253,7 @@ router.post('/:id/test', async (req: Request, res: Response) => {
     let status = 'success';
     let errorMessage = null;
     let runResult: AgentRunResult | null = null;
+    let hermesSession: HermesSessionRecord | null = null;
     
     // 构建上下文 - 优先使用serverIds，如果没有则使用serverId
     const executionContext = {
@@ -308,11 +310,41 @@ router.post('/:id/test', async (req: Request, res: Response) => {
           updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
     `).run(req.params.id);
+
+    const runtime = runResult?.metadata?.runtime || (agent as { runtime?: string }).runtime || null;
+    const shouldPersistHermesSession = executionContext.source === 'hermes_assistant' || runtime === 'hermes';
+    if (shouldPersistHermesSession) {
+      hermesSession = createHermesSession({
+        agentExecutionId: executionId,
+        agentId: req.params.id,
+        agentName,
+        mode: typeof executionContext.mode === 'string' ? executionContext.mode : null,
+        input,
+        output,
+        selectedContext: {
+          selectedContext: executionContext.selectedContext,
+          serverIds: executionContext.serverIds,
+          serverId: executionContext.serverId,
+          alertId: executionContext.alertId,
+          alert: executionContext.alert,
+          workflowId: executionContext.workflowId,
+          workflow: executionContext.workflow,
+          knowledgeCategory: executionContext.knowledgeCategory,
+          userRole: executionContext.userRole
+        },
+        trace: runResult?.trace || [],
+        correlationId,
+        status,
+        createdBy: authUser?.id || null
+      });
+    }
     
     res.json({
       success: true,
       data: {
         executionId,
+        sessionId: hermesSession?.id,
+        hermesSession,
         output,
         status,
         executionTime,

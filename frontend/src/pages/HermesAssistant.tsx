@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import {
   Activity,
@@ -50,6 +50,8 @@ interface TraceEvent {
 
 interface AgentRunResponse {
   executionId: string;
+  sessionId?: string;
+  hermesSession?: HermesSession;
   output: string;
   status: string;
   executionTime: number;
@@ -135,8 +137,29 @@ interface TaskItem {
 
 interface CorrelationChain {
   correlationId: string;
+  hermesSessions?: HermesSession[];
   approvals?: ToolApprovalItem[];
   tasks?: TaskItem[];
+}
+
+interface HermesSession {
+  id: string;
+  agent_execution_id?: string | null;
+  agent_id?: string | null;
+  agent_name?: string | null;
+  mode?: HermesMode | string | null;
+  input: string;
+  output?: string | null;
+  selected_context?: unknown;
+  trace?: TraceEvent[];
+  extracted_refs?: {
+    approvalIds?: string[];
+    taskIds?: string[];
+    correlationIds?: string[];
+  };
+  correlation_id?: string | null;
+  status: string;
+  created_at: string;
 }
 
 interface VerificationResult {
@@ -315,6 +338,24 @@ function collectTraceLinks(trace: TraceEvent[], correlationId?: string) {
   };
 }
 
+function resultFromSession(session: HermesSession): AgentRunResponse {
+  const correlationId = session.correlation_id || session.extracted_refs?.correlationIds?.[0];
+  return {
+    executionId: session.agent_execution_id || session.id,
+    sessionId: session.id,
+    hermesSession: session,
+    output: session.output || '',
+    status: session.status,
+    executionTime: 0,
+    metadata: {
+      correlationId: correlationId || undefined,
+      runtime: 'hermes',
+      trace: session.trace || [],
+    },
+    trace: session.trace || [],
+  };
+}
+
 function uniqueById<T extends { id: string }>(items: T[]) {
   const seen = new Set<string>();
   return items.filter((item) => {
@@ -435,6 +476,7 @@ function buildPromptWithContext(input: string, contextLines: string[], labels: {
 export default function HermesAssistant() {
   const navigate = useNavigate();
   const toast = useToast();
+  const queryClient = useQueryClient();
   const { locale, t } = useLocale();
   const [activeMode, setActiveMode] = useState<HermesMode>('diagnose');
   const [input, setInput] = useState('');
@@ -490,6 +532,14 @@ export default function HermesAssistant() {
     },
   });
 
+  const { data: hermesSessions, isFetching: isFetchingSessions } = useQuery({
+    queryKey: ['hermes-sessions', activeMode],
+    queryFn: async () => {
+      const res = await api.get('/api/hermes-sessions', { params: { mode: activeMode, limit: 8 } });
+      return (res.data.data?.sessions || []) as HermesSession[];
+    },
+  });
+
   const mode = HERMES_MODES.find((item) => item.id === activeMode) || HERMES_MODES[0];
 
   useEffect(() => {
@@ -525,6 +575,10 @@ export default function HermesAssistant() {
   const chainTasks = useMemo(() => uniqueById(
     (correlationChains || []).flatMap((chain) => chain.tasks || []).map(normalizeTask)
   ), [correlationChains]);
+  const chainHermesSessions = useMemo(() => uniqueById([
+    ...(lastResult?.hermesSession ? [lastResult.hermesSession] : []),
+    ...(correlationChains || []).flatMap((chain) => chain.hermesSessions || []),
+  ]), [correlationChains, lastResult?.hermesSession]);
   const aggregatedApprovalIds = useMemo(() => {
     return Array.from(new Set([
       ...traceLinks.approvalIds,
@@ -631,6 +685,20 @@ export default function HermesAssistant() {
     setSelectedKnowledgeCategory('');
   };
 
+  const restoreSession = (session: HermesSession) => {
+    if (session.mode === 'diagnose' || session.mode === 'remediate' || session.mode === 'review') {
+      setActiveMode(session.mode);
+    }
+    setInput(session.input);
+    setActivePromptKey(null);
+    setLastResult(resultFromSession(session));
+    setActiveTraceIndex(null);
+    setApprovalActionId('');
+    setApprovalComment('');
+    setVerificationResults({});
+    setVerifyingTaskId('');
+  };
+
   const runMutation = useMutation({
     mutationFn: async () => {
       if (!selectedAgent) {
@@ -675,6 +743,7 @@ export default function HermesAssistant() {
       setApprovalComment('');
       setVerificationResults({});
       setVerifyingTaskId('');
+      queryClient.invalidateQueries({ queryKey: ['hermes-sessions'] });
       toast.success(t('hermes.toast.completed'));
     },
     onError: (error: unknown) => {
@@ -924,6 +993,44 @@ export default function HermesAssistant() {
                 </div>
               )}
             </div>
+
+            <div className={clsx(panelClass, 'p-4')}>
+              <div className="flex items-center justify-between gap-3 mb-3">
+                <div className="flex items-center gap-2">
+                  <Clock className="w-4 h-4 text-primary" />
+                  <h3 className="text-sm font-semibold text-text-primary">{t('hermes.sessions.title')}</h3>
+                </div>
+                {isFetchingSessions && <Loader2 className="w-3.5 h-3.5 text-text-tertiary animate-spin" />}
+              </div>
+              {!hermesSessions || hermesSessions.length === 0 ? (
+                <div className="py-4 text-xs text-text-tertiary">{t('hermes.sessions.empty')}</div>
+              ) : (
+                <div className="space-y-2">
+                  {hermesSessions.map((session) => (
+                    <button
+                      key={session.id}
+                      type="button"
+                      onClick={() => restoreSession(session)}
+                      className="w-full text-left rounded-lg bg-background border border-border p-3 hover:border-primary/30 transition-colors"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-xs font-medium text-text-primary truncate">
+                          {session.agent_name || t('hermes.sessions.unknownAgent')}
+                        </span>
+                        <span className={getStatusClass(session.status)}>{session.status}</span>
+                      </div>
+                      <div className="mt-1 text-[11px] text-text-tertiary">
+                        {session.created_at ? new Date(session.created_at).toLocaleString() : '-'}
+                      </div>
+                      <div className="mt-2 text-xs text-text-secondary line-clamp-2">{session.output || session.input}</div>
+                      {session.correlation_id && (
+                        <div className="mt-2 text-[11px] text-primary">corr {shortId(session.correlation_id)}</div>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
 
           <div className="space-y-6">
@@ -1115,6 +1222,19 @@ export default function HermesAssistant() {
                     {t('hermes.quick.prepareWorkflow')}
                   </button>
                 )}
+                {traceLinks.correlationIds[0] && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveMode('review');
+                      setActivePromptKey(null);
+                      setInput(t('hermes.quick.reviewCorrelationInput', { correlationId: traceLinks.correlationIds[0] }));
+                    }}
+                    className="px-3 py-1.5 rounded-lg bg-sky-500/10 border border-sky-500/20 text-xs text-sky-300 hover:bg-sky-500/15 transition-colors"
+                  >
+                    {t('hermes.quick.reviewCorrelation')}
+                  </button>
+                )}
               </div>
 
               <textarea
@@ -1177,6 +1297,11 @@ export default function HermesAssistant() {
                       {lastResult.metadata?.correlationId && (
                         <span className="px-2 py-1 rounded-lg bg-background border border-border text-text-secondary">
                           corr {shortId(lastResult.metadata.correlationId)}
+                        </span>
+                      )}
+                      {lastResult.sessionId && (
+                        <span className="px-2 py-1 rounded-lg bg-background border border-border text-text-secondary">
+                          session {shortId(lastResult.sessionId)}
                         </span>
                       )}
                     </div>
@@ -1247,6 +1372,37 @@ export default function HermesAssistant() {
                     {t('hermes.closure.refresh')}
                   </button>
                 </div>
+
+                {chainHermesSessions.length > 0 && (
+                  <div className="mb-4 rounded-xl bg-background border border-border p-4">
+                    <div className="flex items-center justify-between gap-3 mb-3">
+                      <div className="flex items-center gap-2">
+                        <BrainCircuit className="w-4 h-4 text-primary" />
+                        <h3 className="text-sm font-semibold text-text-primary">{t('hermes.sessions.chainTitle')}</h3>
+                      </div>
+                      <span className="text-xs text-text-tertiary">{chainHermesSessions.length}</span>
+                    </div>
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">
+                      {chainHermesSessions.slice(0, 4).map((session) => (
+                        <button
+                          key={session.id}
+                          type="button"
+                          onClick={() => restoreSession(session)}
+                          className="text-left rounded-lg bg-surface border border-border p-3 hover:border-primary/30 transition-colors"
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-xs font-medium text-text-primary truncate">{session.agent_name || '-'}</span>
+                            <span className="text-[11px] text-text-tertiary">{session.mode || '-'}</span>
+                          </div>
+                          <div className="mt-1 text-[11px] text-text-tertiary">
+                            {session.created_at ? new Date(session.created_at).toLocaleString() : '-'}
+                          </div>
+                          <div className="mt-2 text-xs text-text-secondary line-clamp-1">{session.output || session.input}</div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
                   <div className="rounded-xl bg-background border border-border p-4">

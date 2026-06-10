@@ -5,6 +5,7 @@ import { executeWorkflow } from '../workflowExecutor';
 import { evaluateReadOnlyCommand } from './policyGuard';
 import { ToolContext, ToolDefinition, ToolInvocationResult } from './types';
 import { WorkflowParsed } from '../../types';
+import { listHermesSessionsByCorrelation } from '../hermesSessionService';
 
 const VALID_ALERT_STATUSES = new Set(['new', 'acknowledged', 'resolved']);
 const VALID_ALERT_SEVERITIES = new Set(['critical', 'high', 'medium', 'low']);
@@ -624,6 +625,8 @@ export const getCorrelationTraceTool: ToolDefinition = {
       LIMIT 50
     `).all(pattern).map((row) => parseAgentExecution(row as Record<string, unknown>));
 
+    const hermesSessions = listHermesSessionsByCorrelation(correlationId);
+
     const approvals = db.prepare(`
       SELECT *
       FROM tool_approvals
@@ -652,6 +655,7 @@ export const getCorrelationTraceTool: ToolDefinition = {
 
     return {
       correlationId,
+      hermesSessions,
       agentExecutions,
       approvals,
       tasks,

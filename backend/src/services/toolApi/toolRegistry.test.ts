@@ -1,5 +1,6 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import db, { initializeDatabase } from '../../models/database';
+import { createHermesSession } from '../hermesSessionService';
 import { createToolApproval, markToolApprovalApproved } from './approvalService';
 import { invokeTool } from './toolRegistry';
 
@@ -148,6 +149,36 @@ describe('toolRegistry', () => {
       JSON.stringify({ correlationId: 'corr-review-test-1234', trace: [{ type: 'tool_call_result' }] })
     );
 
+    const session = createHermesSession({
+      agentExecutionId: 'agent-execution-corr-review-test',
+      agentId: agent!.id,
+      agentName: 'Hermes 诊断修复 Agent',
+      mode: 'diagnose',
+      input: 'diagnose with Bearer fake-token-for-redaction',
+      output: 'needs approval',
+      selectedContext: { serverIds: ['server-1'], password: 'secret-password' },
+      trace: [{
+        type: 'tool_call_result',
+        content: JSON.stringify({
+          approvalId: 'approval-from-session-trace',
+          taskId: 'job-from-session-trace',
+          correlationId: 'corr-review-test-1234'
+        }),
+        timestamp: new Date().toISOString(),
+        metadata: { correlationId: 'corr-review-test-1234' }
+      }],
+      correlationId: 'corr-review-test-1234',
+      status: 'success',
+      createdBy: 'test-operator'
+    });
+    expect(session.input).toContain('[REDACTED]');
+    expect(session.selected_context).toEqual(expect.objectContaining({ password: '[REDACTED]' }));
+    expect(session.extracted_refs).toEqual(expect.objectContaining({
+      approvalIds: expect.arrayContaining(['approval-from-session-trace']),
+      taskIds: expect.arrayContaining(['job-from-session-trace']),
+      correlationIds: expect.arrayContaining(['corr-review-test-1234'])
+    }));
+
     const queued = await invokeTool(
       'run_workflow',
       { workflowId: 'workflow-for-correlation-review-test' },
@@ -165,9 +196,12 @@ describe('toolRegistry', () => {
     expect(result.decision.status).toBe('allowed');
 
     const data = result.data as {
+      hermesSessions: Array<{ id: string; correlation_id: string | null; extracted_refs: { approvalIds: string[] } }>;
       agentExecutions: Array<{ id: string; metadata: { correlationId?: string } }>;
       approvals: Array<{ id: string; correlation_id: string | null }>;
     };
+    expect(data.hermesSessions.some((item) => item.id === session.id && item.correlation_id === 'corr-review-test-1234')).toBe(true);
+    expect(data.hermesSessions[0].extracted_refs.approvalIds).toEqual(expect.arrayContaining(['approval-from-session-trace']));
     expect(data.agentExecutions.some((item) => item.id === 'agent-execution-corr-review-test')).toBe(true);
     expect(data.agentExecutions[0].metadata).toEqual(expect.objectContaining({ correlationId: expect.any(String) }));
     expect(data.approvals.some((item) => item.id === queued.approvalId && item.correlation_id === 'corr-review-test-1234')).toBe(true);

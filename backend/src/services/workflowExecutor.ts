@@ -1,7 +1,7 @@
 import { randomUUID } from 'crypto';
 import db, { getIOInstance } from '../models/database';
 import { logger } from '../utils/logger';
-import { executeAgentNode, getThinkingSteps } from './agentExecutor';
+import { executeAgentRun, getThinkingSteps } from './agentExecutor';
 import { reportService } from './reportService';
 import {
   WorkflowNode,
@@ -145,15 +145,27 @@ export async function executeWorkflow(
           addTaskLog(taskId, { type: 'thinking', content: step, nodeId });
         }
         
-        logger.info(`🤖 Calling executeAgentNode with agentId: ${node.data.agentId} context:`, context);
-        const output = await executeAgentNode(node.data.agentId, input, context);
+        const nodeContext = {
+          ...(context || {}),
+          taskId,
+          workflowId: workflow.id,
+          workflowName: workflow.name,
+          nodeId,
+          nodeName: node.data.label
+        };
+        logger.info(`🤖 Calling executeAgentRun with agentId: ${node.data.agentId} context:`, nodeContext);
+        const runResult = await executeAgentRun(node.data.agentId, input, nodeContext);
+        const output = runResult.output;
         
         nodeResults[nodeId] = {
           status: 'success',
           output,
           metadata: {
             thinkingProcess: thinkingProcess.join('\n'),
-            executionTime: Date.now()
+            executionTime: Date.now(),
+            runtime: typeof runResult.metadata?.runtime === 'string' ? runResult.metadata.runtime : null,
+            runtimeMetadata: runResult.metadata || {},
+            trace: runResult.trace || []
           }
         };
         
