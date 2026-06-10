@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { useTheme } from '../contexts/ThemeContext';
 
 interface CircularProgressProps {
   value: number;
@@ -20,6 +21,7 @@ export default function CircularProgress({
   showValue = true,
 }: CircularProgressProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const { theme } = useTheme();
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -51,7 +53,7 @@ export default function CircularProgress({
 
     ctx.beginPath();
     ctx.arc(center, center, radius, 0, Math.PI * 2);
-    ctx.strokeStyle = 'rgba(51, 65, 85, 0.3)';
+    ctx.strokeStyle = theme === 'light' ? 'rgba(148, 163, 184, 0.32)' : 'rgba(51, 65, 85, 0.3)';
     ctx.lineWidth = safeStrokeWidth;
     ctx.lineCap = 'round';
     ctx.stroke();
@@ -94,7 +96,7 @@ export default function CircularProgress({
     if (showValue) {
       const fontSize = Math.max(safeSize * 0.22, 8);
       ctx.font = `bold ${fontSize}px Inter, system-ui, sans-serif`;
-      ctx.fillStyle = '#ffffff';
+      ctx.fillStyle = theme === 'light' ? '#0f172a' : '#ffffff';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText(`${Math.round(percentage * 100)}%`, center, center - (label ? 8 : 0));
@@ -102,11 +104,11 @@ export default function CircularProgress({
       if (label) {
         const labelFontSize = Math.max(safeSize * 0.12, 6);
         ctx.font = `${labelFontSize}px Inter, system-ui, sans-serif`;
-        ctx.fillStyle = '#94a3b8';
+        ctx.fillStyle = theme === 'light' ? '#64748b' : '#94a3b8';
         ctx.fillText(label, center, center + safeSize * 0.15);
       }
     }
-  }, [value, maxValue, size, strokeWidth, color, label, showValue]);
+  }, [value, maxValue, size, strokeWidth, color, label, showValue, theme]);
 
   return (
     <canvas

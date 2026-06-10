@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { useTheme } from '../contexts/ThemeContext';
 
 interface DataPoint {
   timestamp: number;
@@ -21,6 +22,7 @@ export default function AnimatedLineChart({
   lineWidth = 2,
 }: AnimatedLineChartProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const { theme } = useTheme();
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -119,7 +121,7 @@ export default function AnimatedLineChart({
     }
 
     ctx.font = '11px Inter, system-ui, sans-serif';
-    ctx.fillStyle = '#94a3b8';
+    ctx.fillStyle = theme === 'light' ? '#64748b' : '#94a3b8';
     ctx.textAlign = 'right';
     
     for (let i = 0; i <= 4; i++) {
@@ -130,11 +132,11 @@ export default function AnimatedLineChart({
       ctx.beginPath();
       ctx.moveTo(padding.left, y);
       ctx.lineTo(width - padding.right, y);
-      ctx.strokeStyle = 'rgba(51, 65, 85, 0.3)';
+      ctx.strokeStyle = theme === 'light' ? 'rgba(148, 163, 184, 0.35)' : 'rgba(51, 65, 85, 0.3)';
       ctx.lineWidth = 1;
       ctx.stroke();
     }
-  }, [data, color, height, showArea, lineWidth]);
+  }, [data, color, height, showArea, lineWidth, theme]);
 
   return (
     <canvas

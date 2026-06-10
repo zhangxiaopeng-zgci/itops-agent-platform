@@ -98,6 +98,67 @@
   background: linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 50%, #f1f5f9 100%);
 }
 
+[data-theme="light"] .big-screen-dashboard {
+  background:
+    radial-gradient(circle at 20% 0%, rgba(15, 118, 110, 0.08), transparent 32%),
+    radial-gradient(circle at 82% 18%, rgba(37, 99, 235, 0.08), transparent 30%),
+    linear-gradient(180deg, #f8fafc 0%, #eef2f7 100%) !important;
+  color: #0f172a;
+}
+
+[data-theme="light"] .big-screen-dashboard > canvas {
+  opacity: 0.26;
+}
+
+[data-theme="light"] .big-screen-dashboard .bg-slate-800\/40,
+[data-theme="light"] .big-screen-dashboard .bg-slate-800\/50,
+[data-theme="light"] .big-screen-dashboard .bg-slate-800\/80,
+[data-theme="light"] .big-screen-dashboard .bg-slate-900\/50 {
+  background-color: rgba(255, 255, 255, 0.78) !important;
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.06);
+}
+
+[data-theme="light"] .big-screen-dashboard .bg-slate-700\/50,
+[data-theme="light"] .big-screen-dashboard .bg-slate-700 {
+  background-color: rgba(226, 232, 240, 0.82) !important;
+}
+
+[data-theme="light"] .big-screen-dashboard .hover\:bg-slate-800\/60:hover,
+[data-theme="light"] .big-screen-dashboard .hover\:bg-slate-700\/50:hover,
+[data-theme="light"] .big-screen-dashboard .hover\:bg-slate-600\/50:hover {
+  background-color: rgba(241, 245, 249, 0.95) !important;
+}
+
+[data-theme="light"] .big-screen-dashboard .border-slate-700\/50,
+[data-theme="light"] .big-screen-dashboard .border-slate-700\/30,
+[data-theme="light"] .big-screen-dashboard .border-slate-600\/30 {
+  border-color: rgba(148, 163, 184, 0.42) !important;
+}
+
+[data-theme="light"] .big-screen-dashboard .hover\:border-slate-600\/50:hover,
+[data-theme="light"] .big-screen-dashboard .hover\:border-blue-500\/30:hover,
+[data-theme="light"] .big-screen-dashboard .hover\:border-red-500\/30:hover {
+  border-color: rgba(15, 118, 110, 0.38) !important;
+}
+
+[data-theme="light"] .big-screen-dashboard .text-white:not(svg) {
+  color: #0f172a !important;
+}
+
+[data-theme="light"] .big-screen-dashboard .text-slate-300:not(svg),
+[data-theme="light"] .big-screen-dashboard .text-slate-400:not(svg) {
+  color: #475569 !important;
+}
+
+[data-theme="light"] .big-screen-dashboard .text-slate-500:not(svg) {
+  color: #64748b !important;
+}
+
+[data-theme="light"] .big-screen-dashboard input {
+  color: #0f172a !important;
+  background-color: rgba(255, 255, 255, 0.92) !important;
+}
+
 * {
   box-sizing: border-box;
   margin: 0;
