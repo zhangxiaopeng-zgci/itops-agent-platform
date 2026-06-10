@@ -139,6 +139,26 @@ interface CorrelationChain {
   tasks?: TaskItem[];
 }
 
+interface VerificationResult {
+  success: boolean;
+  tool: string;
+  decision?: {
+    status?: string;
+    reason?: string;
+    riskLevel?: string;
+  };
+  data?: {
+    taskId?: string;
+    verified?: boolean;
+    expectedStatus?: string;
+    actualStatus?: string;
+    failedNodes?: Array<{ nodeId?: string; error?: string }>;
+    completedAt?: string | null;
+    message?: string;
+  };
+  error?: string;
+}
+
 type HermesMode = 'diagnose' | 'remediate' | 'review';
 
 const panelClass = 'bg-surface/95 backdrop-blur-xl rounded-2xl border border-border shadow-lg';
@@ -427,6 +447,8 @@ export default function HermesAssistant() {
   const [selectedKnowledgeCategory, setSelectedKnowledgeCategory] = useState('');
   const [approvalActionId, setApprovalActionId] = useState('');
   const [approvalComment, setApprovalComment] = useState('');
+  const [verificationResults, setVerificationResults] = useState<Record<string, VerificationResult>>({});
+  const [verifyingTaskId, setVerifyingTaskId] = useState('');
 
   const { data: agents, isLoading, refetch } = useQuery({
     queryKey: ['agents'],
@@ -651,6 +673,8 @@ export default function HermesAssistant() {
       setActiveTraceIndex(null);
       setApprovalActionId('');
       setApprovalComment('');
+      setVerificationResults({});
+      setVerifyingTaskId('');
       toast.success(t('hermes.toast.completed'));
     },
     onError: (error: unknown) => {
@@ -729,6 +753,40 @@ export default function HermesAssistant() {
     },
   });
   const isApprovalActionPending = approveApprovalMutation.isPending || rejectApprovalMutation.isPending;
+  const verifyTaskMutation = useMutation({
+    mutationFn: async (taskId: string) => {
+      setVerifyingTaskId(taskId);
+      try {
+        const res = await api.post('/api/tools/verify_remediation/invoke', {
+          input: { taskId, expectedStatus: 'completed' },
+          correlationId: traceLinks.correlationIds[0],
+        });
+        return { taskId, result: res.data as VerificationResult };
+      } catch (error: unknown) {
+        const response = (error as { response?: { data?: VerificationResult } }).response;
+        if (response?.data) {
+          return { taskId, result: response.data };
+        }
+        throw error;
+      }
+    },
+    onSuccess: ({ taskId, result }) => {
+      setVerificationResults((current) => ({
+        ...current,
+        [taskId]: result,
+      }));
+      toast[result.success ? 'success' : 'error'](
+        result.success ? t('hermes.closure.verifyPassed') : t('hermes.closure.verifyNotPassed')
+      );
+      refreshClosure();
+    },
+    onError: (error: unknown) => {
+      toast.error(error instanceof Error ? error.message : t('hermes.closure.verifyFailed'));
+    },
+    onSettled: () => {
+      setVerifyingTaskId('');
+    },
+  });
 
   return (
     <div className="h-full overflow-auto p-6">
@@ -1325,6 +1383,9 @@ export default function HermesAssistant() {
                         {aggregatedTasks.map((task) => {
                           const progress = getTaskProgress(task);
                           const logSummary = getTaskLogSummary(task);
+                          const verification = verificationResults[task.id];
+                          const verified = verification?.data?.verified === true;
+                          const verifying = verifyingTaskId === task.id && verifyTaskMutation.isPending;
                           return (
                             <div key={task.id} className="rounded-lg bg-surface border border-border p-3">
                               <div className="flex items-start justify-between gap-3">
@@ -1358,7 +1419,64 @@ export default function HermesAssistant() {
                                   </div>
                                 </div>
                               )}
-                              <div className="mt-3">
+                              {verification && (
+                                <div className={clsx(
+                                  'mt-3 rounded-lg border p-3',
+                                  verified
+                                    ? 'bg-green-500/10 border-green-500/20'
+                                    : 'bg-red-500/10 border-red-500/20'
+                                )}>
+                                  <div className="flex items-center justify-between gap-3 mb-2">
+                                    <div className="text-xs font-semibold text-text-primary">{t('hermes.closure.verificationResult')}</div>
+                                    <span className={clsx(
+                                      'px-2 py-0.5 rounded-md text-xs font-semibold border',
+                                      verified
+                                        ? 'bg-green-500/10 text-green-400 border-green-500/30'
+                                        : 'bg-red-500/10 text-red-400 border-red-500/30'
+                                    )}>
+                                      {verified ? t('hermes.closure.verified') : t('hermes.closure.notVerified')}
+                                    </span>
+                                  </div>
+                                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                                    <div>
+                                      <div className="text-text-tertiary">{t('hermes.closure.expectedStatus')}</div>
+                                      <div className="text-text-secondary">{verification.data?.expectedStatus || '-'}</div>
+                                    </div>
+                                    <div>
+                                      <div className="text-text-tertiary">{t('hermes.closure.actualStatus')}</div>
+                                      <div className="text-text-secondary">{verification.data?.actualStatus || '-'}</div>
+                                    </div>
+                                  </div>
+                                  {verification.data?.message && (
+                                    <div className="mt-2 text-xs text-text-secondary">{verification.data.message}</div>
+                                  )}
+                                  {verification.data?.failedNodes && verification.data.failedNodes.length > 0 && (
+                                    <div className="mt-2">
+                                      <div className="text-xs text-text-tertiary mb-1">{t('hermes.closure.failedNodes')}</div>
+                                      <div className="space-y-1">
+                                        {verification.data.failedNodes.map((node, index) => (
+                                          <div key={`${task.id}-verify-failed-${index}`} className="text-xs text-red-300">
+                                            {node.nodeId || '-'}: {node.error || '-'}
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  )}
+                                  {verification.error && (
+                                    <div className="mt-2 text-xs text-red-300">{verification.error}</div>
+                                  )}
+                                </div>
+                              )}
+                              <div className="mt-3 flex flex-wrap gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => verifyTaskMutation.mutate(task.id)}
+                                  disabled={verifying}
+                                  className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-primary/10 text-primary border border-primary/20 hover:bg-primary/20 disabled:opacity-50 text-xs"
+                                >
+                                  {verifying ? <Loader2 className="w-3 h-3 animate-spin" /> : <CheckCircle2 className="w-3 h-3" />}
+                                  {verifying ? t('hermes.closure.verifying') : t('hermes.closure.verify')}
+                                </button>
                                 <button
                                   type="button"
                                   onClick={() => navigate(`/tasks?taskId=${encodeURIComponent(task.id)}`)}
