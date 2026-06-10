@@ -11,6 +11,7 @@ import v009AddToolApprovalCorrelation from './v009_add_tool_approval_correlation
 import v010AddHermesSessions from './v010_add_hermes_sessions';
 import v011AddHermesChannels from './v011_add_hermes_channels';
 import v012AddSkillRegistry from './v012_add_skill_registry';
+import v013AddMcpServerRegistry from './v013_add_mcp_server_registry';
 
 export const ALL_MIGRATIONS: Migration[] = [
   v001InitialSchema,
@@ -25,6 +26,7 @@ export const ALL_MIGRATIONS: Migration[] = [
   v010AddHermesSessions,
   v011AddHermesChannels,
   v012AddSkillRegistry,
+  v013AddMcpServerRegistry,
 ];
 
 export function createMigrationManager(db: any): MigrationManager {

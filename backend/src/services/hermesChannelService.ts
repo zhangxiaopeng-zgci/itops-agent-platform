@@ -7,6 +7,13 @@ import {
   replaceChannelSkills,
   toSkillRuntimeContext
 } from './skillService';
+import {
+  HermesChannelMcpServerRecord,
+  McpRuntimeContext,
+  listChannelMcpServers,
+  replaceChannelMcpServers,
+  toMcpRuntimeContext
+} from './mcpServerService';
 
 export interface HermesChannelRecord {
   id: string;
@@ -29,6 +36,7 @@ export interface HermesChannelRecord {
   updated_at: string;
   tools: HermesChannelToolRecord[];
   skills: HermesChannelSkillRecord[];
+  mcpServers: HermesChannelMcpServerRecord[];
 }
 
 export interface HermesChannelToolRecord {
@@ -55,6 +63,7 @@ export interface HermesChannelInput {
   enabled?: boolean | number;
   tools?: string[];
   skills?: string[];
+  mcpServers?: string[];
 }
 
 export interface HermesRuntimeChannelConfig {
@@ -67,6 +76,7 @@ export interface HermesRuntimeChannelConfig {
   maxToolRounds?: number;
   allowedTools?: string[];
   skills?: SkillRuntimeContext[];
+  mcpServers?: McpRuntimeContext[];
   temperature?: number;
   policyId?: string | null;
 }
@@ -123,6 +133,7 @@ export function createHermesChannel(input: HermesChannelInput, createdBy?: strin
 
   replaceHermesChannelTools(id, normalized.tools || []);
   replaceChannelSkills(id, normalized.skills || []);
+  replaceChannelMcpServers(id, normalized.mcpServers || []);
   return getHermesChannel(id)!;
 }
 
@@ -188,6 +199,10 @@ export function updateHermesChannel(id: string, input: HermesChannelInput): Herm
     replaceChannelSkills(id, normalized.skills);
   }
 
+  if (normalized.mcpServers) {
+    replaceChannelMcpServers(id, normalized.mcpServers);
+  }
+
   return getHermesChannel(id)!;
 }
 
@@ -226,6 +241,9 @@ export function channelToRuntimeConfig(channel: HermesChannelRecord): HermesRunt
   const skills = channel.skills
     .filter((skill) => skill.enabled === 1 && skill.binding_enabled === 1)
     .map(toSkillRuntimeContext);
+  const mcpServers = channel.mcpServers
+    .filter((server) => server.enabled === 1 && server.binding_enabled === 1)
+    .map(toMcpRuntimeContext);
 
   return {
     channelId: channel.id,
@@ -237,6 +255,7 @@ export function channelToRuntimeConfig(channel: HermesChannelRecord): HermesRunt
     maxToolRounds: channel.max_tool_rounds,
     allowedTools: tools,
     skills,
+    mcpServers,
     temperature: channel.temperature ?? undefined,
     policyId: channel.policy_id
   };
@@ -282,7 +301,8 @@ function parseHermesChannel(row: Record<string, unknown>): HermesChannelRecord {
     created_at: String(row.created_at || ''),
     updated_at: String(row.updated_at || ''),
     tools: listHermesChannelTools(channelId),
-    skills: listChannelSkills(channelId)
+    skills: listChannelSkills(channelId),
+    mcpServers: listChannelMcpServers(channelId)
   };
 }
 
@@ -383,6 +403,10 @@ function normalizeChannelInput(input: HermesChannelInput, requireName: boolean):
 
   if (Array.isArray(input.skills)) {
     normalized.skills = input.skills.filter((skill): skill is string => typeof skill === 'string');
+  }
+
+  if (Array.isArray(input.mcpServers)) {
+    normalized.mcpServers = input.mcpServers.filter((server): server is string => typeof server === 'string');
   }
 
   return normalized;

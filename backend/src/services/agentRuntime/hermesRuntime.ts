@@ -3,6 +3,7 @@ import fs from 'fs';
 import db from '../../models/database';
 import { logger } from '../../utils/logger';
 import { resolveHermesRuntimeConfigForAgent } from '../hermesChannelService';
+import { McpRuntimeContext } from '../mcpServerService';
 import { SkillRuntimeContext } from '../skillService';
 import { ToolContext, ToolDescriptor } from '../toolApi/types';
 import { AgentRunRequest, AgentRunResult, AgentRuntime, AgentTraceEvent, RuntimeAgentRecord } from './types';
@@ -21,6 +22,7 @@ interface HermesRuntimeConfig {
   maxToolRounds?: number;
   allowedTools?: string[];
   skills?: SkillRuntimeContext[];
+  mcpServers?: McpRuntimeContext[];
   temperature?: number;
 }
 
@@ -107,12 +109,14 @@ export class HermesAgentRuntime implements AgentRuntime {
     const maxToolRounds = config.maxToolRounds ?? DEFAULT_MAX_TOOL_ROUNDS;
     const correlationId = typeof request.context?.correlationId === 'string' ? request.context.correlationId : undefined;
     const runtimeSkills = config.skills || [];
+    const runtimeMcpServers = config.mcpServers || [];
 
     logger.info(`🧠 Calling Hermes runtime for agent ${agent.name}`, {
       baseUrl,
       model,
       tools: tools.map(tool => tool.function.name),
-      skills: runtimeSkills.map(skill => skill.id)
+      skills: runtimeSkills.map(skill => skill.id),
+      mcpServers: runtimeMcpServers.map(server => server.id)
     });
 
     let lastUsage: Record<string, unknown> | undefined;
@@ -170,6 +174,13 @@ export class HermesAgentRuntime implements AgentRuntime {
               name: skill.name,
               version: skill.version,
               category: skill.category
+            })),
+            mcpServers: runtimeMcpServers.map(server => ({
+              id: server.id,
+              name: server.name,
+              transport: server.transport,
+              toolImportMode: server.toolImportMode,
+              healthStatus: server.healthStatus
             })),
             usage: lastUsage,
             toolRounds: round

@@ -1,6 +1,6 @@
 import { type ReactNode, useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Activity, BookOpenCheck, Cable, CheckCircle2, Clock, RefreshCw, Save, ShieldCheck, Wrench, XCircle } from 'lucide-react';
+import { Activity, BookOpenCheck, Cable, CheckCircle2, Clock, PlugZap, RefreshCw, Save, ShieldCheck, Wrench, XCircle } from 'lucide-react';
 import clsx from 'clsx';
 import api from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
@@ -27,6 +27,19 @@ interface HermesChannelSkill {
   binding_enabled: number;
 }
 
+interface HermesChannelMcpServer {
+  id: string;
+  name: string;
+  description?: string | null;
+  transport: string;
+  url?: string | null;
+  enabled: number;
+  health_status: string;
+  mcp_server_id: string;
+  binding_enabled: number;
+  tool_import_mode: string;
+}
+
 interface HermesChannel {
   id: string;
   name: string;
@@ -45,6 +58,7 @@ interface HermesChannel {
   last_checked_at?: string | null;
   tools: HermesChannelTool[];
   skills: HermesChannelSkill[];
+  mcpServers: HermesChannelMcpServer[];
 }
 
 interface ToolDescriptor {
@@ -64,6 +78,18 @@ interface SkillPack {
   enabled: number;
 }
 
+interface McpServer {
+  id: string;
+  name: string;
+  description?: string | null;
+  transport: string;
+  url?: string | null;
+  command?: string | null;
+  enabled: number;
+  health_status: string;
+  last_checked_at?: string | null;
+}
+
 interface ChannelFormState {
   name: string;
   description: string;
@@ -78,6 +104,15 @@ interface ChannelFormState {
   enabled: boolean;
   tools: string[];
   skills: string[];
+  mcpServers: string[];
+}
+
+interface McpServerFormState {
+  name: string;
+  description: string;
+  transport: string;
+  url: string;
+  command: string;
 }
 
 const panelClass = 'bg-surface/95 rounded-xl border border-border shadow-sm';
@@ -122,6 +157,14 @@ export default function HermesChannels() {
     }
   });
 
+  const { data: mcpServers } = useQuery({
+    queryKey: ['mcp-servers'],
+    queryFn: async () => {
+      const res = await api.get('/api/mcp-servers?enabled=true');
+      return res.data.data as McpServer[];
+    }
+  });
+
   const selectedChannel = useMemo(() => {
     if (!channels || channels.length === 0) return null;
     return channels.find((channel) => channel.id === selectedId) || channels[0];
@@ -149,7 +192,8 @@ export default function HermesChannels() {
         policy_id: form.policy_id || null,
         enabled: form.enabled,
         tools: form.tools,
-        skills: form.skills
+        skills: form.skills,
+        mcpServers: form.mcpServers
       };
       const res = await api.put(`/api/hermes-channels/${selectedChannel.id}`, payload);
       return res.data.data as HermesChannel;
@@ -174,6 +218,46 @@ export default function HermesChannels() {
     },
     onError: (error: unknown) => {
       toast.error(error instanceof Error ? error.message : t('hermesChannels.toast.testFailed'));
+      queryClient.invalidateQueries({ queryKey: ['hermes-channels'] });
+    }
+  });
+
+  const createMcpMutation = useMutation({
+    mutationFn: async (form: McpServerFormState) => {
+      const payload = {
+        name: form.name,
+        description: form.description || null,
+        transport: form.transport,
+        url: form.transport === 'stdio' ? null : form.url,
+        command: form.transport === 'stdio' ? form.command : null,
+        args: [],
+        enabled: true
+      };
+      const res = await api.post('/api/mcp-servers', payload);
+      return res.data.data as McpServer;
+    },
+    onSuccess: () => {
+      toast.success(t('hermesChannels.toast.mcpCreated'));
+      queryClient.invalidateQueries({ queryKey: ['mcp-servers'] });
+    },
+    onError: (error: unknown) => {
+      toast.error(error instanceof Error ? error.message : t('hermesChannels.toast.mcpCreateFailed'));
+    }
+  });
+
+  const testMcpMutation = useMutation({
+    mutationFn: async (serverId: string) => {
+      const res = await api.post(`/api/mcp-servers/${serverId}/test`);
+      return res.data.data as { success: boolean; latencyMs: number; output?: string; error?: string };
+    },
+    onSuccess: (result) => {
+      toast.success(result.success ? t('hermesChannels.toast.mcpTestPassed') : t('hermesChannels.toast.mcpTestFailed'));
+      queryClient.invalidateQueries({ queryKey: ['mcp-servers'] });
+      queryClient.invalidateQueries({ queryKey: ['hermes-channels'] });
+    },
+    onError: (error: unknown) => {
+      toast.error(error instanceof Error ? error.message : t('hermesChannels.toast.mcpTestFailed'));
+      queryClient.invalidateQueries({ queryKey: ['mcp-servers'] });
       queryClient.invalidateQueries({ queryKey: ['hermes-channels'] });
     }
   });
@@ -237,6 +321,9 @@ export default function HermesChannels() {
                       <span className="px-2 py-1 rounded-md bg-background border border-border text-text-secondary">
                         {(channel.skills || []).filter((skill) => skill.enabled === 1 && skill.binding_enabled === 1).length} skills
                       </span>
+                      <span className="px-2 py-1 rounded-md bg-background border border-border text-text-secondary">
+                        {(channel.mcpServers || []).filter((server) => server.enabled === 1 && server.binding_enabled === 1).length} MCP
+                      </span>
                     </div>
                   </button>
                 ))}
@@ -249,11 +336,16 @@ export default function HermesChannels() {
               channel={selectedChannel}
               tools={tools || []}
               skills={skills || []}
+              mcpServers={mcpServers || []}
               canManage={canManage}
               isSaving={updateMutation.isPending}
               isTesting={testMutation.isPending}
+              isCreatingMcp={createMcpMutation.isPending}
+              testingMcpId={testMcpMutation.variables || null}
               onSave={(form) => updateMutation.mutate(form)}
               onTest={() => testMutation.mutate(selectedChannel.id)}
+              onCreateMcp={(form) => createMcpMutation.mutate(form)}
+              onTestMcp={(serverId) => testMcpMutation.mutate(serverId)}
             />
           )}
         </div>
@@ -266,23 +358,40 @@ function ChannelDetails({
   channel,
   tools,
   skills,
+  mcpServers,
   canManage,
   isSaving,
   isTesting,
+  isCreatingMcp,
+  testingMcpId,
   onSave,
-  onTest
+  onTest,
+  onCreateMcp,
+  onTestMcp
 }: {
   channel: HermesChannel;
   tools: ToolDescriptor[];
   skills: SkillPack[];
+  mcpServers: McpServer[];
   canManage: boolean;
   isSaving: boolean;
   isTesting: boolean;
+  isCreatingMcp: boolean;
+  testingMcpId: string | null;
   onSave: (form: ChannelFormState) => void;
   onTest: () => void;
+  onCreateMcp: (form: McpServerFormState) => void;
+  onTestMcp: (serverId: string) => void;
 }) {
   const { t } = useLocale();
   const [form, setForm] = useState<ChannelFormState>(() => formFromChannel(channel));
+  const [mcpForm, setMcpForm] = useState<McpServerFormState>({
+    name: '',
+    description: '',
+    transport: 'http',
+    url: '',
+    command: ''
+  });
 
   useEffect(() => {
     setForm(formFromChannel(channel));
@@ -290,6 +399,7 @@ function ChannelDetails({
 
   const selectedTools = new Set(form.tools);
   const selectedSkills = new Set(form.skills);
+  const selectedMcpServers = new Set(form.mcpServers);
 
   const toggleTool = (toolName: string) => {
     setForm((current) => ({
@@ -307,6 +417,27 @@ function ChannelDetails({
         ? current.skills.filter((id) => id !== skillId)
         : [...current.skills, skillId]
     }));
+  };
+
+  const toggleMcpServer = (serverId: string) => {
+    setForm((current) => ({
+      ...current,
+      mcpServers: current.mcpServers.includes(serverId)
+        ? current.mcpServers.filter((id) => id !== serverId)
+        : [...current.mcpServers, serverId]
+    }));
+  };
+
+  const canCreateMcp = mcpForm.name.trim().length > 0 && (
+    mcpForm.transport === 'stdio'
+      ? mcpForm.command.trim().length > 0
+      : mcpForm.url.trim().length > 0
+  );
+
+  const submitMcpServer = () => {
+    if (!canCreateMcp) return;
+    onCreateMcp(mcpForm);
+    setMcpForm({ name: '', description: '', transport: mcpForm.transport, url: '', command: '' });
   };
 
   return (
@@ -336,6 +467,134 @@ function ChannelDetails({
           <InfoTile label={t('hermesChannels.timeout')} value={`${channel.timeout_ms}ms`} />
           <InfoTile label={t('hermesChannels.lastChecked')} value={channel.last_checked_at || '-'} />
         </div>
+      </div>
+
+      <div className={`${panelClass} p-5`}>
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h3 className="text-sm font-semibold text-text-primary">{t('hermesChannels.mcpServers')}</h3>
+            <p className="text-xs text-text-tertiary mt-1">{t('hermesChannels.mcpServersDesc')}</p>
+          </div>
+          <PlugZap className="w-5 h-5 text-primary" />
+        </div>
+
+        {mcpServers.length === 0 ? (
+          <div className="rounded-lg bg-background border border-border p-4 text-sm text-text-tertiary">
+            {t('hermesChannels.noMcpServers')}
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+            {mcpServers.map((server) => (
+              <div
+                key={server.id}
+                role={canManage ? 'button' : undefined}
+                tabIndex={canManage ? 0 : undefined}
+                onClick={() => canManage && toggleMcpServer(server.id)}
+                onKeyDown={(event) => {
+                  if (!canManage) return;
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    toggleMcpServer(server.id);
+                  }
+                }}
+                className={clsx(
+                  'text-left rounded-lg border p-3 transition-colors',
+                  selectedMcpServers.has(server.id)
+                    ? 'bg-primary/10 border-primary/40'
+                    : 'bg-background border-border',
+                  canManage ? 'cursor-pointer' : 'cursor-default'
+                )}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="font-medium text-text-primary truncate">{server.name}</div>
+                    <div className="text-xs text-text-tertiary mt-1 line-clamp-2">{server.description || server.url || server.command || t('hermesChannels.noDescription')}</div>
+                  </div>
+                  <HealthBadge status={server.health_status} />
+                </div>
+                <div className="mt-3 flex items-center justify-between gap-2 text-xs text-text-tertiary">
+                  <span className="truncate">{server.transport}</span>
+                  <span className="whitespace-nowrap">{t('hermesChannels.mcpImportDisabled')}</span>
+                </div>
+                {canManage && (
+                  <div className="mt-3 flex justify-end">
+                    <button
+                      type="button"
+                      disabled={testingMcpId === server.id}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onTestMcp(server.id);
+                      }}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          onTestMcp(server.id);
+                        }
+                      }}
+                      className={clsx(
+                        'inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-surface border border-border text-xs text-text-secondary hover:text-text-primary transition-colors',
+                        testingMcpId === server.id && 'opacity-60'
+                      )}
+                    >
+                      <Activity className="w-3.5 h-3.5" />
+                      {testingMcpId === server.id ? t('hermesChannels.testing') : t('common.test')}
+                    </button>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {canManage && (
+          <div className="mt-5 pt-5 border-t border-border">
+            <h4 className="text-sm font-semibold text-text-primary mb-3">{t('hermesChannels.registerMcp')}</h4>
+            <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_140px_minmax(0,1fr)] gap-3">
+              <input
+                className={inputClass}
+                value={mcpForm.name}
+                onChange={(event) => setMcpForm({ ...mcpForm, name: event.target.value })}
+                placeholder={t('hermesChannels.mcpName')}
+              />
+              <select
+                className={inputClass}
+                value={mcpForm.transport}
+                onChange={(event) => setMcpForm({ ...mcpForm, transport: event.target.value })}
+              >
+                <option value="http">http</option>
+                <option value="sse">sse</option>
+                <option value="stdio">stdio</option>
+              </select>
+              <input
+                className={inputClass}
+                value={mcpForm.transport === 'stdio' ? mcpForm.command : mcpForm.url}
+                onChange={(event) => setMcpForm(mcpForm.transport === 'stdio'
+                  ? { ...mcpForm, command: event.target.value }
+                  : { ...mcpForm, url: event.target.value }
+                )}
+                placeholder={mcpForm.transport === 'stdio' ? t('hermesChannels.mcpCommand') : t('hermesChannels.mcpUrl')}
+              />
+            </div>
+            <div className="mt-3 grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_auto] gap-3">
+              <input
+                className={inputClass}
+                value={mcpForm.description}
+                onChange={(event) => setMcpForm({ ...mcpForm, description: event.target.value })}
+                placeholder={t('hermesChannels.mcpDescription')}
+              />
+              <button
+                type="button"
+                onClick={submitMcpServer}
+                disabled={!canCreateMcp || isCreatingMcp}
+                className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-primary text-white hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                <PlugZap className="w-4 h-4" />
+                {isCreatingMcp ? t('common.saving') : t('common.create')}
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       <div className={`${panelClass} p-5`}>
@@ -528,6 +787,7 @@ function formFromChannel(channel: HermesChannel): ChannelFormState {
     policy_id: channel.policy_id || '',
     enabled: channel.enabled === 1,
     tools: (channel.tools || []).filter((tool) => tool.enabled === 1).map((tool) => tool.tool_name),
-    skills: (channel.skills || []).filter((skill) => skill.enabled === 1 && skill.binding_enabled === 1).map((skill) => skill.skill_id)
+    skills: (channel.skills || []).filter((skill) => skill.enabled === 1 && skill.binding_enabled === 1).map((skill) => skill.skill_id),
+    mcpServers: (channel.mcpServers || []).filter((server) => server.enabled === 1 && server.binding_enabled === 1).map((server) => server.mcp_server_id)
   };
 }

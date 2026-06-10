@@ -78,6 +78,17 @@ router.put('/:id/skills', requireRole('admin'), (req: Request, res: Response) =>
   }
 });
 
+router.put('/:id/mcp-servers', requireRole('admin'), (req: Request, res: Response) => {
+  try {
+    const mcpServers = Array.isArray(req.body?.mcpServers) ? req.body.mcpServers : [];
+    const channel = updateHermesChannel(req.params.id, { mcpServers });
+    res.json({ success: true, data: channel });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Failed to update Hermes channel MCP servers';
+    res.status(message.includes('not found') ? 404 : 400).json({ success: false, error: message });
+  }
+});
+
 router.post('/:id/test', requireRole('admin'), async (req: Request, res: Response) => {
   try {
     const channel = getHermesChannel(req.params.id);

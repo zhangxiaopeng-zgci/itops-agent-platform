@@ -204,6 +204,8 @@ MCP Servers
 
 ## 阶段 18：MCP Server Registry
 
+状态：已完成基线实现。详情见 `docs/AGENT_RUNTIME_STAGE_18_MCP_SERVER_REGISTRY.md`。
+
 目标：为 Hermes 接入 MCP 做准备，先把 MCP Server 作为可登记、可测试、可审计的连接器，而不是直接让 Hermes 随意连外部工具。
 
 工作项：
@@ -215,7 +217,7 @@ MCP Servers
   - `POST /api/mcp-servers`
   - `PUT /api/mcp-servers/:id`
   - `POST /api/mcp-servers/:id/test`
-  - `POST /api/hermes-channels/:id/mcp-servers`
+  - `PUT /api/hermes-channels/:id/mcp-servers`
 - 支持 transport 元数据：
   - `stdio`
   - `http`
