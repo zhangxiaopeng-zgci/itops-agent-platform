@@ -287,6 +287,8 @@ Skill 不等于 Tool：
 
 ## 阶段 20：Channel 与 Agent 绑定
 
+状态：已完成基线实现。详情见 `docs/AGENT_RUNTIME_STAGE_20_AGENT_CHANNEL_BINDING.md`。
+
 目标：让 Agent 与 Channel/Profile 解耦，一个 Channel 可以服务多个 Agent，一个 Agent 可以明确绑定默认 Channel。
 
 工作项：
@@ -318,15 +320,26 @@ Skill 不等于 Tool：
 
 ## 阶段 21：部署、密钥和持久化生产化
 
+状态：21a 前置收口已完成。详情见 `docs/AGENT_RUNTIME_STAGE_21A_DEPLOYMENT_HARDENING.md`。21b 完整生产化仍待继续。
+
 目标：把当前验证部署收口为可长期运行、可备份恢复、密钥不裸露的生产形态。
 
-当前风险：
+21a 已收口：
+
+- 数据目录迁到 `/opt/itops-agent-platform/data`。
+- 备份目录迁到 `/opt/itops-agent-platform/backups`。
+- Secret 目录迁到 `/opt/itops-agent-platform/secrets`。
+- backend/frontend 容器设置 `restart: unless-stopped`。
+- Hermes Runtime 支持 `HERMES_API_KEY_FILE`。
+- 当前部署不再通过 `docker inspect` 暴露 `HERMES_API_KEY=...` 明文。
+- 已创建一次手动备份，并验证 gzip 可读。
+
+21b 仍需继续：
 
 - 当前测试机只有 `backend` 和 `frontend` 两个容器，没有 Hermes 独立容器。
-- 当前容器没有 restart policy。
-- 当前数据目录在 `/tmp/itops-agent-runtime-stage10/backend/data`，不适合作为长期生产目录。
-- 当前 `HERMES_API_KEY` 以容器环境变量存在，可通过 `docker inspect` 看到。
-- 备份服务启用但尚未形成备份文件和恢复演练记录。
+- 当前仍是开发式启动命令，不是正式 compose/systemd 管理。
+- 需要补正式 healthcheck、日志轮转和恢复演练。
+- 需要补 WAL checkpoint / restore 流程。
 
 工作项：
 

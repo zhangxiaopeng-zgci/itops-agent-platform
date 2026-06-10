@@ -1,4 +1,5 @@
 import axios, { AxiosError } from 'axios';
+import fs from 'fs';
 import db from '../../models/database';
 import { logger } from '../../utils/logger';
 import { resolveHermesRuntimeConfigForAgent } from '../hermesChannelService';
@@ -91,10 +92,10 @@ export class HermesAgentRuntime implements AgentRuntime {
     const baseUrl = trimTrailingSlash(configuredBaseUrl);
     const model = config.model || process.env.HERMES_MODEL || DEFAULT_MODEL;
     const apiKeyEnv = config.apiKeyEnv || 'HERMES_API_KEY';
-    const apiKey = process.env[apiKeyEnv];
+    const apiKey = resolveSecret(apiKeyEnv);
 
     if (!apiKey) {
-      throw new Error(`Hermes runtime requires API key environment variable: ${apiKeyEnv}`);
+      throw new Error(`Hermes runtime requires API key environment variable or file reference: ${apiKeyEnv}`);
     }
 
     const trace: AgentTraceEvent[] = [];
@@ -265,7 +266,7 @@ export async function testHermesConnection(rawConfig?: unknown): Promise<HermesC
   const configuredBaseUrl = config.baseUrl || process.env.HERMES_API_BASE;
   const model = config.model || process.env.HERMES_MODEL || DEFAULT_MODEL;
   const apiKeyEnv = config.apiKeyEnv || 'HERMES_API_KEY';
-  const apiKey = process.env[apiKeyEnv];
+  const apiKey = resolveSecret(apiKeyEnv);
 
   if (!configuredBaseUrl) {
     return {
@@ -285,7 +286,7 @@ export async function testHermesConnection(rawConfig?: unknown): Promise<HermesC
       model,
       apiKeyEnv,
       latencyMs: 0,
-      error: `Missing API key environment variable: ${apiKeyEnv}`
+      error: `Missing API key environment variable or file reference: ${apiKeyEnv}`
     };
   }
 
@@ -437,4 +438,23 @@ function toHermesError(error: unknown, baseUrl: string): Error {
 
 function trimTrailingSlash(value: string): string {
   return value.replace(/\/+$/, '');
+}
+
+function resolveSecret(envName: string): string | undefined {
+  const direct = process.env[envName]?.trim();
+  if (direct) {
+    return direct;
+  }
+
+  const filePath = process.env[`${envName}_FILE`]?.trim();
+  if (!filePath) {
+    return undefined;
+  }
+
+  try {
+    return fs.readFileSync(filePath, 'utf8').trim() || undefined;
+  } catch (error) {
+    logger.warn(`Failed to read Hermes secret file for ${envName}`, error as Error);
+    return undefined;
+  }
 }
