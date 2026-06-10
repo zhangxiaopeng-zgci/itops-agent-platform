@@ -4,7 +4,7 @@ import { getHermesSession, listHermesSessions } from '../services/hermesSessionS
 
 const router = Router();
 
-router.get('/', requireRole('admin', 'operator'), (req: Request, res: Response) => {
+router.get('/', requireRole('admin', 'operator', 'viewer'), (req: Request, res: Response) => {
   try {
     const result = listHermesSessions({
       mode: typeof req.query.mode === 'string' ? req.query.mode : undefined,
@@ -19,7 +19,7 @@ router.get('/', requireRole('admin', 'operator'), (req: Request, res: Response) 
   }
 });
 
-router.get('/:id', requireRole('admin', 'operator'), (req: Request, res: Response) => {
+router.get('/:id', requireRole('admin', 'operator', 'viewer'), (req: Request, res: Response) => {
   try {
     const session = getHermesSession(req.params.id);
     if (!session) {

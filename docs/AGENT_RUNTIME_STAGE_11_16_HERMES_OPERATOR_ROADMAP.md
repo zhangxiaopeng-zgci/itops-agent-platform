@@ -120,7 +120,7 @@ Hermes 复盘进化 Agent
 
 ## 阶段 13：审批与任务闭环嵌入
 
-状态：下一步优先实现。
+状态：已完成基线实现。
 
 目标：把审批和任务状态直接嵌进 Hermes 使用页面。
 
@@ -260,6 +260,8 @@ Hermes 复盘进化 Agent
 
 ## 阶段 15：Trace 与会话持久化
 
+状态：已完成基线实现。
+
 目标：让 Hermes 使用过程可审计、可复盘、可继续。
 
 工作项：
@@ -327,6 +329,8 @@ hermes_sessions
 产出：Hermes 真正形成闭环证据链。
 
 ## 阶段 16：产品化和权限边界
+
+状态：当前收口中。详细边界见 `docs/AGENT_RUNTIME_STAGE_16_PERMISSION_BOUNDARY.md`。
 
 目标：让 Hermes 对不同角色安全可用。
 

@@ -228,6 +228,26 @@ describe('toolRegistry', () => {
     });
   });
 
+  it('does not let viewers submit medium-risk workflow tools for approval', async () => {
+    const result = await invokeTool(
+      'run_workflow',
+      { workflowId: 'viewer-cannot-queue-workflow' },
+      { userId: 'test-viewer', userRole: 'viewer', source: 'api', correlationId: 'corr-viewer-denied' }
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.decision.status).toBe('denied');
+    expect(result.approvalId).toBeUndefined();
+    expect(result.error).toContain('Role cannot submit medium/high-risk tools for approval');
+
+    const approvalCount = (db.prepare(`
+      SELECT COUNT(*) as count
+      FROM tool_approvals
+      WHERE correlation_id = ?
+    `).get('corr-viewer-denied') as { count: number }).count;
+    expect(approvalCount).toBe(0);
+  });
+
   it('does not let skipApproval bypass denied policy decisions', async () => {
     const result = await invokeTool(
       'run_readonly_command',

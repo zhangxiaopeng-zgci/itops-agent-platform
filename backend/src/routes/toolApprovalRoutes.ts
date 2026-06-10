@@ -19,7 +19,7 @@ interface AuthenticatedRequest extends Request {
 
 const router = Router();
 
-router.get('/', requireRole('admin', 'operator'), (req: Request, res: Response) => {
+router.get('/', requireRole('admin', 'operator', 'viewer'), (req: Request, res: Response) => {
   try {
     const result = listToolApprovals({
       status: typeof req.query.status === 'string' ? req.query.status : undefined,
@@ -33,7 +33,7 @@ router.get('/', requireRole('admin', 'operator'), (req: Request, res: Response) 
   }
 });
 
-router.get('/:id', requireRole('admin', 'operator'), (req: Request, res: Response) => {
+router.get('/:id', requireRole('admin', 'operator', 'viewer'), (req: Request, res: Response) => {
   const approval = getToolApproval(req.params.id);
   if (!approval) {
     return res.status(404).json({ success: false, error: 'Tool approval not found' });

@@ -26,6 +26,7 @@ import {
 import clsx from 'clsx';
 import api from '../lib/api';
 import MarkdownOutput from '../components/MarkdownOutput';
+import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
 import { type MessageKey, useLocale } from '../contexts/LocaleContext';
 
@@ -477,6 +478,7 @@ export default function HermesAssistant() {
   const navigate = useNavigate();
   const toast = useToast();
   const queryClient = useQueryClient();
+  const { user } = useAuth();
   const { locale, t } = useLocale();
   const [activeMode, setActiveMode] = useState<HermesMode>('diagnose');
   const [input, setInput] = useState('');
@@ -541,6 +543,10 @@ export default function HermesAssistant() {
   });
 
   const mode = HERMES_MODES.find((item) => item.id === activeMode) || HERMES_MODES[0];
+  const currentRole = user?.role || 'viewer';
+  const canSubmitRemediation = currentRole === 'admin' || currentRole === 'operator';
+  const canHandleApprovals = currentRole === 'admin' || currentRole === 'operator';
+  const canUseActiveMode = activeMode !== 'remediate' || canSubmitRemediation;
 
   useEffect(() => {
     if (activePromptKey) {
@@ -556,6 +562,16 @@ export default function HermesAssistant() {
   const allowedTools = Array.isArray(runtimeConfig.allowedTools)
     ? runtimeConfig.allowedTools.filter((tool): tool is string => typeof tool === 'string')
     : [];
+  const safetyModeKey: MessageKey = currentRole === 'viewer' || activeMode === 'diagnose' || activeMode === 'review' || selectedAgent?.autonomy_level === 'read_only'
+    ? 'hermes.safety.mode.readOnly'
+    : selectedAgent?.autonomy_level === 'auto'
+      ? 'hermes.safety.mode.auto'
+      : 'hermes.safety.mode.approval';
+  const safetyStatementKey: MessageKey = currentRole === 'viewer'
+    ? 'hermes.safety.statement.viewer'
+    : activeMode === 'remediate'
+      ? 'hermes.safety.statement.approval'
+      : 'hermes.safety.statement.readOnly';
   const trace = lastResult?.trace || lastResult?.metadata?.trace || [];
   const traceLinks = collectTraceLinks(trace, lastResult?.metadata?.correlationId);
   const { data: correlationChains, isFetching: isFetchingCorrelations, refetch: refetchCorrelations } = useQuery({
@@ -703,6 +719,9 @@ export default function HermesAssistant() {
     mutationFn: async () => {
       if (!selectedAgent) {
         throw new Error(t('hermes.error.agentNotFound'));
+      }
+      if (!canUseActiveMode) {
+        throw new Error(t('hermes.error.readOnlyRole'));
       }
       const correlationId = createCorrelationId();
       const finalInput = buildPromptWithContext(input, contextLines, contextLabels);
@@ -907,11 +926,15 @@ export default function HermesAssistant() {
               const agent = (agents || []).find((candidate) => candidate.name === item.agentName);
               const Icon = item.icon;
               const active = item.id === activeMode;
+              const disabledByRole = item.id === 'remediate' && !canSubmitRemediation;
               return (
                 <button
                   key={item.id}
                   type="button"
+                  disabled={disabledByRole}
+                  title={disabledByRole ? t('hermes.safety.viewerNoRemediate') : undefined}
                   onClick={() => {
+                    if (disabledByRole) return;
                     setActiveMode(item.id);
                     setActivePromptKey(item.promptKeys[0]);
                     setLastResult(null);
@@ -919,6 +942,7 @@ export default function HermesAssistant() {
                   }}
                   className={clsx(
                     'w-full text-left rounded-2xl border p-4 transition-all',
+                    disabledByRole && 'opacity-55 cursor-not-allowed',
                     active
                       ? 'bg-primary/10 border-primary/40 shadow-lg shadow-black/10'
                       : 'bg-surface border-border hover:border-primary/30'
@@ -939,6 +963,9 @@ export default function HermesAssistant() {
                       </div>
                       <p className="text-xs text-text-secondary mt-1">{t(item.subtitleKey)}</p>
                       <p className="text-xs text-text-tertiary mt-2 truncate">{item.agentName}</p>
+                      {disabledByRole && (
+                        <p className="text-xs text-amber-300 mt-2">{t('hermes.safety.viewerNoRemediate')}</p>
+                      )}
                     </div>
                   </div>
                 </button>
@@ -985,6 +1012,17 @@ export default function HermesAssistant() {
                       ))}
                     </div>
                   )}
+                  <div className="rounded-xl bg-background border border-border p-3 space-y-2 text-xs">
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-text-tertiary">{t('hermes.safety.currentMode')}</span>
+                      <span className="font-semibold text-text-primary">{t(safetyModeKey)}</span>
+                    </div>
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-text-tertiary">{t('hermes.safety.currentRole')}</span>
+                      <span className="font-semibold text-text-primary">{t(`role.${currentRole}` as MessageKey)}</span>
+                    </div>
+                    <div className="text-text-secondary">{t(safetyStatementKey)}</div>
+                  </div>
                 </div>
               ) : (
                 <div className="flex items-start gap-2 text-sm text-status-warning">
@@ -1210,7 +1248,7 @@ export default function HermesAssistant() {
                     {t('hermes.quick.analyzeAlert')}
                   </button>
                 )}
-                {selectedWorkflow && (
+                {selectedWorkflow && canSubmitRemediation && (
                   <button
                     type="button"
                     onClick={() => {
@@ -1256,11 +1294,16 @@ export default function HermesAssistant() {
                   <span className="px-2 py-1 rounded-lg bg-background border border-border">
                     {t('hermes.badge.trace')}
                   </span>
+                  {!canUseActiveMode && (
+                    <span className="px-2 py-1 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-300">
+                      {t('hermes.safety.viewerNoRemediate')}
+                    </span>
+                  )}
                 </div>
                 <button
                   type="button"
                   onClick={() => runMutation.mutate()}
-                  disabled={!selectedAgent || selectedAgent.enabled !== 1 || !input.trim() || runMutation.isPending}
+                  disabled={!selectedAgent || selectedAgent.enabled !== 1 || !input.trim() || !canUseActiveMode || runMutation.isPending}
                   className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-white hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium"
                 >
                   {runMutation.isPending ? (
@@ -1462,7 +1505,7 @@ export default function HermesAssistant() {
                                   <ExternalLink className="w-3 h-3" />
                                 </button>
                               )}
-                              {approval.status === 'pending' && approvalActionId !== approval.id && (
+                              {approval.status === 'pending' && canHandleApprovals && approvalActionId !== approval.id && (
                                 <button
                                   type="button"
                                   onClick={() => {
@@ -1475,7 +1518,7 @@ export default function HermesAssistant() {
                                 </button>
                               )}
                             </div>
-                            {approval.status === 'pending' && approvalActionId === approval.id && (
+                            {approval.status === 'pending' && canHandleApprovals && approvalActionId === approval.id && (
                               <div className="mt-3 pt-3 border-t border-border space-y-3">
                                 <textarea
                                   value={approvalComment}

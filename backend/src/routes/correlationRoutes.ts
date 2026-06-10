@@ -5,7 +5,7 @@ import { listHermesSessionsByCorrelation } from '../services/hermesSessionServic
 
 const router = Router();
 
-router.get('/:id', requireRole('admin', 'operator'), (req: Request, res: Response) => {
+router.get('/:id', requireRole('admin', 'operator', 'viewer'), (req: Request, res: Response) => {
   try {
     const correlationId = req.params.id;
     if (!/^[a-zA-Z0-9._:-]{8,128}$/.test(correlationId)) {

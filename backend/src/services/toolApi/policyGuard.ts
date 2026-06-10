@@ -3,6 +3,7 @@ import { ToolContext, ToolDecision, ToolDefinition } from './types';
 
 const READ_ONLY_ROLES = new Set(['admin', 'operator', 'viewer']);
 const LOW_RISK_ROLES = new Set(['admin', 'operator']);
+const APPROVAL_REQUEST_ROLES = new Set(['admin', 'operator']);
 
 const READ_ONLY_COMMANDS = new Set([
   'cat',
@@ -40,11 +41,17 @@ export function evaluateToolPolicy(tool: ToolDefinition, context: ToolContext): 
   }
 
   if (tool.riskLevel === 'medium_risk' || tool.riskLevel === 'high_risk') {
-    return {
-      status: 'approval_required',
-      riskLevel: tool.riskLevel,
-      reason: 'Tool requires human approval before execution'
-    };
+    return APPROVAL_REQUEST_ROLES.has(context.userRole)
+      ? {
+        status: 'approval_required',
+        riskLevel: tool.riskLevel,
+        reason: 'Tool requires human approval before execution'
+      }
+      : {
+        status: 'denied',
+        riskLevel: tool.riskLevel,
+        reason: 'Role cannot submit medium/high-risk tools for approval'
+      };
   }
 
   return {

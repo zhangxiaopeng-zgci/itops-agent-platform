@@ -3,11 +3,12 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { 
   Plus, Edit, Trash2, Play, Clock, Search, 
-  ChevronLeft, BookOpen, Server, BrainCircuit, Cable, CheckCircle2, AlertTriangle, Wrench, MessageSquare, ExternalLink
+  ChevronLeft, BookOpen, Server, BrainCircuit, Cable, CheckCircle2, AlertTriangle, Wrench, MessageSquare, ExternalLink, ShieldCheck
 } from 'lucide-react';
 import clsx from 'clsx';
 import api from '../lib/api';
 import MarkdownOutput from '../components/MarkdownOutput';
+import { useAuth } from '../contexts/AuthContext';
 import { useLocale } from '../contexts/LocaleContext';
 
 interface Agent {
@@ -1050,6 +1051,8 @@ function AgentDetailInner({ agentId, onBack, deleteMutation }: AgentDetailInnerP
 function AgentModal({ agent, onClose }: { agent: Agent | null; onClose: () => void }) {
   const queryClient = useQueryClient();
   const { t } = useLocale();
+  const { user } = useAuth();
+  const canManageRuntime = user?.role === 'admin';
   const initialRuntimeConfig = parseRuntimeConfig(agent?.runtime_config);
   const [tagsInput, setTagsInput] = useState(
     Array.isArray(agent?.tags) ? agent.tags.join(', ') : ''
@@ -1096,10 +1099,17 @@ function AgentModal({ agent, onClose }: { agent: Agent | null; onClose: () => vo
 
   const mutation = useMutation({
     mutationFn: async (data: typeof formData & { tags?: string[], runtime_config?: HermesRuntimeConfig | null }) => {
+      const payload: Partial<typeof data> = { ...data };
+      if (!canManageRuntime) {
+        delete payload.runtime;
+        delete payload.runtime_config;
+        delete payload.autonomy_level;
+        delete payload.tool_policy_id;
+      }
       if (agent) {
-        await api.put(`/api/agents/${agent.id}`, data);
+        await api.put(`/api/agents/${agent.id}`, payload);
       } else {
-        await api.post('/api/agents', data);
+        await api.post('/api/agents', payload);
       }
     },
     onSuccess: () => {
@@ -1111,7 +1121,7 @@ function AgentModal({ agent, onClose }: { agent: Agent | null; onClose: () => vo
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const tags = tagsInput.split(',').map(t => t.trim()).filter(Boolean);
-    mutation.mutate({ ...formData, tags, runtime_config: buildRuntimeConfig() });
+    mutation.mutate({ ...formData, tags, runtime_config: canManageRuntime ? buildRuntimeConfig() : undefined });
   };
 
   const buildRuntimeConfig = (): HermesRuntimeConfig | null => {
@@ -1314,6 +1324,7 @@ function AgentModal({ agent, onClose }: { agent: Agent | null; onClose: () => vo
             </p>
           </div>
 
+          {canManageRuntime ? (
           <div className={`${softPanelClass} p-4 space-y-4`}>
             <div className="flex items-center justify-between gap-3">
               <label className="text-sm font-medium text-text-secondary flex items-center gap-2">
@@ -1445,6 +1456,17 @@ function AgentModal({ agent, onClose }: { agent: Agent | null; onClose: () => vo
               </div>
             )}
           </div>
+          ) : (
+            <div className={`${softPanelClass} p-4`}>
+              <div className="flex items-start gap-3 text-sm text-text-secondary">
+                <ShieldCheck className="w-4 h-4 text-primary mt-0.5 flex-shrink-0" />
+                <div>
+                  <div className="font-medium text-text-primary">{t('agents.runtimeAdminOnly')}</div>
+                  <div className="text-xs text-text-tertiary mt-1">{t('agents.runtimeAdminOnlyDesc')}</div>
+                </div>
+              </div>
+            </div>
+          )}
 
           <div className="grid grid-cols-2 gap-4">
             <div>

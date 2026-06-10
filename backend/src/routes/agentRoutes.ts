@@ -10,6 +10,17 @@ import { createHermesSession, HermesSessionRecord } from '../services/hermesSess
 
 const router = Router();
 
+function getRequestRole(req: Request): string {
+  return (req as Request & { user?: { role?: string } }).user?.role || 'viewer';
+}
+
+function isRuntimeManagementRequest(body: Record<string, unknown>): boolean {
+  return body.runtime === 'hermes' ||
+    (body.runtime_config !== undefined && body.runtime_config !== null) ||
+    (body.tool_policy_id !== undefined && body.tool_policy_id !== null && body.tool_policy_id !== '') ||
+    (body.autonomy_level !== undefined && body.autonomy_level !== null && body.autonomy_level !== 'suggest');
+}
+
 function serializeRuntimeConfig(value: unknown): string | null {
   if (!value) return null;
   return typeof value === 'string' ? value : JSON.stringify(value);
@@ -101,7 +112,7 @@ router.get('/stats/summary', (_req: Request, res: Response) => {
   }
 });
 
-router.post('/runtime/hermes/test-connection', requireRole('admin', 'operator'), async (req: Request, res: Response) => {
+router.post('/runtime/hermes/test-connection', requireRole('admin'), async (req: Request, res: Response) => {
   try {
     const result = await testHermesConnection(req.body?.runtime_config || req.body);
     res.status(result.success ? 200 : 400).json({ success: result.success, data: result, error: result.error });
@@ -179,6 +190,10 @@ router.get('/:id/executions', (req: Request, res: Response) => {
 router.post('/', requireRole('admin', 'operator'), (req: Request, res: Response) => {
   try {
     const { name, avatar, role, system_prompt, model, temperature, enabled, category, tags, description, api_provider, primary_model_id, fallback_model_id, runtime, runtime_config, autonomy_level, tool_policy_id } = req.body;
+    if (getRequestRole(req) !== 'admin' && isRuntimeManagementRequest(req.body || {})) {
+      return res.status(403).json({ success: false, error: 'Only admins can configure Hermes runtime, autonomy level, or allowed tools' });
+    }
+
     const id = randomUUID();
     
     db.prepare(`
@@ -248,6 +263,14 @@ router.post('/:id/test', async (req: Request, res: Response) => {
       : randomUUID();
     const startTime = Date.now();
     const agentName = (agent as { name: string }).name;
+    const isHermesAssistantRun = context?.source === 'hermes_assistant';
+    const isRemediationMode = context?.mode === 'remediate' || agentName.includes('修复编排');
+    if (authUser?.role === 'viewer' && isHermesAssistantRun && isRemediationMode) {
+      return res.status(403).json({
+        success: false,
+        error: 'Viewer role can only run read-only Hermes diagnosis and review'
+      });
+    }
     
     let output = '';
     let status = 'success';
@@ -395,6 +418,9 @@ router.get('/:id/test-input', (req: Request, res: Response) => {
 router.put('/:id', requireRole('admin', 'operator'), (req: Request, res: Response) => {
   try {
     const { name, avatar, role, system_prompt, model, temperature, enabled, category, tags, description, api_provider, primary_model_id, fallback_model_id, runtime, runtime_config, autonomy_level, tool_policy_id } = req.body;
+    if (getRequestRole(req) !== 'admin' && isRuntimeManagementRequest(req.body || {})) {
+      return res.status(403).json({ success: false, error: 'Only admins can configure Hermes runtime, autonomy level, or allowed tools' });
+    }
     
     db.prepare(`
       UPDATE agents 
