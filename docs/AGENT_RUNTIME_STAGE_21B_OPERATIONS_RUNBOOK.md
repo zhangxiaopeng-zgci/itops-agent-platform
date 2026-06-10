@@ -35,6 +35,41 @@ frontend
 
 阶段 22 前没有单独的 Hermes 容器。阶段 22 起新增 `hermes-diagnose`、`hermes-remediate`、`hermes-evolve` 三个 Worker 容器；backend 仍保留内置 Hermes Runtime fallback。
 
+## 前后端容器网络
+
+当前测试机仍使用开发式容器启动方式，`frontend` 通过 Vite proxy 将 `/api` 转发到：
+
+```text
+http://backend:3001
+```
+
+因此 `frontend` 和 `backend` 必须在同一个 Docker network 中，并且 `backend` 容器需要有 `backend` DNS alias。
+
+检查：
+
+```bash
+docker exec frontend getent hosts backend
+curl -s -o /dev/null -w "%{http_code}\n" \
+  -X POST http://127.0.0.1:3000/api/auth/login \
+  -H 'content-type: application/json' \
+  -d '{"username":"admin","password":"Admin@123"}'
+```
+
+期望：
+
+```text
+docker exec frontend getent hosts backend  能解析到 backend IP
+登录接口返回 200
+```
+
+如果浏览器登录失败，但直连 `http://127.0.0.1:3001/api/auth/login` 成功，优先检查网络 alias：
+
+```bash
+docker network connect --alias backend itops-stage10 backend
+```
+
+该连接对容器 restart 保留；如果容器被删除后重建，需要在启动命令或 compose 中重新声明同一网络和 alias。
+
 ## MCP / Skill 能力包导入导出
 
 新增能力包格式：
