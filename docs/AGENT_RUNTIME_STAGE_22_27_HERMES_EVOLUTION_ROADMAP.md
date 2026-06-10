@@ -117,6 +117,8 @@ hermes_worker_runs
 
 ## 阶段 24：Evolution Proposal
 
+状态：已进入实现收口。
+
 新增：
 
 ```text
@@ -133,6 +135,14 @@ evolution_proposals
 - `prompt_update`
 
 `hermes-evolve` 只能生成 proposal，不能直接应用。
+
+补充：
+
+- proposal 生成入口为 `/api/evolution-proposals/generate`。
+- proposal 证据来自 Worker run、Hermes session、Agent execution 和 Tool approval。
+- proposal 状态流转保存到 `evolution_proposal_events`。
+- `/evolution-proposals` 提供操作者入口。
+- admin 才能批准 proposal；批准仍不等于发布。
 
 ## 阶段 25：自动评估与回放
 

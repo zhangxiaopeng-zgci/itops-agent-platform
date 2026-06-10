@@ -88,6 +88,7 @@ const navigationGroups: Array<{
       { labelKey: 'nav.agents', href: '/agents', icon: Bot },
       { labelKey: 'nav.hermes', href: '/hermes', icon: Brain },
       { labelKey: 'nav.hermesChannels', href: '/hermes-channels', icon: Cable },
+      { labelKey: 'nav.evolutionProposals', href: '/evolution-proposals', icon: Lightbulb },
       { labelKey: 'nav.toolApprovals', href: '/tool-approvals', icon: ShieldAlert },
       { labelKey: 'nav.workflows', href: '/workflows', icon: GitBranch },
       { labelKey: 'nav.tasks', href: '/tasks', icon: Play },
