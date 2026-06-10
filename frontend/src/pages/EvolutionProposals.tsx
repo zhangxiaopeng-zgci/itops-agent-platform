@@ -15,6 +15,7 @@ type ProposalStatus =
   | 'eval_failed'
   | 'approval_pending'
   | 'approved'
+  | 'published'
   | 'rejected'
   | 'archived';
 
@@ -77,6 +78,20 @@ interface ProposalEvaluation {
   created_at: string;
 }
 
+interface ReleaseVersion {
+  id: string;
+  proposal_id: string;
+  object_type: string;
+  target_id?: string | null;
+  version_label: string;
+  status: 'active' | 'superseded' | 'rolled_back';
+  payload: unknown;
+  previous_version_id?: string | null;
+  published_at?: string | null;
+  rolled_back_at?: string | null;
+  rollback_reason?: string | null;
+}
+
 const panelClass = 'bg-surface/95 rounded-xl border border-border shadow-sm';
 const inputClass = 'w-full px-3 py-2 bg-background border border-border rounded-lg text-text-primary placeholder-text-tertiary focus:outline-none focus:border-primary/60 focus:ring-2 focus:ring-primary/20 transition-all';
 
@@ -98,6 +113,7 @@ const statusOptions = [
   'eval_failed',
   'approval_pending',
   'approved',
+  'published',
   'rejected',
   'archived'
 ];
@@ -142,7 +158,12 @@ export default function EvolutionProposals() {
     enabled: Boolean(selectedProposal?.id),
     queryFn: async () => {
       const res = await api.get(`/api/evolution-proposals/${selectedProposal!.id}`);
-      return res.data.data as { proposal: EvolutionProposal; events: ProposalEvent[]; evaluations: ProposalEvaluation[] };
+      return res.data.data as {
+        proposal: EvolutionProposal;
+        events: ProposalEvent[];
+        evaluations: ProposalEvaluation[];
+        releases: ReleaseVersion[];
+      };
     }
   });
 
@@ -201,6 +222,44 @@ export default function EvolutionProposals() {
     },
     onError: (error: unknown) => {
       toast.error(error instanceof Error ? error.message : t('evolution.toast.evaluateFailed'));
+    }
+  });
+
+  const publishMutation = useMutation({
+    mutationFn: async (proposalId: string) => {
+      const res = await api.post(`/api/evolution-proposals/${proposalId}/publish`, {
+        comment: comment.trim() || undefined
+      });
+      return res.data.data as ReleaseVersion;
+    },
+    onSuccess: (_version, proposalId) => {
+      toast.success(t('evolution.toast.published'));
+      setComment('');
+      queryClient.invalidateQueries({ queryKey: ['evolution-proposals'] });
+      queryClient.invalidateQueries({ queryKey: ['evolution-proposal-detail', proposalId] });
+    },
+    onError: (error: unknown) => {
+      toast.error(error instanceof Error ? error.message : t('evolution.toast.publishFailed'));
+    }
+  });
+
+  const rollbackMutation = useMutation({
+    mutationFn: async (versionId: string) => {
+      const res = await api.post(`/api/evolution-proposals/releases/versions/${versionId}/rollback`, {
+        reason: comment.trim() || undefined
+      });
+      return res.data.data as ReleaseVersion;
+    },
+    onSuccess: (_version) => {
+      toast.success(t('evolution.toast.rolledBack'));
+      setComment('');
+      queryClient.invalidateQueries({ queryKey: ['evolution-proposals'] });
+      if (activeProposal?.id) {
+        queryClient.invalidateQueries({ queryKey: ['evolution-proposal-detail', activeProposal.id] });
+      }
+    },
+    onError: (error: unknown) => {
+      toast.error(error instanceof Error ? error.message : t('evolution.toast.rollbackFailed'));
     }
   });
 
@@ -395,6 +454,12 @@ export default function EvolutionProposals() {
                     onClick={() => statusMutation.mutate({ id: activeProposal.id, status: 'approved' })}
                   />
                   <ActionButton
+                    label={publishMutation.isPending ? t('evolution.publishing') : t('evolution.action.publish')}
+                    icon={<ShieldCheck className="w-4 h-4" />}
+                    disabled={!canApprove || publishMutation.isPending}
+                    onClick={() => publishMutation.mutate(activeProposal.id)}
+                  />
+                  <ActionButton
                     label={t('evolution.action.reject')}
                     icon={<XCircle className="w-4 h-4" />}
                     disabled={statusMutation.isPending}
@@ -422,6 +487,13 @@ export default function EvolutionProposals() {
               <InfoGrid proposal={activeProposal} />
 
               <EvaluationPanel evaluations={detail?.evaluations || []} />
+
+              <ReleasePanel
+                releases={detail?.releases || []}
+                canRollback={canApprove}
+                isRollingBack={rollbackMutation.isPending}
+                onRollback={(versionId) => rollbackMutation.mutate(versionId)}
+              />
 
               <DetailSection title={t('evolution.body')} icon={<FileText className="w-4 h-4" />}>
                 <pre className="whitespace-pre-wrap break-words text-sm text-text-secondary leading-6">{activeProposal.proposal_body}</pre>
@@ -451,6 +523,65 @@ export default function EvolutionProposals() {
         </section>
       </div>
     </div>
+  );
+}
+
+function ReleasePanel({
+  releases,
+  canRollback,
+  isRollingBack,
+  onRollback
+}: {
+  releases: ReleaseVersion[];
+  canRollback: boolean;
+  isRollingBack: boolean;
+  onRollback: (versionId: string) => void;
+}) {
+  const { t } = useLocale();
+
+  return (
+    <DetailSection title={t('evolution.release.title')} icon={<ShieldCheck className="w-4 h-4" />}>
+      {releases.length === 0 ? (
+        <div className="text-sm text-text-tertiary">{t('evolution.release.empty')}</div>
+      ) : (
+        <div className="space-y-2">
+          {releases.map((version) => (
+            <div key={version.id} className="rounded-lg bg-background border border-border px-3 py-3">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium text-text-primary">{version.version_label}</span>
+                    <span className={clsx(
+                      'px-2 py-0.5 rounded-full border text-xs',
+                      version.status === 'active'
+                        ? 'bg-status-success/10 text-status-success border-status-success/30'
+                        : version.status === 'rolled_back'
+                          ? 'bg-status-failed/10 text-status-failed border-status-failed/30'
+                          : 'bg-status-pending/10 text-status-pending border-status-pending/30'
+                    )}>
+                      {version.status}
+                    </span>
+                  </div>
+                  <div className="text-xs text-text-tertiary mt-1 truncate">
+                    {version.object_type} · {version.target_id || 'global'} · {formatTime(version.published_at)}
+                  </div>
+                </div>
+                {version.status === 'active' && (
+                  <button
+                    disabled={!canRollback || isRollingBack}
+                    onClick={() => onRollback(version.id)}
+                    className="inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-background border border-border text-xs text-text-secondary hover:text-text-primary hover:border-primary/40 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    <Archive className="w-4 h-4" />
+                    {isRollingBack ? t('evolution.rollingBack') : t('evolution.action.rollback')}
+                  </button>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </DetailSection>
   );
 }
 
@@ -529,12 +660,12 @@ function EvaluationPanel({ evaluations }: { evaluations: ProposalEvaluation[] })
 }
 
 function StatusBadge({ status }: { status: ProposalStatus }) {
-  const icon = status === 'approved'
+  const icon = status === 'approved' || status === 'published'
     ? <CheckCircle2 className="w-3.5 h-3.5" />
     : status === 'rejected' || status === 'eval_failed'
       ? <XCircle className="w-3.5 h-3.5" />
       : <Clock className="w-3.5 h-3.5" />;
-  const tone = status === 'approved'
+  const tone = status === 'approved' || status === 'published'
     ? 'bg-status-success/10 text-status-success border-status-success/30'
     : status === 'rejected' || status === 'eval_failed'
       ? 'bg-status-failed/10 text-status-failed border-status-failed/30'

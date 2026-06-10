@@ -15,6 +15,7 @@ import v013AddMcpServerRegistry from './v013_add_mcp_server_registry';
 import v014AddHermesWorkerObservability from './v014_add_hermes_worker_observability';
 import v015AddEvolutionProposals from './v015_add_evolution_proposals';
 import v016AddEvolutionProposalEvaluations from './v016_add_evolution_proposal_evaluations';
+import v017AddEvolutionReleaseVersions from './v017_add_evolution_release_versions';
 
 export const ALL_MIGRATIONS: Migration[] = [
   v001InitialSchema,
@@ -33,6 +34,7 @@ export const ALL_MIGRATIONS: Migration[] = [
   v014AddHermesWorkerObservability,
   v015AddEvolutionProposals,
   v016AddEvolutionProposalEvaluations,
+  v017AddEvolutionReleaseVersions,
 ];
 
 export function createMigrationManager(db: any): MigrationManager {

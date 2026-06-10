@@ -169,6 +169,8 @@ evolution_proposals
 
 ## 阶段 26：审批发布与版本化
 
+状态：已进入实现收口。
+
 版本化对象：
 
 ```text
@@ -184,6 +186,16 @@ proposal -> eval passed -> admin approval -> publish -> channel uses new version
 ```
 
 必须支持回滚。
+
+当前阶段 26 基线实现：
+
+- 新增 `evolution_release_versions` 和 `evolution_release_events`。
+- 新增发布 API：`POST /api/evolution-proposals/:id/publish`。
+- 新增版本查询和回滚 API。
+- 发布前置条件为 `eval_passed` 且 admin 已将 proposal 标记为 `approved`。
+- 发布生成 active version，同目标旧版本变为 `superseded`。
+- 回滚 active version 时恢复 previous version。
+- 当前版本 payload 是可审计 release record，不直接修改生产运行对象。
 
 ## 阶段 27：持续进化任务
 

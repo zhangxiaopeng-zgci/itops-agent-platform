@@ -12,6 +12,12 @@ import {
   evaluateEvolutionProposal,
   listEvolutionProposalEvaluations
 } from '../services/evolutionEvaluationService';
+import {
+  listEvolutionReleaseEvents,
+  listEvolutionReleaseVersions,
+  publishEvolutionProposal,
+  rollbackEvolutionReleaseVersion
+} from '../services/evolutionReleaseService';
 
 interface AuthenticatedRequest extends Request {
   user?: {
@@ -37,6 +43,43 @@ router.get('/', requireRole('admin', 'operator', 'viewer'), (req: Request, res: 
   }
 });
 
+router.get('/releases/versions', requireRole('admin', 'operator', 'viewer'), (req: Request, res: Response) => {
+  try {
+    const versions = listEvolutionReleaseVersions({
+      objectType: typeof req.query.objectType === 'string' ? req.query.objectType : undefined,
+      targetId: typeof req.query.targetId === 'string' ? req.query.targetId : undefined,
+      status: typeof req.query.status === 'string' ? req.query.status : undefined,
+      limit: req.query.limit ? parseInt(req.query.limit as string, 10) : undefined
+    });
+
+    res.json({ success: true, data: versions });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error instanceof Error ? error.message : 'Failed to list evolution release versions' });
+  }
+});
+
+router.get('/releases/versions/:id/events', requireRole('admin', 'operator', 'viewer'), (req: Request, res: Response) => {
+  try {
+    res.json({ success: true, data: listEvolutionReleaseEvents(req.params.id) });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error instanceof Error ? error.message : 'Failed to list evolution release events' });
+  }
+});
+
+router.post('/releases/versions/:id/rollback', requireRole('admin'), (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const version = rollbackEvolutionReleaseVersion({
+      versionId: req.params.id,
+      actorId: req.user?.id || null,
+      reason: typeof req.body?.reason === 'string' ? req.body.reason : undefined
+    });
+
+    res.json({ success: true, data: version });
+  } catch (error) {
+    res.status(400).json({ success: false, error: error instanceof Error ? error.message : 'Failed to rollback evolution release version' });
+  }
+});
+
 router.get('/:id', requireRole('admin', 'operator', 'viewer'), (req: Request, res: Response) => {
   try {
     const proposal = getEvolutionProposal(req.params.id);
@@ -49,7 +92,8 @@ router.get('/:id', requireRole('admin', 'operator', 'viewer'), (req: Request, re
       data: {
         proposal,
         events: listEvolutionProposalEvents(req.params.id),
-        evaluations: listEvolutionProposalEvaluations(req.params.id)
+        evaluations: listEvolutionProposalEvaluations(req.params.id),
+        releases: listEvolutionReleaseVersions({ proposalId: req.params.id })
       }
     });
   } catch (error) {
@@ -108,6 +152,20 @@ router.post('/:id/evaluate', requireRole('admin', 'operator'), (req: Authenticat
     return res.json({ success: true, data: evaluation });
   } catch (error) {
     return res.status(400).json({ success: false, error: error instanceof Error ? error.message : 'Failed to evaluate evolution proposal' });
+  }
+});
+
+router.post('/:id/publish', requireRole('admin'), (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const version = publishEvolutionProposal({
+      proposalId: req.params.id,
+      actorId: req.user?.id || null,
+      comment: typeof req.body?.comment === 'string' ? req.body.comment : undefined
+    });
+
+    return res.status(201).json({ success: true, data: version });
+  } catch (error) {
+    return res.status(400).json({ success: false, error: error instanceof Error ? error.message : 'Failed to publish evolution proposal' });
   }
 });
 

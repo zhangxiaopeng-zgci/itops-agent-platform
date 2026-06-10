@@ -20,6 +20,7 @@ export type EvolutionProposalStatus =
   | 'eval_failed'
   | 'approval_pending'
   | 'approved'
+  | 'published'
   | 'rejected'
   | 'archived';
 
@@ -74,6 +75,7 @@ const PROPOSAL_STATUSES = new Set<EvolutionProposalStatus>([
   'eval_failed',
   'approval_pending',
   'approved',
+  'published',
   'rejected',
   'archived'
 ]);
