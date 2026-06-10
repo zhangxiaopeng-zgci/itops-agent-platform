@@ -199,6 +199,8 @@ proposal -> eval passed -> admin approval -> publish -> channel uses new version
 
 ## 阶段 27：持续进化任务
 
+状态：已进入实现收口。
+
 定时触发：
 
 - 每日复盘最近 24 小时。
@@ -206,6 +208,14 @@ proposal -> eval passed -> admin approval -> publish -> channel uses new version
 - 失败任务进入复盘队列。
 - 被拒绝审批进入复盘队列。
 - 高价值 proposal 自动进入待审批。
+
+当前阶段 27 基线实现：
+
+- 新增 `evolution_continuous_tasks`、`evolution_task_runs`、`evolution_review_queue`。
+- backend 启动时调度 enabled 的持续进化任务。
+- 新增 `/api/evolution-tasks` 系列 API。
+- `/evolution-proposals` 页面展示持续任务、最近运行和复盘队列。
+- 自动任务最多推进到 `approval_pending`，不自动 approve/publish。
 
 ## 安全原则
 

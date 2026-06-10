@@ -92,6 +92,40 @@ interface ReleaseVersion {
   rollback_reason?: string | null;
 }
 
+interface EvolutionTask {
+  id: string;
+  name: string;
+  kind: string;
+  schedule: string;
+  description?: string | null;
+  enabled: number;
+  last_run_at?: string | null;
+  last_status?: string | null;
+}
+
+interface EvolutionTaskRun {
+  id: string;
+  task_id: string;
+  kind: string;
+  status: string;
+  generated_proposal_id?: string | null;
+  result_summary: unknown;
+  error?: string | null;
+  started_at: string;
+  completed_at?: string | null;
+}
+
+interface EvolutionQueueItem {
+  id: string;
+  source_type: string;
+  source_id: string;
+  reason?: string | null;
+  priority: string;
+  status: string;
+  correlation_id?: string | null;
+  created_at: string;
+}
+
 const panelClass = 'bg-surface/95 rounded-xl border border-border shadow-sm';
 const inputClass = 'w-full px-3 py-2 bg-background border border-border rounded-lg text-text-primary placeholder-text-tertiary focus:outline-none focus:border-primary/60 focus:ring-2 focus:ring-primary/20 transition-all';
 
@@ -168,6 +202,33 @@ export default function EvolutionProposals() {
   });
 
   const activeProposal = detail?.proposal || selectedProposal;
+
+  const { data: evolutionTasks } = useQuery({
+    queryKey: ['evolution-tasks'],
+    queryFn: async () => {
+      const res = await api.get('/api/evolution-tasks');
+      return res.data.data as EvolutionTask[];
+    },
+    refetchInterval: 30000
+  });
+
+  const { data: taskRuns } = useQuery({
+    queryKey: ['evolution-task-runs'],
+    queryFn: async () => {
+      const res = await api.get('/api/evolution-tasks/runs?limit=6');
+      return res.data.data as EvolutionTaskRun[];
+    },
+    refetchInterval: 30000
+  });
+
+  const { data: reviewQueue } = useQuery({
+    queryKey: ['evolution-review-queue'],
+    queryFn: async () => {
+      const res = await api.get('/api/evolution-tasks/queue?status=queued&limit=6');
+      return res.data.data as EvolutionQueueItem[];
+    },
+    refetchInterval: 30000
+  });
 
   const generateMutation = useMutation({
     mutationFn: async () => {
@@ -263,6 +324,23 @@ export default function EvolutionProposals() {
     }
   });
 
+  const runTaskMutation = useMutation({
+    mutationFn: async (taskId: string) => {
+      const res = await api.post(`/api/evolution-tasks/${taskId}/run`);
+      return res.data.data as EvolutionTaskRun;
+    },
+    onSuccess: () => {
+      toast.success(t('evolution.continuous.toast.runComplete'));
+      queryClient.invalidateQueries({ queryKey: ['evolution-tasks'] });
+      queryClient.invalidateQueries({ queryKey: ['evolution-task-runs'] });
+      queryClient.invalidateQueries({ queryKey: ['evolution-review-queue'] });
+      queryClient.invalidateQueries({ queryKey: ['evolution-proposals'] });
+    },
+    onError: (error: unknown) => {
+      toast.error(error instanceof Error ? error.message : t('evolution.continuous.toast.runFailed'));
+    }
+  });
+
   return (
     <div className="space-y-5">
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
@@ -281,6 +359,16 @@ export default function EvolutionProposals() {
 
       <div className="grid grid-cols-1 xl:grid-cols-[360px_minmax(0,1fr)] gap-5">
         <div className="space-y-5">
+          <ContinuousEvolutionPanel
+            tasks={evolutionTasks || []}
+            runs={taskRuns || []}
+            queue={reviewQueue || []}
+            canRun={canGenerate}
+            runningTaskId={runTaskMutation.variables}
+            isRunning={runTaskMutation.isPending}
+            onRun={(taskId) => runTaskMutation.mutate(taskId)}
+          />
+
           <section className={`${panelClass} p-5`}>
             <div className="flex items-center gap-2 mb-4">
               <Sparkles className="w-5 h-5 text-primary" />
@@ -676,6 +764,95 @@ function StatusBadge({ status }: { status: ProposalStatus }) {
       {icon}
       {statusLabel(status)}
     </span>
+  );
+}
+
+function ContinuousEvolutionPanel({
+  tasks,
+  runs,
+  queue,
+  canRun,
+  runningTaskId,
+  isRunning,
+  onRun
+}: {
+  tasks: EvolutionTask[];
+  runs: EvolutionTaskRun[];
+  queue: EvolutionQueueItem[];
+  canRun: boolean;
+  runningTaskId?: string;
+  isRunning: boolean;
+  onRun: (taskId: string) => void;
+}) {
+  const { t } = useLocale();
+
+  return (
+    <section className={`${panelClass} p-5`}>
+      <div className="flex items-center gap-2 mb-4">
+        <RefreshCw className="w-5 h-5 text-primary" />
+        <div>
+          <h2 className="text-sm font-semibold text-text-primary">{t('evolution.continuous.title')}</h2>
+          <p className="text-xs text-text-tertiary mt-0.5">{t('evolution.continuous.subtitle')}</p>
+        </div>
+      </div>
+
+      <div className="space-y-2">
+        {tasks.map((task) => (
+          <div key={task.id} className="rounded-lg bg-background border border-border px-3 py-2">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="text-sm font-medium text-text-primary truncate">{task.name}</div>
+                <div className="text-xs text-text-tertiary mt-1 truncate">{task.kind} · {task.schedule}</div>
+                <div className="text-xs text-text-tertiary mt-1">
+                  {task.last_status ? `${task.last_status} · ${formatTime(task.last_run_at)}` : t('evolution.continuous.neverRun')}
+                </div>
+              </div>
+              <button
+                disabled={!canRun || isRunning}
+                onClick={() => onRun(task.id)}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-surface border border-border text-xs text-text-secondary hover:text-text-primary disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                <PlayCircle className="w-3.5 h-3.5" />
+                {isRunning && runningTaskId === task.id ? t('evolution.continuous.running') : t('evolution.continuous.runNow')}
+              </button>
+            </div>
+          </div>
+        ))}
+        {tasks.length === 0 && (
+          <div className="text-sm text-text-tertiary">{t('evolution.continuous.noTasks')}</div>
+        )}
+      </div>
+
+      <div className="mt-4 grid grid-cols-1 gap-3">
+        <div className="rounded-lg bg-background border border-border p-3">
+          <div className="text-xs font-medium text-text-tertiary mb-2">{t('evolution.continuous.recentRuns')}</div>
+          <div className="space-y-1.5">
+            {runs.slice(0, 3).map((run) => (
+              <div key={run.id} className="flex items-center justify-between gap-2 text-xs">
+                <span className="text-text-secondary truncate">{run.kind}</span>
+                <span className="text-text-tertiary">{run.status}</span>
+              </div>
+            ))}
+            {runs.length === 0 && <div className="text-xs text-text-tertiary">{t('evolution.continuous.noRuns')}</div>}
+          </div>
+        </div>
+        <div className="rounded-lg bg-background border border-border p-3">
+          <div className="text-xs font-medium text-text-tertiary mb-2">{t('evolution.continuous.queue')}</div>
+          <div className="space-y-1.5">
+            {queue.slice(0, 3).map((item) => (
+              <div key={item.id} className="text-xs">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-text-secondary truncate">{item.source_type}</span>
+                  <span className="text-text-tertiary">{item.priority}</span>
+                </div>
+                {item.reason && <div className="text-text-tertiary truncate mt-0.5">{item.reason}</div>}
+              </div>
+            ))}
+            {queue.length === 0 && <div className="text-xs text-text-tertiary">{t('evolution.continuous.noQueue')}</div>}
+          </div>
+        </div>
+      </div>
+    </section>
   );
 }
 

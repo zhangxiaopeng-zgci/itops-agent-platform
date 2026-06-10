@@ -16,6 +16,7 @@ import v014AddHermesWorkerObservability from './v014_add_hermes_worker_observabi
 import v015AddEvolutionProposals from './v015_add_evolution_proposals';
 import v016AddEvolutionProposalEvaluations from './v016_add_evolution_proposal_evaluations';
 import v017AddEvolutionReleaseVersions from './v017_add_evolution_release_versions';
+import v018AddEvolutionContinuousTasks from './v018_add_evolution_continuous_tasks';
 
 export const ALL_MIGRATIONS: Migration[] = [
   v001InitialSchema,
@@ -35,6 +36,7 @@ export const ALL_MIGRATIONS: Migration[] = [
   v015AddEvolutionProposals,
   v016AddEvolutionProposalEvaluations,
   v017AddEvolutionReleaseVersions,
+  v018AddEvolutionContinuousTasks,
 ];
 
 export function createMigrationManager(db: any): MigrationManager {

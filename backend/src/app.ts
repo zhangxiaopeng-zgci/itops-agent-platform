@@ -53,6 +53,7 @@ import skillRoutes from './routes/skillRoutes';
 import mcpServerRoutes from './routes/mcpServerRoutes';
 import hermesWorkerRoutes from './routes/hermesWorkerRoutes';
 import evolutionProposalRoutes from './routes/evolutionProposalRoutes';
+import evolutionTaskRoutes from './routes/evolutionTaskRoutes';
 import { schedulerService } from './services/schedulerService';
 import { reportService } from './services/reportService';
 import { copilotService } from './services/copilotService';
@@ -72,6 +73,7 @@ import { healthService } from './services/healthService';
 import { backupService } from './services/backupService';
 import { setServerInstances } from './services/restartService';
 import importExportRouter from './routes/importExportRoutes';
+import { evolutionContinuousService } from './services/evolutionContinuousService';
 
 const app = express();
 const httpServer = createServer(app);
@@ -110,6 +112,7 @@ async function initializeApp() {
   copilotService.init();
   rootCauseAnalysisService.init();
   schedulerService.init();
+  evolutionContinuousService.init();
   notificationService.init();
   remediationService.init();
   backupService.init();
@@ -213,6 +216,7 @@ app.use('/api/hermes-sessions', rateLimiter, hermesSessionRoutes);
 app.use('/api/hermes-channels', rateLimiter, hermesChannelRoutes);
 app.use('/api/hermes-workers', rateLimiter, hermesWorkerRoutes);
 app.use('/api/evolution-proposals', rateLimiter, evolutionProposalRoutes);
+app.use('/api/evolution-tasks', rateLimiter, evolutionTaskRoutes);
 app.use('/api/skills', rateLimiter, skillRoutes);
 app.use('/api/mcp-servers', rateLimiter, mcpServerRoutes);
 
@@ -259,6 +263,7 @@ const gracefulShutdown = async (signal: string) => {
     ]);
 
     schedulerService.shutdown();
+    evolutionContinuousService.shutdown();
     logger.info('Scheduler service stopped');
 
     backupService.stopAutoBackup();
