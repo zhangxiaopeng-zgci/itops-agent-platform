@@ -1,0 +1,162 @@
+# Production-style compose for AIOps Agent with three Hermes workers.
+#
+# This file is intended for the current single-host deployment:
+#   /opt/itops-agent-platform/app
+#   /opt/itops-agent-platform/data
+#   /opt/itops-agent-platform/backups
+#   /opt/itops-agent-platform/secrets
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.backend
+    container_name: backend
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: 3001
+      DATABASE_PATH: /app/data/app.db
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-24h}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://10.1.132.58:3000,http://10.1.132.58:3001,http://localhost:3000}
+      HERMES_API_BASE: ${HERMES_API_BASE:-https://hub.zgci.org/v1}
+      HERMES_MODEL: ${HERMES_MODEL:-smart-router}
+      HERMES_API_KEY_FILE: /run/secrets/hermes_api_key
+      HERMES_WORKER_DIAGNOSE_URL: http://hermes-diagnose:4101
+      HERMES_WORKER_REMEDIATE_URL: http://hermes-remediate:4102
+      HERMES_WORKER_EVOLVE_URL: http://hermes-evolve:4103
+      HERMES_WORKER_FALLBACK_ENABLED: ${HERMES_WORKER_FALLBACK_ENABLED:-true}
+    volumes:
+      - /opt/itops-agent-platform/data:/app/data
+      - /opt/itops-agent-platform/backups:/app/backups
+      - /opt/itops-agent-platform/secrets:/run/secrets:ro
+    depends_on:
+      hermes-diagnose:
+        condition: service_healthy
+      hermes-remediate:
+        condition: service_healthy
+      hermes-evolve:
+        condition: service_healthy
+    networks:
+      itops-runtime:
+        aliases:
+          - backend
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"require('http').get('http://127.0.0.1:3001/health', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))\""]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  frontend:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.frontend
+    container_name: frontend
+    restart: unless-stopped
+    ports:
+      - "3000:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      itops-runtime:
+        aliases:
+          - frontend
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://127.0.0.1/ || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  hermes-diagnose:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.backend
+    container_name: hermes-diagnose
+    restart: unless-stopped
+    command: ["node", "dist/hermesWorker.js"]
+    ports:
+      - "4101:4101"
+    environment:
+      NODE_ENV: production
+      HERMES_WORKER_ROLE: diagnose
+      HERMES_WORKER_PORT: 4101
+      HERMES_API_BASE: ${HERMES_API_BASE:-https://hub.zgci.org/v1}
+      HERMES_MODEL: ${HERMES_MODEL:-smart-router}
+      HERMES_API_KEY_FILE: /run/secrets/hermes_api_key
+    volumes:
+      - /opt/itops-agent-platform/secrets:/run/secrets:ro
+    networks:
+      - itops-runtime
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"require('http').get('http://127.0.0.1:4101/health', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))\""]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  hermes-remediate:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.backend
+    container_name: hermes-remediate
+    restart: unless-stopped
+    command: ["node", "dist/hermesWorker.js"]
+    ports:
+      - "4102:4102"
+    environment:
+      NODE_ENV: production
+      HERMES_WORKER_ROLE: remediate
+      HERMES_WORKER_PORT: 4102
+      HERMES_API_BASE: ${HERMES_API_BASE:-https://hub.zgci.org/v1}
+      HERMES_MODEL: ${HERMES_MODEL:-smart-router}
+      HERMES_API_KEY_FILE: /run/secrets/hermes_api_key
+    volumes:
+      - /opt/itops-agent-platform/secrets:/run/secrets:ro
+    networks:
+      - itops-runtime
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"require('http').get('http://127.0.0.1:4102/health', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))\""]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  hermes-evolve:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.backend
+    container_name: hermes-evolve
+    restart: unless-stopped
+    command: ["node", "dist/hermesWorker.js"]
+    ports:
+      - "4103:4103"
+    environment:
+      NODE_ENV: production
+      HERMES_WORKER_ROLE: evolve
+      HERMES_WORKER_PORT: 4103
+      HERMES_API_BASE: ${HERMES_API_BASE:-https://hub.zgci.org/v1}
+      HERMES_MODEL: ${HERMES_MODEL:-smart-router}
+      HERMES_API_KEY_FILE: /run/secrets/hermes_api_key
+    volumes:
+      - /opt/itops-agent-platform/secrets:/run/secrets:ro
+    networks:
+      - itops-runtime
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"require('http').get('http://127.0.0.1:4103/health', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))\""]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+networks:
+  itops-runtime:
+    name: itops-runtime
+    driver: bridge
