@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import {
+  Activity,
   AlertCircle,
   ArrowRight,
   Bell,
@@ -103,6 +104,38 @@ interface KnowledgeItem {
   id: string;
   title: string;
   category?: string;
+}
+
+interface ToolApprovalItem {
+  id: string;
+  tool_name: string;
+  input: Record<string, unknown>;
+  source?: string | null;
+  risk_level: string;
+  reason?: string | null;
+  status: 'pending' | 'approved' | 'rejected' | 'executed' | 'failed';
+  requested_at: string;
+  reviewed_at?: string | null;
+  correlation_id?: string | null;
+  execution_result?: unknown;
+}
+
+interface TaskItem {
+  id: string;
+  name: string;
+  workflow_id: string;
+  status: string;
+  current_node_id?: string | null;
+  node_results?: unknown;
+  logs?: unknown;
+  execution_order?: unknown;
+  created_at: string;
+}
+
+interface CorrelationChain {
+  correlationId: string;
+  approvals?: ToolApprovalItem[];
+  tasks?: TaskItem[];
 }
 
 type HermesMode = 'diagnose' | 'remediate' | 'review';
@@ -261,6 +294,75 @@ function collectTraceLinks(trace: TraceEvent[], correlationId?: string) {
   };
 }
 
+function uniqueById<T extends { id: string }>(items: T[]) {
+  const seen = new Set<string>();
+  return items.filter((item) => {
+    if (!item.id || seen.has(item.id)) return false;
+    seen.add(item.id);
+    return true;
+  });
+}
+
+function parseJsonValue(value: unknown): unknown {
+  if (typeof value !== 'string' || value.length === 0) return value;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return value;
+  }
+}
+
+function extractTaskIdFromApproval(approval: ToolApprovalItem) {
+  return findStringField(approval.input, 'taskId') || findStringField(approval.execution_result, 'taskId');
+}
+
+function normalizeTask(task: TaskItem): TaskItem {
+  return {
+    ...task,
+    node_results: parseJsonValue(task.node_results),
+    logs: parseJsonValue(task.logs),
+    execution_order: parseJsonValue(task.execution_order),
+  };
+}
+
+function getTaskProgress(task: TaskItem) {
+  const nodeResults = task.node_results && typeof task.node_results === 'object' && !Array.isArray(task.node_results)
+    ? task.node_results as Record<string, unknown>
+    : {};
+  const executionOrder = Array.isArray(task.execution_order)
+    ? task.execution_order.filter((item): item is string => typeof item === 'string')
+    : [];
+  const total = executionOrder.length || Object.keys(nodeResults).length;
+  const completed = Object.values(nodeResults).filter((result) => {
+    if (!result || typeof result !== 'object' || Array.isArray(result)) return false;
+    const status = (result as Record<string, unknown>).status;
+    return status === 'success' || status === 'completed';
+  }).length;
+  const failedNode = Object.entries(nodeResults).find(([, result]) => {
+    if (!result || typeof result !== 'object' || Array.isArray(result)) return false;
+    const record = result as Record<string, unknown>;
+    return record.status === 'failed' || Boolean(record.error);
+  })?.[0];
+
+  return {
+    completed,
+    total,
+    failedNode,
+  };
+}
+
+function getTaskLogSummary(task: TaskItem) {
+  const logs = Array.isArray(task.logs) ? task.logs : [];
+  return logs
+    .slice(-3)
+    .map((log) => {
+      if (!log || typeof log !== 'object' || Array.isArray(log)) return String(log);
+      const record = log as Record<string, unknown>;
+      return String(record.content || record.message || record.type || '');
+    })
+    .filter(Boolean);
+}
+
 function buildContextLines(options: {
   servers: ServerItem[];
   alert?: AlertItem;
@@ -381,6 +483,80 @@ export default function HermesAssistant() {
     : [];
   const trace = lastResult?.trace || lastResult?.metadata?.trace || [];
   const traceLinks = collectTraceLinks(trace, lastResult?.metadata?.correlationId);
+  const { data: correlationChains, isFetching: isFetchingCorrelations, refetch: refetchCorrelations } = useQuery({
+    queryKey: ['hermes-correlation-chains', lastResult?.executionId, traceLinks.correlationIds],
+    enabled: Boolean(lastResult && traceLinks.correlationIds.length > 0),
+    queryFn: async () => {
+      const results = await Promise.all(traceLinks.correlationIds.map(async (correlationId) => {
+        const res = await api.get(`/api/correlations/${encodeURIComponent(correlationId)}`);
+        return res.data.data as CorrelationChain;
+      }));
+      return results;
+    },
+  });
+  const chainApprovals = useMemo(() => uniqueById(
+    (correlationChains || []).flatMap((chain) => chain.approvals || [])
+  ), [correlationChains]);
+  const chainTasks = useMemo(() => uniqueById(
+    (correlationChains || []).flatMap((chain) => chain.tasks || []).map(normalizeTask)
+  ), [correlationChains]);
+  const aggregatedApprovalIds = useMemo(() => {
+    return Array.from(new Set([
+      ...traceLinks.approvalIds,
+      ...chainApprovals.map((approval) => approval.id),
+    ]));
+  }, [traceLinks.approvalIds, chainApprovals]);
+  const { data: fetchedApprovals, isFetching: isFetchingApprovals, refetch: refetchApprovals } = useQuery({
+    queryKey: ['hermes-approvals', lastResult?.executionId, aggregatedApprovalIds],
+    enabled: Boolean(lastResult && aggregatedApprovalIds.length > 0),
+    queryFn: async () => {
+      const results = await Promise.all(aggregatedApprovalIds.map(async (approvalId) => {
+        try {
+          const res = await api.get(`/api/tool-approvals/${encodeURIComponent(approvalId)}`);
+          return res.data.data as ToolApprovalItem;
+        } catch {
+          return null;
+        }
+      }));
+      return results.filter((item): item is ToolApprovalItem => Boolean(item));
+    },
+  });
+  const aggregatedApprovals = useMemo(() => uniqueById([
+    ...(fetchedApprovals || []),
+    ...chainApprovals,
+  ]), [fetchedApprovals, chainApprovals]);
+  const aggregatedTaskIds = useMemo(() => {
+    return Array.from(new Set([
+      ...traceLinks.taskIds,
+      ...chainTasks.map((task) => task.id),
+      ...aggregatedApprovals.map(extractTaskIdFromApproval).filter((taskId): taskId is string => Boolean(taskId)),
+    ]));
+  }, [traceLinks.taskIds, chainTasks, aggregatedApprovals]);
+  const { data: fetchedTasks, isFetching: isFetchingTasks, refetch: refetchTasks } = useQuery({
+    queryKey: ['hermes-tasks', lastResult?.executionId, aggregatedTaskIds],
+    enabled: Boolean(lastResult && aggregatedTaskIds.length > 0),
+    queryFn: async () => {
+      const results = await Promise.all(aggregatedTaskIds.map(async (taskId) => {
+        try {
+          const res = await api.get(`/api/tasks/${encodeURIComponent(taskId)}`);
+          return normalizeTask(res.data.data as TaskItem);
+        } catch {
+          return null;
+        }
+      }));
+      return results.filter((item): item is TaskItem => Boolean(item));
+    },
+  });
+  const aggregatedTasks = useMemo(() => uniqueById([
+    ...(fetchedTasks || []),
+    ...chainTasks,
+  ]), [fetchedTasks, chainTasks]);
+  const isFetchingClosure = isFetchingCorrelations || isFetchingApprovals || isFetchingTasks;
+  const hasClosureContext = Boolean(lastResult && (
+    traceLinks.correlationIds.length > 0 ||
+    aggregatedApprovalIds.length > 0 ||
+    aggregatedTaskIds.length > 0
+  ));
   const enabledServers = useMemo(() => (servers || []).filter((server) => server.enabled === 1), [servers]);
   const templateWorkflows = useMemo(() => (workflows || []).filter((workflow) => workflow.is_template === 1), [workflows]);
   const knowledgeCategories = useMemo(() => {
@@ -479,6 +655,42 @@ export default function HermesAssistant() {
 
   const ModeIcon = mode.icon;
   const joinNames = (names: string[]) => names.join(locale === 'zh-CN' ? '、' : ', ');
+  const getApprovalStatusLabel = (status: ToolApprovalItem['status']) => {
+    const keys: Record<ToolApprovalItem['status'], MessageKey> = {
+      pending: 'hermes.closure.status.pending',
+      approved: 'hermes.closure.status.approved',
+      executed: 'hermes.closure.status.executed',
+      failed: 'hermes.closure.status.failed',
+      rejected: 'hermes.closure.status.rejected',
+    };
+    return t(keys[status]);
+  };
+  const getTaskStatusLabel = (status: string) => {
+    const keys: Record<string, MessageKey> = {
+      pending: 'hermes.closure.taskStatus.pending',
+      running: 'hermes.closure.taskStatus.running',
+      completed: 'hermes.closure.taskStatus.completed',
+      success: 'hermes.closure.taskStatus.completed',
+      failed: 'hermes.closure.taskStatus.failed',
+      paused: 'hermes.closure.taskStatus.paused',
+      cancelled: 'hermes.closure.taskStatus.cancelled',
+    };
+    return keys[status] ? t(keys[status]) : status;
+  };
+  const getStatusClass = (status: string) => clsx(
+    'px-2.5 py-1 rounded-full text-xs font-semibold border whitespace-nowrap',
+    status === 'pending' && 'bg-amber-500/10 text-amber-400 border-amber-500/30',
+    status === 'approved' && 'bg-blue-500/10 text-blue-400 border-blue-500/30',
+    (status === 'executed' || status === 'completed' || status === 'success') && 'bg-green-500/10 text-green-400 border-green-500/30',
+    status === 'running' && 'bg-primary/10 text-primary border-primary/30',
+    (status === 'failed' || status === 'cancelled') && 'bg-red-500/10 text-red-400 border-red-500/30',
+    (status === 'rejected' || status === 'paused') && 'bg-slate-500/10 text-slate-400 border-slate-500/30'
+  );
+  const refreshClosure = () => {
+    refetchCorrelations();
+    refetchApprovals();
+    refetchTasks();
+  };
 
   return (
     <div className="h-full overflow-auto p-6">
@@ -902,6 +1114,175 @@ export default function HermesAssistant() {
 
                 <div className="rounded-xl bg-background border border-border p-4">
                   <MarkdownOutput content={lastResult.output || t('hermes.result.empty')} />
+                </div>
+              </div>
+            )}
+
+            {hasClosureContext && (
+              <div className={clsx(panelClass, 'p-5')}>
+                <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between mb-4">
+                  <div className="flex items-start gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center flex-shrink-0">
+                      <Activity className="w-5 h-5 text-primary" />
+                    </div>
+                    <div>
+                      <h2 className="text-lg font-semibold text-text-primary">{t('hermes.closure.title')}</h2>
+                      <p className="text-sm text-text-secondary">{t('hermes.closure.subtitle')}</p>
+                      {traceLinks.correlationIds.length > 0 && (
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {traceLinks.correlationIds.map((correlationId) => (
+                            <span
+                              key={correlationId}
+                              className="px-2 py-1 rounded-lg bg-background border border-border text-xs text-text-secondary"
+                            >
+                              corr {shortId(correlationId)}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={refreshClosure}
+                    className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-surface border border-border text-text-secondary hover:text-text-primary transition-colors"
+                  >
+                    <RefreshCw className={clsx('w-4 h-4', isFetchingClosure && 'animate-spin')} />
+                    {t('hermes.closure.refresh')}
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                  <div className="rounded-xl bg-background border border-border p-4">
+                    <div className="flex items-center justify-between gap-3 mb-3">
+                      <div className="flex items-center gap-2">
+                        <ShieldCheck className="w-4 h-4 text-amber-400" />
+                        <h3 className="text-sm font-semibold text-text-primary">{t('hermes.closure.approvals')}</h3>
+                      </div>
+                      <span className="text-xs text-text-tertiary">{aggregatedApprovals.length}</span>
+                    </div>
+                    {isFetchingClosure && aggregatedApprovals.length === 0 ? (
+                      <div className="py-8 text-center text-sm text-text-secondary">{t('common.loading')}</div>
+                    ) : aggregatedApprovals.length === 0 ? (
+                      <div className="py-8 text-center text-sm text-text-tertiary">{t('hermes.closure.noApprovals')}</div>
+                    ) : (
+                      <div className="space-y-3">
+                        {aggregatedApprovals.map((approval) => (
+                          <div key={approval.id} className="rounded-lg bg-surface border border-border p-3">
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <div className="font-medium text-text-primary truncate">{approval.tool_name}</div>
+                                <div className="text-xs text-text-tertiary mt-1">
+                                  {new Date(approval.requested_at).toLocaleString()} · {approval.source || 'api'}
+                                </div>
+                              </div>
+                              <span className={getStatusClass(approval.status)}>{getApprovalStatusLabel(approval.status)}</span>
+                            </div>
+                            <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                              <div>
+                                <div className="text-text-tertiary">{t('hermes.closure.riskLevel')}</div>
+                                <div className="text-text-secondary break-words">{approval.risk_level || '-'}</div>
+                              </div>
+                              <div>
+                                <div className="text-text-tertiary">{t('hermes.closure.correlation')}</div>
+                                <div className="text-text-secondary break-all">{approval.correlation_id ? shortId(approval.correlation_id) : '-'}</div>
+                              </div>
+                            </div>
+                            {approval.reason && (
+                              <div className="mt-3 text-xs text-text-secondary line-clamp-2">{approval.reason}</div>
+                            )}
+                            <div className="mt-3 flex flex-wrap gap-2">
+                              <button
+                                type="button"
+                                onClick={() => navigate(`/tool-approvals?approvalId=${encodeURIComponent(approval.id)}`)}
+                                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-amber-500/10 text-amber-300 border border-amber-500/20 hover:bg-amber-500/20 text-xs"
+                              >
+                                {t('hermes.closure.viewApproval')}
+                                <ExternalLink className="w-3 h-3" />
+                              </button>
+                              {extractTaskIdFromApproval(approval) && (
+                                <button
+                                  type="button"
+                                  onClick={() => navigate(`/tasks?taskId=${encodeURIComponent(extractTaskIdFromApproval(approval)!)}`)}
+                                  className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-green-500/10 text-green-300 border border-green-500/20 hover:bg-green-500/20 text-xs"
+                                >
+                                  {t('hermes.closure.viewTask')}
+                                  <ExternalLink className="w-3 h-3" />
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="rounded-xl bg-background border border-border p-4">
+                    <div className="flex items-center justify-between gap-3 mb-3">
+                      <div className="flex items-center gap-2">
+                        <GitBranch className="w-4 h-4 text-green-400" />
+                        <h3 className="text-sm font-semibold text-text-primary">{t('hermes.closure.tasks')}</h3>
+                      </div>
+                      <span className="text-xs text-text-tertiary">{aggregatedTasks.length}</span>
+                    </div>
+                    {isFetchingClosure && aggregatedTasks.length === 0 ? (
+                      <div className="py-8 text-center text-sm text-text-secondary">{t('common.loading')}</div>
+                    ) : aggregatedTasks.length === 0 ? (
+                      <div className="py-8 text-center text-sm text-text-tertiary">{t('hermes.closure.noTasks')}</div>
+                    ) : (
+                      <div className="space-y-3">
+                        {aggregatedTasks.map((task) => {
+                          const progress = getTaskProgress(task);
+                          const logSummary = getTaskLogSummary(task);
+                          return (
+                            <div key={task.id} className="rounded-lg bg-surface border border-border p-3">
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                  <div className="font-medium text-text-primary truncate">{task.name || task.id}</div>
+                                  <div className="text-xs text-text-tertiary mt-1">{new Date(task.created_at).toLocaleString()}</div>
+                                </div>
+                                <span className={getStatusClass(task.status)}>{getTaskStatusLabel(task.status)}</span>
+                              </div>
+                              <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                                <div>
+                                  <div className="text-text-tertiary">{t('hermes.closure.progress')}</div>
+                                  <div className="text-text-secondary">
+                                    {progress.total > 0 ? `${progress.completed}/${progress.total}` : '-'}
+                                  </div>
+                                </div>
+                                <div>
+                                  <div className="text-text-tertiary">{t('hermes.closure.failedNode')}</div>
+                                  <div className="text-text-secondary break-words">{progress.failedNode || '-'}</div>
+                                </div>
+                              </div>
+                              {logSummary.length > 0 && (
+                                <div className="mt-3 rounded-lg bg-background border border-border p-2">
+                                  <div className="text-xs text-text-tertiary mb-1">{t('hermes.closure.logSummary')}</div>
+                                  <div className="space-y-1">
+                                    {logSummary.map((line, index) => (
+                                      <div key={`${task.id}-log-${index}`} className="text-xs text-text-secondary line-clamp-1">
+                                        {line}
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                              <div className="mt-3">
+                                <button
+                                  type="button"
+                                  onClick={() => navigate(`/tasks?taskId=${encodeURIComponent(task.id)}`)}
+                                  className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-green-500/10 text-green-300 border border-green-500/20 hover:bg-green-500/20 text-xs"
+                                >
+                                  {t('hermes.closure.viewTask')}
+                                  <ExternalLink className="w-3 h-3" />
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             )}
