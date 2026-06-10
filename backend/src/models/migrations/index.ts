@@ -10,6 +10,7 @@ import v008AddToolApprovals from './v008_add_tool_approvals';
 import v009AddToolApprovalCorrelation from './v009_add_tool_approval_correlation';
 import v010AddHermesSessions from './v010_add_hermes_sessions';
 import v011AddHermesChannels from './v011_add_hermes_channels';
+import v012AddSkillRegistry from './v012_add_skill_registry';
 
 export const ALL_MIGRATIONS: Migration[] = [
   v001InitialSchema,
@@ -23,6 +24,7 @@ export const ALL_MIGRATIONS: Migration[] = [
   v009AddToolApprovalCorrelation,
   v010AddHermesSessions,
   v011AddHermesChannels,
+  v012AddSkillRegistry,
 ];
 
 export function createMigrationManager(db: any): MigrationManager {

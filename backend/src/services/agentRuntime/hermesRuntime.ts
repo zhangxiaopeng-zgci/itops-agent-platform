@@ -3,6 +3,7 @@ import fs from 'fs';
 import db from '../../models/database';
 import { logger } from '../../utils/logger';
 import { resolveHermesRuntimeConfigForAgent } from '../hermesChannelService';
+import { SkillRuntimeContext } from '../skillService';
 import { ToolContext, ToolDescriptor } from '../toolApi/types';
 import { AgentRunRequest, AgentRunResult, AgentRuntime, AgentTraceEvent, RuntimeAgentRecord } from './types';
 
@@ -19,6 +20,7 @@ interface HermesRuntimeConfig {
   timeoutMs?: number;
   maxToolRounds?: number;
   allowedTools?: string[];
+  skills?: SkillRuntimeContext[];
   temperature?: number;
 }
 
@@ -101,14 +103,16 @@ export class HermesAgentRuntime implements AgentRuntime {
     const trace: AgentTraceEvent[] = [];
     const { invokeTool, listTools } = await import('../toolApi/toolRegistry');
     const tools = getHermesTools(listTools, config.allowedTools);
-    const messages = buildInitialMessages(agent, request);
+    const messages = buildInitialMessages(agent, request, config);
     const maxToolRounds = config.maxToolRounds ?? DEFAULT_MAX_TOOL_ROUNDS;
     const correlationId = typeof request.context?.correlationId === 'string' ? request.context.correlationId : undefined;
+    const runtimeSkills = config.skills || [];
 
     logger.info(`🧠 Calling Hermes runtime for agent ${agent.name}`, {
       baseUrl,
       model,
-      tools: tools.map(tool => tool.function.name)
+      tools: tools.map(tool => tool.function.name),
+      skills: runtimeSkills.map(skill => skill.id)
     });
 
     let lastUsage: Record<string, unknown> | undefined;
@@ -161,6 +165,12 @@ export class HermesAgentRuntime implements AgentRuntime {
             channelName: config.channelName,
             agentName: agent.name,
             correlationId,
+            skills: runtimeSkills.map(skill => ({
+              id: skill.id,
+              name: skill.name,
+              version: skill.version,
+              category: skill.category
+            })),
             usage: lastUsage,
             toolRounds: round
           }
@@ -329,13 +339,15 @@ function serializeRawConfig(rawConfig?: unknown): string | null {
   return typeof rawConfig === 'string' ? rawConfig : JSON.stringify(rawConfig);
 }
 
-function buildInitialMessages(agent: RuntimeAgentRecord, request: AgentRunRequest): ChatMessage[] {
+function buildInitialMessages(agent: RuntimeAgentRecord, request: AgentRunRequest, config: HermesRuntimeConfig): ChatMessage[] {
+  const skillPrompt = buildSkillPrompt(config.skills || []);
   const systemPrompt = [
     agent.system_prompt || `You are ${agent.name}, an ITOps operations assistant.`,
     'Use tools only when they help with observation, diagnosis, or read-only verification.',
     'Never claim that an action was executed unless a tool result confirms it.',
-    'When tool execution is denied or requires approval, explain the policy decision and provide a safe next step.'
-  ].join('\n\n');
+    'When tool execution is denied or requires approval, explain the policy decision and provide a safe next step.',
+    skillPrompt
+  ].filter(Boolean).join('\n\n');
 
   const context = request.context && Object.keys(request.context).length > 0
     ? `\n\nContext:\n${JSON.stringify(request.context)}`
@@ -345,6 +357,32 @@ function buildInitialMessages(agent: RuntimeAgentRecord, request: AgentRunReques
     { role: 'system', content: systemPrompt },
     { role: 'user', content: `${request.input}${context}` }
   ];
+}
+
+function buildSkillPrompt(skills: SkillRuntimeContext[]): string {
+  if (skills.length === 0) {
+    return '';
+  }
+
+  const skillBlocks = skills.map((skill, index) => {
+    const requiredTools = skill.requiredTools.length > 0
+      ? `Required or preferred tools: ${skill.requiredTools.join(', ')}.`
+      : 'No specific required tools.';
+    const riskNotes = skill.riskNotes ? `Risk notes: ${skill.riskNotes}` : '';
+
+    return [
+      `Skill Pack ${index + 1}: ${skill.name} (${skill.version}, ${skill.category})`,
+      skill.content,
+      requiredTools,
+      riskNotes
+    ].filter(Boolean).join('\n');
+  });
+
+  return [
+    'Enabled Hermes Skill Packs:',
+    ...skillBlocks,
+    'Follow these Skill Packs as channel-scoped operating guidance. They do not override tool policy, role permissions, approvals, or safety constraints.'
+  ].join('\n\n');
 }
 
 function getHermesTools(listAvailableTools: () => ToolDescriptor[], allowedTools?: string[]): ChatTool[] {

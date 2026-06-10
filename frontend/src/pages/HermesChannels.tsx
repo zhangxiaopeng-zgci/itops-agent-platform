@@ -1,6 +1,6 @@
 import { type ReactNode, useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Activity, Cable, CheckCircle2, Clock, RefreshCw, Save, ShieldCheck, Wrench, XCircle } from 'lucide-react';
+import { Activity, BookOpenCheck, Cable, CheckCircle2, Clock, RefreshCw, Save, ShieldCheck, Wrench, XCircle } from 'lucide-react';
 import clsx from 'clsx';
 import api from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
@@ -12,6 +12,19 @@ interface HermesChannelTool {
   tool_name: string;
   enabled: number;
   risk_level_override?: string | null;
+}
+
+interface HermesChannelSkill {
+  id: string;
+  name: string;
+  description?: string | null;
+  category: string;
+  version: string;
+  required_tools: string[];
+  risk_notes?: string | null;
+  enabled: number;
+  skill_id: string;
+  binding_enabled: number;
 }
 
 interface HermesChannel {
@@ -31,12 +44,24 @@ interface HermesChannel {
   health_status: string;
   last_checked_at?: string | null;
   tools: HermesChannelTool[];
+  skills: HermesChannelSkill[];
 }
 
 interface ToolDescriptor {
   name: string;
   description: string;
   riskLevel: string;
+}
+
+interface SkillPack {
+  id: string;
+  name: string;
+  description?: string | null;
+  category: string;
+  version: string;
+  required_tools: string[];
+  risk_notes?: string | null;
+  enabled: number;
 }
 
 interface ChannelFormState {
@@ -52,6 +77,7 @@ interface ChannelFormState {
   policy_id: string;
   enabled: boolean;
   tools: string[];
+  skills: string[];
 }
 
 const panelClass = 'bg-surface/95 rounded-xl border border-border shadow-sm';
@@ -88,6 +114,14 @@ export default function HermesChannels() {
     }
   });
 
+  const { data: skills } = useQuery({
+    queryKey: ['skill-packs'],
+    queryFn: async () => {
+      const res = await api.get('/api/skills?enabled=true');
+      return res.data.data as SkillPack[];
+    }
+  });
+
   const selectedChannel = useMemo(() => {
     if (!channels || channels.length === 0) return null;
     return channels.find((channel) => channel.id === selectedId) || channels[0];
@@ -114,7 +148,8 @@ export default function HermesChannels() {
         temperature: form.temperature,
         policy_id: form.policy_id || null,
         enabled: form.enabled,
-        tools: form.tools
+        tools: form.tools,
+        skills: form.skills
       };
       const res = await api.put(`/api/hermes-channels/${selectedChannel.id}`, payload);
       return res.data.data as HermesChannel;
@@ -199,6 +234,9 @@ export default function HermesChannels() {
                       <span className="px-2 py-1 rounded-md bg-background border border-border text-text-secondary">
                         {channel.tools.filter((tool) => tool.enabled === 1).length} tools
                       </span>
+                      <span className="px-2 py-1 rounded-md bg-background border border-border text-text-secondary">
+                        {(channel.skills || []).filter((skill) => skill.enabled === 1 && skill.binding_enabled === 1).length} skills
+                      </span>
                     </div>
                   </button>
                 ))}
@@ -210,6 +248,7 @@ export default function HermesChannels() {
             <ChannelDetails
               channel={selectedChannel}
               tools={tools || []}
+              skills={skills || []}
               canManage={canManage}
               isSaving={updateMutation.isPending}
               isTesting={testMutation.isPending}
@@ -226,6 +265,7 @@ export default function HermesChannels() {
 function ChannelDetails({
   channel,
   tools,
+  skills,
   canManage,
   isSaving,
   isTesting,
@@ -234,6 +274,7 @@ function ChannelDetails({
 }: {
   channel: HermesChannel;
   tools: ToolDescriptor[];
+  skills: SkillPack[];
   canManage: boolean;
   isSaving: boolean;
   isTesting: boolean;
@@ -248,13 +289,23 @@ function ChannelDetails({
   }, [channel]);
 
   const selectedTools = new Set(form.tools);
+  const selectedSkills = new Set(form.skills);
 
   const toggleTool = (toolName: string) => {
     setForm((current) => ({
       ...current,
-      tools: selectedTools.has(toolName)
+      tools: current.tools.includes(toolName)
         ? current.tools.filter((name) => name !== toolName)
         : [...current.tools, toolName]
+    }));
+  };
+
+  const toggleSkill = (skillId: string) => {
+    setForm((current) => ({
+      ...current,
+      skills: current.skills.includes(skillId)
+        ? current.skills.filter((id) => id !== skillId)
+        : [...current.skills, skillId]
     }));
   };
 
@@ -284,6 +335,48 @@ function ChannelDetails({
           <InfoTile label={t('hermesChannels.secretRef')} value={channel.api_key_ref} />
           <InfoTile label={t('hermesChannels.timeout')} value={`${channel.timeout_ms}ms`} />
           <InfoTile label={t('hermesChannels.lastChecked')} value={channel.last_checked_at || '-'} />
+        </div>
+      </div>
+
+      <div className={`${panelClass} p-5`}>
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h3 className="text-sm font-semibold text-text-primary">{t('hermesChannels.skills')}</h3>
+            <p className="text-xs text-text-tertiary mt-1">{t('hermesChannels.skillsDesc')}</p>
+          </div>
+          <BookOpenCheck className="w-5 h-5 text-primary" />
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+          {skills.map((skill) => (
+            <button
+              key={skill.id}
+              type="button"
+              disabled={!canManage}
+              onClick={() => toggleSkill(skill.id)}
+              className={clsx(
+                'text-left rounded-lg border p-3 transition-colors',
+                selectedSkills.has(skill.id)
+                  ? 'bg-primary/10 border-primary/40'
+                  : 'bg-background border-border',
+                !canManage && 'cursor-default'
+              )}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="font-medium text-text-primary truncate">{skill.name}</div>
+                  <div className="text-xs text-text-tertiary mt-1 line-clamp-2">{skill.description || t('hermesChannels.noDescription')}</div>
+                </div>
+                <span className="text-[11px] px-2 py-1 rounded-md bg-surface border border-border text-text-secondary whitespace-nowrap">
+                  {skill.version}
+                </span>
+              </div>
+              <div className="mt-3 flex items-center justify-between gap-2 text-xs text-text-tertiary">
+                <span className="truncate">{skill.category}</span>
+                <span className="whitespace-nowrap">{t('hermesChannels.requiredTools', { count: skill.required_tools.length })}</span>
+              </div>
+            </button>
+          ))}
         </div>
       </div>
 
@@ -434,6 +527,7 @@ function formFromChannel(channel: HermesChannel): ChannelFormState {
     temperature: channel.temperature ?? 0.2,
     policy_id: channel.policy_id || '',
     enabled: channel.enabled === 1,
-    tools: channel.tools.filter((tool) => tool.enabled === 1).map((tool) => tool.tool_name)
+    tools: (channel.tools || []).filter((tool) => tool.enabled === 1).map((tool) => tool.tool_name),
+    skills: (channel.skills || []).filter((skill) => skill.enabled === 1 && skill.binding_enabled === 1).map((skill) => skill.skill_id)
   };
 }

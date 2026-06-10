@@ -1,5 +1,12 @@
 import { randomUUID } from 'crypto';
 import db from '../models/database';
+import {
+  HermesChannelSkillRecord,
+  SkillRuntimeContext,
+  listChannelSkills,
+  replaceChannelSkills,
+  toSkillRuntimeContext
+} from './skillService';
 
 export interface HermesChannelRecord {
   id: string;
@@ -21,6 +28,7 @@ export interface HermesChannelRecord {
   created_at: string;
   updated_at: string;
   tools: HermesChannelToolRecord[];
+  skills: HermesChannelSkillRecord[];
 }
 
 export interface HermesChannelToolRecord {
@@ -46,6 +54,7 @@ export interface HermesChannelInput {
   policy_id?: string | null;
   enabled?: boolean | number;
   tools?: string[];
+  skills?: string[];
 }
 
 export interface HermesRuntimeChannelConfig {
@@ -57,6 +66,7 @@ export interface HermesRuntimeChannelConfig {
   timeoutMs?: number;
   maxToolRounds?: number;
   allowedTools?: string[];
+  skills?: SkillRuntimeContext[];
   temperature?: number;
   policyId?: string | null;
 }
@@ -112,6 +122,7 @@ export function createHermesChannel(input: HermesChannelInput, createdBy?: strin
   );
 
   replaceHermesChannelTools(id, normalized.tools || []);
+  replaceChannelSkills(id, normalized.skills || []);
   return getHermesChannel(id)!;
 }
 
@@ -173,6 +184,10 @@ export function updateHermesChannel(id: string, input: HermesChannelInput): Herm
     replaceHermesChannelTools(id, normalized.tools);
   }
 
+  if (normalized.skills) {
+    replaceChannelSkills(id, normalized.skills);
+  }
+
   return getHermesChannel(id)!;
 }
 
@@ -208,6 +223,9 @@ export function channelToRuntimeConfig(channel: HermesChannelRecord): HermesRunt
   const tools = channel.tools
     .filter((tool) => tool.enabled === 1)
     .map((tool) => tool.tool_name);
+  const skills = channel.skills
+    .filter((skill) => skill.enabled === 1 && skill.binding_enabled === 1)
+    .map(toSkillRuntimeContext);
 
   return {
     channelId: channel.id,
@@ -218,6 +236,7 @@ export function channelToRuntimeConfig(channel: HermesChannelRecord): HermesRunt
     timeoutMs: channel.timeout_ms,
     maxToolRounds: channel.max_tool_rounds,
     allowedTools: tools,
+    skills,
     temperature: channel.temperature ?? undefined,
     policyId: channel.policy_id
   };
@@ -262,7 +281,8 @@ function parseHermesChannel(row: Record<string, unknown>): HermesChannelRecord {
     created_by: nullableString(row.created_by),
     created_at: String(row.created_at || ''),
     updated_at: String(row.updated_at || ''),
-    tools: listHermesChannelTools(channelId)
+    tools: listHermesChannelTools(channelId),
+    skills: listChannelSkills(channelId)
   };
 }
 
@@ -359,6 +379,10 @@ function normalizeChannelInput(input: HermesChannelInput, requireName: boolean):
 
   if (Array.isArray(input.tools)) {
     normalized.tools = input.tools.filter((tool): tool is string => typeof tool === 'string');
+  }
+
+  if (Array.isArray(input.skills)) {
+    normalized.skills = input.skills.filter((skill): skill is string => typeof skill === 'string');
   }
 
   return normalized;

@@ -67,6 +67,17 @@ router.put('/:id', requireRole('admin'), (req: Request, res: Response) => {
   }
 });
 
+router.put('/:id/skills', requireRole('admin'), (req: Request, res: Response) => {
+  try {
+    const skills = Array.isArray(req.body?.skills) ? req.body.skills : [];
+    const channel = updateHermesChannel(req.params.id, { skills });
+    res.json({ success: true, data: channel });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Failed to update Hermes channel skills';
+    res.status(message.includes('not found') ? 404 : 400).json({ success: false, error: message });
+  }
+});
+
 router.post('/:id/test', requireRole('admin'), async (req: Request, res: Response) => {
   try {
     const channel = getHermesChannel(req.params.id);

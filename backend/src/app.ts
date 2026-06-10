@@ -49,6 +49,7 @@ import toolApprovalRoutes from './routes/toolApprovalRoutes';
 import correlationRoutes from './routes/correlationRoutes';
 import hermesSessionRoutes from './routes/hermesSessionRoutes';
 import hermesChannelRoutes from './routes/hermesChannelRoutes';
+import skillRoutes from './routes/skillRoutes';
 import { schedulerService } from './services/schedulerService';
 import { reportService } from './services/reportService';
 import { copilotService } from './services/copilotService';
@@ -207,6 +208,7 @@ app.use('/api/tool-approvals', rateLimiter, toolApprovalRoutes);
 app.use('/api/correlations', rateLimiter, correlationRoutes);
 app.use('/api/hermes-sessions', rateLimiter, hermesSessionRoutes);
 app.use('/api/hermes-channels', rateLimiter, hermesChannelRoutes);
+app.use('/api/skills', rateLimiter, skillRoutes);
 
 app.use(notFoundHandler);
 app.use(errorHandler);

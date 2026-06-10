@@ -242,6 +242,8 @@ MCP Servers
 
 ## 阶段 19：Skill Pack Registry
 
+状态：已完成基线实现。详情见 `docs/AGENT_RUNTIME_STAGE_19_SKILL_PACK_REGISTRY.md`。
+
 目标：把 skill 作为可管理的提示词/流程/工具组合包，供 Channel 或 Agent 复用。
 
 Skill 不等于 Tool：
@@ -263,9 +265,10 @@ Skill 不等于 Tool：
 - 新增 `hermes_channel_skills` 绑定表。
 - 新增 Skill API：
   - `GET /api/skills`
+  - `GET /api/skills/:id`
   - `POST /api/skills`
   - `PUT /api/skills/:id`
-  - `POST /api/hermes-channels/:id/skills`
+  - `PUT /api/hermes-channels/:id/skills`
 - Hermes Runtime Adapter 构建 system prompt 时，将 Channel 绑定的 enabled skills 注入为受控上下文。
 - 默认初始化 3 类技能包：
   - 故障诊断 Skill Pack
