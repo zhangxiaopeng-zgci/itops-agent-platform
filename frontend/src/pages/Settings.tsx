@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Bell, Database, Shield, Loader2, CheckCircle2, AlertCircle, Sun, Moon, Lock, BookOpen, Upload, FileText, Globe, Wifi, Brain, Palette, Monitor, Languages } from 'lucide-react';
 import clsx from 'clsx';
 import { BackgroundStyle, ThemeMode, useTheme } from '../contexts/ThemeContext';
-import { Locale, useLocale } from '../contexts/LocaleContext';
+import { Locale, useLocale, type MessageKey } from '../contexts/LocaleContext';
 import api from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
 import { validatePassword, getPasswordStrength } from '../utils/passwordValidator';
@@ -33,11 +33,11 @@ export default function Settings() {
       return res.data;
     },
     onSuccess: () => {
-      alert('备份创建成功！');
+      alert(t('settings.database.backup.createSuccess'));
       queryClient.invalidateQueries({ queryKey: ['backupHistory'] });
     },
     onError: (err: any) => {
-      alert(err.response?.data?.error || err.response?.data?.message || '备份创建失败');
+      alert(err.response?.data?.error || err.response?.data?.message || t('settings.database.backup.createFailed'));
     }
   });
 
@@ -58,10 +58,10 @@ export default function Settings() {
       return res.data;
     },
     onSuccess: () => {
-      alert('备份恢复成功！系统将自动重启...');
+      alert(t('settings.database.backup.restoreSuccess'));
     },
     onError: (err: any) => {
-      alert(err.response?.data?.error || err.response?.data?.message || '备份恢复失败');
+      alert(err.response?.data?.error || err.response?.data?.message || t('settings.database.backup.restoreFailed'));
     }
   });
 
@@ -72,11 +72,11 @@ export default function Settings() {
       return res.data;
     },
     onSuccess: () => {
-      alert('备份删除成功！');
+      alert(t('settings.database.backup.deleteSuccess'));
       queryClient.invalidateQueries({ queryKey: ['backupHistory'] });
     },
     onError: (err: any) => {
-      alert(err.response?.data?.error || err.response?.data?.message || '备份删除失败');
+      alert(err.response?.data?.error || err.response?.data?.message || t('settings.database.backup.deleteFailed'));
     }
   });
 
@@ -91,11 +91,11 @@ export default function Settings() {
       return res.data;
     },
     onSuccess: () => {
-      alert('备份上传成功！');
+      alert(t('settings.database.backup.uploadSuccess'));
       queryClient.invalidateQueries({ queryKey: ['backupHistory'] });
     },
     onError: (err: any) => {
-      alert(err.response?.data?.error || err.response?.data?.message || '备份上传失败');
+      alert(err.response?.data?.error || err.response?.data?.message || t('settings.database.backup.uploadFailed'));
     }
   });
   
@@ -156,14 +156,14 @@ export default function Settings() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['qanythingConfig'] });
       setQanythingSaveStatus('saved');
-      setQanythingTestMessage('配置已保存');
+      setQanythingTestMessage(t('settings.common.saved'));
       setQanythingTestStatus('success');
       setTimeout(() => setQanythingSaveStatus('idle'), 2000);
       setTimeout(() => setQanythingTestStatus('idle'), 3000);
     },
     onError: (err: any) => {
       setQanythingSaveStatus('error');
-      setQanythingTestMessage(err.response?.data?.error || '保存失败');
+      setQanythingTestMessage(err.response?.data?.error || t('settings.common.saveFailed'));
       setQanythingTestStatus('error');
       setTimeout(() => setQanythingSaveStatus('idle'), 3000);
       setTimeout(() => setQanythingTestStatus('idle'), 5000);
@@ -186,14 +186,14 @@ export default function Settings() {
     },
     onError: (err: any) => {
       setQanythingTestStatus('error');
-      setQanythingTestMessage(err.response?.data?.error || err.response?.data?.message || '连接失败');
+      setQanythingTestMessage(err.response?.data?.error || err.response?.data?.message || t('settings.qanything.connectionFailed'));
     },
   });
 
   const handleTestQAnythingConnection = () => {
     if (!qanythingConfig.apiBase.trim()) {
       setQanythingTestStatus('error');
-      setQanythingTestMessage('请先填写 API 地址');
+      setQanythingTestMessage(t('settings.qanything.error.apiBaseRequired'));
       setTimeout(() => setQanythingTestStatus('idle'), 3000);
       return;
     }
@@ -203,13 +203,13 @@ export default function Settings() {
   const handleUploadDocuments = () => {
     if (!qanythingConfig.enabled) {
       setUploadStatus('error');
-      setUploadMessage('请先启用 QAnything 知识库并保存配置');
+      setUploadMessage(t('settings.qanything.error.enableFirst'));
       setTimeout(() => setUploadStatus('idle'), 5000);
       return;
     }
     if (uploadFiles.length === 0) {
       setUploadStatus('error');
-      setUploadMessage('请先选择要上传的文件');
+      setUploadMessage(t('settings.qanything.error.selectFiles'));
       setTimeout(() => setUploadStatus('idle'), 3000);
       return;
     }
@@ -234,13 +234,16 @@ export default function Settings() {
     },
     onSuccess: (data) => {
       setUploadStatus('success');
-      setUploadMessage(`成功上传 ${data.summary?.success || 0} 个文件，失败 ${data.summary?.failed || 0} 个`);
+      setUploadMessage(t('settings.qanything.uploadResult', {
+        success: data.summary?.success || 0,
+        failed: data.summary?.failed || 0,
+      }));
       setUploadFiles([]);
       setTimeout(() => setUploadStatus('idle'), 5000);
     },
     onError: (err: any) => {
       setUploadStatus('error');
-      setUploadMessage(err.response?.data?.error || '上传失败');
+      setUploadMessage(err.response?.data?.error || t('settings.qanything.uploadFailed'));
       setTimeout(() => setUploadStatus('idle'), 5000);
     },
   });
@@ -305,7 +308,7 @@ export default function Settings() {
     if (qanythingConfig.enabled) {
       if (!qanythingConfig.apiBase.trim()) {
         setQanythingSaveStatus('error');
-        setQanythingTestMessage('API 地址不能为空');
+        setQanythingTestMessage(t('settings.qanything.error.apiBaseEmpty'));
         setQanythingTestStatus('error');
         setTimeout(() => setQanythingSaveStatus('idle'), 3000);
         setTimeout(() => setQanythingTestStatus('idle'), 3000);
@@ -313,7 +316,7 @@ export default function Settings() {
       }
       if (!qanythingConfig.kbId.trim()) {
         setQanythingSaveStatus('error');
-        setQanythingTestMessage('知识库 ID 不能为空');
+        setQanythingTestMessage(t('settings.qanything.error.kbIdEmpty'));
         setQanythingTestStatus('error');
         setTimeout(() => setQanythingSaveStatus('idle'), 3000);
         setTimeout(() => setQanythingTestStatus('idle'), 3000);
@@ -322,7 +325,7 @@ export default function Settings() {
       // 云端模式要求 API Key，本地模式可不填
       if (qanythingConfig.mode === 'cloud' && !qanythingConfig.apiKey.trim()) {
         setQanythingSaveStatus('error');
-        setQanythingTestMessage('API Key 不能为空');
+        setQanythingTestMessage(t('settings.qanything.error.apiKeyEmpty'));
         setQanythingTestStatus('error');
         setTimeout(() => setQanythingSaveStatus('idle'), 3000);
         setTimeout(() => setQanythingTestStatus('idle'), 3000);
@@ -338,7 +341,7 @@ export default function Settings() {
     setPasswordStatus('saving');
     
     if (newPassword !== confirmPassword) {
-      setPasswordError('两次输入的新密码不一致');
+      setPasswordError(t('settings.security.password.mismatch'));
       setPasswordStatus('error');
       setTimeout(() => setPasswordStatus('idle'), 3000);
       return;
@@ -346,7 +349,7 @@ export default function Settings() {
     
     const passwordCheck = validatePassword(newPassword);
     if (!passwordCheck.valid) {
-      setPasswordError(passwordCheck.message);
+      setPasswordError(t('settings.security.password.invalid'));
       setPasswordStatus('error');
       setTimeout(() => setPasswordStatus('idle'), 3000);
       return;
@@ -374,12 +377,12 @@ export default function Settings() {
         
         setTimeout(() => setPasswordStatus('idle'), 3000);
       } else {
-        setPasswordError(response.data.error || response.data.message || '密码修改失败');
+        setPasswordError(response.data.error || response.data.message || t('settings.security.password.changeFailed'));
         setPasswordStatus('error');
         setTimeout(() => setPasswordStatus('idle'), 3000);
       }
     } catch (err: any) {
-      setPasswordError(err.response?.data?.error || err.response?.data?.message || '密码修改失败');
+      setPasswordError(err.response?.data?.error || err.response?.data?.message || t('settings.security.password.changeFailed'));
       setPasswordStatus('error');
       setTimeout(() => setPasswordStatus('idle'), 3000);
     }
@@ -416,11 +419,11 @@ export default function Settings() {
   });
 
   const tabs = [
-    { id: 'models', name: 'AI模型管理', icon: Brain },
-    { id: 'qanything', name: '知识库', icon: BookOpen },
-    { id: 'notifications', name: '通知设置', icon: Bell },
-    { id: 'database', name: '数据库', icon: Database },
-    { id: 'security', name: '安全设置', icon: Shield },
+    { id: 'models', name: t('settings.tabs.models'), icon: Brain },
+    { id: 'qanything', name: t('settings.tabs.qanything'), icon: BookOpen },
+    { id: 'notifications', name: t('settings.tabs.notifications'), icon: Bell },
+    { id: 'database', name: t('settings.tabs.database'), icon: Database },
+    { id: 'security', name: t('settings.tabs.security'), icon: Shield },
     { id: 'appearance', name: t('settings.tabs.appearance'), icon: Palette },
   ];
   const themeOptions: Array<{ id: ThemeMode; name: string; description: string; icon: typeof Monitor }> = [
@@ -452,13 +455,24 @@ export default function Settings() {
     { id: 'zh-CN', name: t('common.chinese'), description: t('settings.language.zhDesc') },
     { id: 'en-US', name: t('common.english'), description: t('settings.language.enDesc') },
   ];
+  const passwordRequirementLabel = (key: string) => {
+    const labels: Record<string, string> = {
+      minLength: t('settings.security.password.requirement.minLength'),
+      uppercase: t('settings.security.password.requirement.uppercase'),
+      lowercase: t('settings.security.password.requirement.lowercase'),
+      number: t('settings.security.password.requirement.number'),
+      special: t('settings.security.password.requirement.special'),
+    };
+    return labels[key] || key;
+  };
+  const passwordStrengthLabel = (password: string) => t(`settings.security.password.strength.${getPasswordStrength(password).level}` as MessageKey);
 
   return (
     <div className="h-full overflow-auto p-6">
       <div className="space-y-6">
         <div>
-          <h1 className="text-2xl font-bold text-text-primary mb-2">设置</h1>
-          <p className="text-text-secondary">配置系统参数和API密钥</p>
+          <h1 className="text-2xl font-bold text-text-primary mb-2">{t('settings.title')}</h1>
+          <p className="text-text-secondary">{t('settings.subtitle')}</p>
         </div>
 
         <div className="bg-surface rounded-xl border border-border overflow-hidden">
@@ -494,10 +508,10 @@ export default function Settings() {
                   <div>
                     <h3 className="text-lg font-semibold text-text-primary mb-4 flex items-center gap-2">
                       <BookOpen className="w-5 h-5" />
-                      知识库配置 (QAnything)
+                      {t('settings.qanything.title')}
                     </h3>
                     <p className="text-sm text-text-secondary mb-6">
-                      对接 QAnything 知识库，支持 PDF/Word/Excel 等多种格式文档上传，自动解析并用于 Agent 检索增强。
+                      {t('settings.qanything.subtitle')}
                     </p>
                   </div>
 
@@ -505,15 +519,15 @@ export default function Settings() {
                   <div className="bg-background rounded-lg p-6">
                     <h4 className="font-medium text-text-primary mb-4 flex items-center gap-2">
                       <Globe className="w-4 h-4" />
-                      连接配置
+                      {t('settings.qanything.connection')}
                     </h4>
                     
                     <div className="space-y-4">
                       {/* 启用开关 */}
                       <div className="flex items-center justify-between">
                         <div>
-                          <p className="text-sm font-medium text-text-primary">启用 QAnything 知识库</p>
-                          <p className="text-xs text-text-secondary">启用后，Agent 执行时将优先检索 QAnything 知识库</p>
+                          <p className="text-sm font-medium text-text-primary">{t('settings.qanything.enabled')}</p>
+                          <p className="text-xs text-text-secondary">{t('settings.qanything.enabledDesc')}</p>
                         </div>
                         <label className="relative inline-flex items-center cursor-pointer">
                           <input
@@ -528,7 +542,7 @@ export default function Settings() {
 
                       {/* 部署模式 */}
                       <div>
-                        <label className="block text-sm font-medium text-text-secondary mb-2">部署模式</label>
+                        <label className="block text-sm font-medium text-text-secondary mb-2">{t('settings.qanything.mode')}</label>
                         <div className="flex gap-3">
                           <button
                             onClick={() => setQanythingConfig({...qanythingConfig, mode: 'cloud'})}
@@ -539,7 +553,7 @@ export default function Settings() {
                                 : 'bg-surface text-text-secondary border-border hover:border-primary/50'
                             )}
                           >
-                            ️ 云端 API
+                            {t('settings.qanything.mode.cloud')}
                           </button>
                           <button
                             onClick={() => setQanythingConfig({...qanythingConfig, mode: 'local'})}
@@ -550,19 +564,19 @@ export default function Settings() {
                                 : 'bg-surface text-text-secondary border-border hover:border-primary/50'
                             )}
                           >
-                             本地部署
+                            {t('settings.qanything.mode.local')}
                           </button>
                         </div>
                         <p className="text-xs text-text-secondary mt-2">
                           {qanythingConfig.mode === 'cloud' 
-                            ? '使用网易有道云端 QAnything API，需外网访问' 
-                            : '本地 Docker 部署，数据不出服务器，更安全'}
+                            ? t('settings.qanything.mode.cloudDesc')
+                            : t('settings.qanything.mode.localDesc')}
                         </p>
                       </div>
 
                       {/* API 地址 */}
                       <div>
-                        <label className="block text-sm font-medium text-text-secondary mb-2">API 地址</label>
+                        <label className="block text-sm font-medium text-text-secondary mb-2">{t('settings.qanything.apiBase')}</label>
                         <input
                           type="text"
                           placeholder={qanythingConfig.mode === 'cloud' ? 'https://openapi.youdao.com/q_anything/api' : 'http://localhost:8777'}
@@ -572,19 +586,19 @@ export default function Settings() {
                         />
                         <p className="text-xs text-text-secondary mt-1">
                           {qanythingConfig.mode === 'cloud' 
-                            ? '云端 API 地址: https://openapi.youdao.com/q_anything/api' 
-                            : '本地部署默认地址: http://localhost:8777'}
+                            ? t('settings.qanything.apiBase.cloudHelp')
+                            : t('settings.qanything.apiBase.localHelp')}
                         </p>
                       </div>
 
                       {/* API 密钥 */}
                       <div>
                         <label className="block text-sm font-medium text-text-secondary mb-2">
-                          {qanythingConfig.mode === 'cloud' ? '管理秘钥' : 'API Key'}
+                          {qanythingConfig.mode === 'cloud' ? t('settings.qanything.adminSecret') : 'API Key'}
                         </label>
                         <input
                           type="password"
-                          placeholder={qanythingConfig.mode === 'cloud' ? '从 QAnything 管理后台获取' : '本地部署通常不需要'}
+                          placeholder={qanythingConfig.mode === 'cloud' ? t('settings.qanything.adminSecretPlaceholder') : t('settings.qanything.apiKeyPlaceholder')}
                           value={qanythingConfig.apiKey}
                           onChange={(e) => setQanythingConfig({...qanythingConfig, apiKey: e.target.value})}
                           className="w-full px-4 py-2 bg-surface border border-border rounded-lg text-text-primary focus:outline-none focus:border-primary"
@@ -593,7 +607,7 @@ export default function Settings() {
 
                       {/* 知识库 ID */}
                       <div>
-                        <label className="block text-sm font-medium text-text-secondary mb-2">知识库 ID</label>
+                        <label className="block text-sm font-medium text-text-secondary mb-2">{t('settings.qanything.kbId')}</label>
                         <input
                           type="text"
                           placeholder="KBxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx_xxxxxx"
@@ -602,14 +616,14 @@ export default function Settings() {
                           className="w-full px-4 py-2 bg-surface border border-border rounded-lg text-text-primary focus:outline-none focus:border-primary"
                         />
                         <p className="text-xs text-text-secondary mt-1">
-                          在 QAnything 管理后台创建知识库后获取 ID
+                          {t('settings.qanything.kbIdHelp')}
                         </p>
                       </div>
 
                       {/* 检索数量 */}
                       <div>
                         <label className="block text-sm font-medium text-text-secondary mb-2">
-                          每次检索返回的片段数
+                          {t('settings.qanything.topK')}
                         </label>
                         <input
                           type="number"
@@ -622,7 +636,7 @@ export default function Settings() {
                           }}
                           className="w-32 px-4 py-2 bg-surface border border-border rounded-lg text-text-primary focus:outline-none focus:border-primary"
                         />
-                        <span className="text-xs text-text-secondary ml-2">默认 5，范围 1-20</span>
+                        <span className="text-xs text-text-secondary ml-2">{t('settings.qanything.topKHelp')}</span>
                       </div>
 
                       {/* 测试连接 */}
@@ -637,7 +651,7 @@ export default function Settings() {
                           ) : (
                             <Wifi className="w-4 h-4" />
                           )}
-                          测试连接
+                          {t('settings.qanything.testConnection')}
                         </button>
                         
                         {qanythingTestStatus === 'success' && (
@@ -663,13 +677,13 @@ export default function Settings() {
                           {qanythingSaveStatus === 'saved' && (
                             <p className="text-xs text-status-success flex items-center gap-1">
                               <CheckCircle2 className="w-3 h-3" />
-                              已保存
+                              {t('settings.common.saved')}
                             </p>
                           )}
                           {qanythingSaveStatus === 'error' && (
                             <p className="text-xs text-status-failed flex items-center gap-1">
                               <AlertCircle className="w-3 h-3" />
-                              保存失败
+                              {t('settings.common.saveFailed')}
                             </p>
                           )}
                         </div>
@@ -681,7 +695,7 @@ export default function Settings() {
                           {qanythingSaveStatus === 'saving' && (
                             <Loader2 className="w-4 h-4 animate-spin" />
                           )}
-                          保存配置
+                          {t('settings.qanything.saveConfig')}
                         </button>
                       </div>
                     </div>
@@ -691,7 +705,7 @@ export default function Settings() {
                   <div className="bg-background rounded-lg p-6">
                     <h4 className="font-medium text-text-primary mb-4 flex items-center gap-2">
                       <Upload className="w-4 h-4" />
-                      上传文档到知识库
+                      {t('settings.qanything.uploadTitle')}
                     </h4>
                     
                     <div className="space-y-4">
@@ -705,8 +719,8 @@ export default function Settings() {
                         onDrop={handleDrop}
                       >
                         <FileText className="w-12 h-12 mx-auto text-text-secondary mb-3" />
-                        <p className="text-sm text-text-primary mb-1">拖拽文件到此处，或点击选择文件</p>
-                        <p className="text-xs text-text-secondary">支持 PDF/Word/Excel/PPT/Markdown/TXT/CSV/图片</p>
+                        <p className="text-sm text-text-primary mb-1">{t('settings.qanything.dropHint')}</p>
+                        <p className="text-xs text-text-secondary">{t('settings.qanything.supportedFiles')}</p>
                         <input
                           type="file"
                           multiple
@@ -725,14 +739,14 @@ export default function Settings() {
                           htmlFor="file-upload"
                           className="inline-block mt-4 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-all cursor-pointer text-sm"
                         >
-                          选择文件
+                          {t('settings.qanything.selectFiles')}
                         </label>
                       </div>
 
                       {/* 已选文件列表 */}
                       {uploadFiles.length > 0 && (
                         <div className="space-y-2">
-                          <p className="text-sm font-medium text-text-primary">已选择 {uploadFiles.length} 个文件:</p>
+                          <p className="text-sm font-medium text-text-primary">{t('settings.qanything.selectedFiles', { count: uploadFiles.length })}</p>
                           <div className="max-h-40 overflow-y-auto space-y-1">
                             {uploadFiles.map((file, index) => (
                               <div key={index} className="flex items-center justify-between p-2 bg-surface rounded-lg">
@@ -748,7 +762,7 @@ export default function Settings() {
                                     onClick={() => removeFile(index)}
                                     className="text-xs text-status-failed hover:text-status-failed/80 transition-colors"
                                   >
-                                    移除
+                                    {t('common.delete')}
                                   </button>
                                 </div>
                               </div>
@@ -781,12 +795,12 @@ export default function Settings() {
                         {uploadStatus === 'uploading' ? (
                           <>
                             <Loader2 className="w-4 h-4 animate-spin" />
-                            上传中...
+                            {t('settings.qanything.uploading')}
                           </>
                         ) : (
                           <>
                             <Upload className="w-4 h-4" />
-                            上传到知识库
+                            {t('settings.qanything.uploadButton')}
                           </>
                         )}
                       </button>
@@ -800,21 +814,21 @@ export default function Settings() {
                   <div>
                     <h3 className="text-lg font-semibold text-text-primary mb-4 flex items-center gap-2">
                       <Bell className="w-5 h-5" />
-                      通知设置
+                      {t('settings.notifications.title')}
                     </h3>
                     <p className="text-sm text-text-secondary mb-6">
-                      配置告警通知和任务状态通知的方式
+                      {t('settings.notifications.subtitle')}
                     </p>
                   </div>
 
                   <div className="space-y-6">
                     <div className="bg-background rounded-lg p-4">
-                      <h4 className="font-medium text-text-primary mb-4">通知渠道</h4>
+                      <h4 className="font-medium text-text-primary mb-4">{t('settings.notifications.channels')}</h4>
                       <div className="space-y-3">
                         <div className="flex items-center justify-between">
                           <div>
                             <p className="text-sm font-medium text-text-primary">Webhook</p>
-                            <p className="text-xs text-text-secondary">通过外部Webhook接收通知</p>
+                            <p className="text-xs text-text-secondary">{t('settings.notifications.webhookDesc')}</p>
                           </div>
                           <label className="relative inline-flex items-center cursor-pointer">
                             <input
@@ -828,8 +842,8 @@ export default function Settings() {
                         </div>
                         <div className="flex items-center justify-between">
                           <div>
-                            <p className="text-sm font-medium text-text-primary">邮件</p>
-                            <p className="text-xs text-text-secondary">通过邮件接收通知</p>
+                            <p className="text-sm font-medium text-text-primary">{t('settings.notifications.email')}</p>
+                            <p className="text-xs text-text-secondary">{t('settings.notifications.emailDesc')}</p>
                           </div>
                           <label className="relative inline-flex items-center cursor-pointer">
                             <input
@@ -843,8 +857,8 @@ export default function Settings() {
                         </div>
                         <div className="flex items-center justify-between">
                           <div>
-                            <p className="text-sm font-medium text-text-primary">企业微信</p>
-                            <p className="text-xs text-text-secondary">通过企业微信接收通知</p>
+                            <p className="text-sm font-medium text-text-primary">{t('settings.notifications.wechat')}</p>
+                            <p className="text-xs text-text-secondary">{t('settings.notifications.wechatDesc')}</p>
                           </div>
                           <label className="relative inline-flex items-center cursor-pointer">
                             <input
@@ -858,8 +872,8 @@ export default function Settings() {
                         </div>
                         <div className="flex items-center justify-between">
                           <div>
-                            <p className="text-sm font-medium text-text-primary">钉钉</p>
-                            <p className="text-xs text-text-secondary">通过钉钉接收通知</p>
+                            <p className="text-sm font-medium text-text-primary">{t('settings.notifications.dingtalk')}</p>
+                            <p className="text-xs text-text-secondary">{t('settings.notifications.dingtalkDesc')}</p>
                           </div>
                           <label className="relative inline-flex items-center cursor-pointer">
                             <input
@@ -875,10 +889,10 @@ export default function Settings() {
                     </div>
 
                     <div className="bg-background rounded-lg p-4">
-                      <h4 className="font-medium text-text-primary mb-4">告警通知</h4>
+                      <h4 className="font-medium text-text-primary mb-4">{t('settings.notifications.alerts')}</h4>
                       <div className="space-y-3">
                         <div className="flex items-center justify-between">
-                          <p className="text-sm text-text-secondary">严重告警</p>
+                          <p className="text-sm text-text-secondary">{t('settings.notifications.alert.critical')}</p>
                           <label className="relative inline-flex items-center cursor-pointer">
                             <input
                               type="checkbox"
@@ -893,7 +907,7 @@ export default function Settings() {
                           </label>
                         </div>
                         <div className="flex items-center justify-between">
-                          <p className="text-sm text-text-secondary">警告告警</p>
+                          <p className="text-sm text-text-secondary">{t('settings.notifications.alert.warning')}</p>
                           <label className="relative inline-flex items-center cursor-pointer">
                             <input
                               type="checkbox"
@@ -908,7 +922,7 @@ export default function Settings() {
                           </label>
                         </div>
                         <div className="flex items-center justify-between">
-                          <p className="text-sm text-text-secondary">信息通知</p>
+                          <p className="text-sm text-text-secondary">{t('settings.notifications.alert.info')}</p>
                           <label className="relative inline-flex items-center cursor-pointer">
                             <input
                               type="checkbox"
@@ -926,10 +940,10 @@ export default function Settings() {
                     </div>
 
                     <div className="bg-background rounded-lg p-4">
-                      <h4 className="font-medium text-text-primary mb-4">任务通知</h4>
+                      <h4 className="font-medium text-text-primary mb-4">{t('settings.notifications.tasks')}</h4>
                       <div className="space-y-3">
                         <div className="flex items-center justify-between">
-                          <p className="text-sm text-text-secondary">任务成功</p>
+                          <p className="text-sm text-text-secondary">{t('settings.notifications.task.success')}</p>
                           <label className="relative inline-flex items-center cursor-pointer">
                             <input
                               type="checkbox"
@@ -944,7 +958,7 @@ export default function Settings() {
                           </label>
                         </div>
                         <div className="flex items-center justify-between">
-                          <p className="text-sm text-text-secondary">任务失败</p>
+                          <p className="text-sm text-text-secondary">{t('settings.notifications.task.failed')}</p>
                           <label className="relative inline-flex items-center cursor-pointer">
                             <input
                               type="checkbox"
@@ -959,7 +973,7 @@ export default function Settings() {
                           </label>
                         </div>
                         <div className="flex items-center justify-between">
-                          <p className="text-sm text-text-secondary">任务运行中</p>
+                          <p className="text-sm text-text-secondary">{t('settings.notifications.task.running')}</p>
                           <label className="relative inline-flex items-center cursor-pointer">
                             <input
                               type="checkbox"
@@ -984,13 +998,13 @@ export default function Settings() {
                         {notificationSaveStatus === 'saved' && (
                           <p className="text-xs text-status-success flex items-center gap-1">
                             <CheckCircle2 className="w-3 h-3" />
-                            已保存
+                            {t('settings.common.saved')}
                           </p>
                         )}
                         {notificationSaveStatus === 'error' && (
                           <p className="text-xs text-status-failed flex items-center gap-1">
                             <AlertCircle className="w-3 h-3" />
-                            保存失败
+                            {t('settings.common.saveFailed')}
                           </p>
                         )}
                       </div>
@@ -1002,7 +1016,7 @@ export default function Settings() {
                         {notificationSaveStatus === 'saving' && (
                           <Loader2 className="w-4 h-4 animate-spin" />
                         )}
-                        保存通知配置
+                        {t('settings.notifications.save')}
                       </button>
                     </div>
                   </div>
@@ -1014,31 +1028,31 @@ export default function Settings() {
                   <div>
                     <h3 className="text-lg font-semibold text-text-primary mb-4 flex items-center gap-2">
                       <Database className="w-5 h-5" />
-                      数据库设置
+                      {t('settings.database.title')}
                     </h3>
                     <p className="text-sm text-text-secondary mb-6">
-                      数据库配置和备份设置
+                      {t('settings.database.subtitle')}
                     </p>
                   </div>
 
                   <div className="space-y-4">
                     <div className="bg-background rounded-lg p-4">
-                      <h4 className="font-medium text-text-primary mb-2">数据库类型</h4>
-                      <p className="text-sm text-text-secondary">SQLite (当前)</p>
+                      <h4 className="font-medium text-text-primary mb-2">{t('settings.database.type')}</h4>
+                      <p className="text-sm text-text-secondary">{t('settings.database.sqliteCurrent')}</p>
                     </div>
 
                     <div className="bg-background rounded-lg p-4">
-                      <h4 className="font-medium text-text-primary mb-2">数据路径</h4>
+                      <h4 className="font-medium text-text-primary mb-2">{t('settings.database.path')}</h4>
                       <p className="text-sm text-text-secondary">./data/app.db</p>
                     </div>
 
                     <div className="bg-background rounded-lg p-4">
                       <div className="flex items-center justify-between mb-4">
-                        <h4 className="font-medium text-text-primary">数据备份</h4>
+                        <h4 className="font-medium text-text-primary">{t('settings.database.backup.title')}</h4>
                         <div className="flex gap-2">
                           <label className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-all cursor-pointer flex items-center gap-2">
                             <Upload className="w-4 h-4" />
-                            上传备份
+                            {t('settings.database.backup.upload')}
                             <input 
                               type="file" 
                               accept=".db,.db.gz"
@@ -1058,7 +1072,7 @@ export default function Settings() {
                             className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-all disabled:opacity-50 flex items-center gap-2"
                           >
                             {createBackupMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
-                            {createBackupMutation.isPending ? '创建中...' : '创建备份'}
+                            {createBackupMutation.isPending ? t('settings.database.backup.creating') : t('settings.database.backup.create')}
                           </button>
                         </div>
                       </div>
@@ -1086,7 +1100,7 @@ export default function Settings() {
                                       });
                                       
                                       if (!response.ok) {
-                                        throw new Error('下载失败');
+                                        throw new Error(t('settings.database.backup.downloadFailed'));
                                       }
                                       
                                       const blob = await response.blob();
@@ -1099,33 +1113,33 @@ export default function Settings() {
                                       window.URL.revokeObjectURL(url);
                                       document.body.removeChild(a);
                                     } catch (err) {
-                                      alert('下载失败：' + (err as Error).message);
+                                      alert(t('settings.database.backup.downloadFailedWithMessage', { message: (err as Error).message }));
                                     }
                                   }}
                                   className="px-3 py-1 text-xs bg-green-500/10 text-green-400 hover:bg-green-500/20 rounded transition-colors"
                                 >
-                                  下载
+                                  {t('settings.database.backup.download')}
                                 </button>
                                 <button
                                   onClick={() => restoreBackupMutation.mutate(backup.id)}
                                   disabled={restoreBackupMutation.isPending}
                                   className="px-3 py-1 text-xs bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 rounded transition-colors"
                                 >
-                                  恢复
+                                  {t('settings.database.backup.restore')}
                                 </button>
                                 <button
                                   onClick={() => deleteBackupMutation.mutate(backup.id)}
                                   disabled={deleteBackupMutation.isPending}
                                   className="px-3 py-1 text-xs bg-red-500/10 text-red-400 hover:bg-red-500/20 rounded transition-colors"
                                 >
-                                  删除
+                                  {t('common.delete')}
                                 </button>
                               </div>
                             </div>
                           ))}
                         </div>
                       ) : (
-                        <p className="text-sm text-text-secondary">暂无备份</p>
+                        <p className="text-sm text-text-secondary">{t('settings.database.backup.empty')}</p>
                       )}
                     </div>
                   </div>
@@ -1137,10 +1151,10 @@ export default function Settings() {
                   <div>
                     <h3 className="text-lg font-semibold text-text-primary mb-4 flex items-center gap-2">
                       <Shield className="w-5 h-5" />
-                      安全设置
+                      {t('settings.security.title')}
                     </h3>
                     <p className="text-sm text-text-secondary mb-6">
-                      配置安全策略和访问控制
+                      {t('settings.security.subtitle')}
                     </p>
                   </div>
 
@@ -1148,43 +1162,43 @@ export default function Settings() {
                   <div className="bg-background rounded-lg p-6">
                     <h4 className="font-medium text-text-primary mb-4 flex items-center gap-2">
                       <Lock className="w-5 h-5" />
-                      修改密码
+                      {t('settings.security.password.title')}
                     </h4>
                     {searchParams.get('changePassword') === 'true' && (
                       <div className="mb-4 p-3 bg-yellow-500/10 border border-yellow-500/20 rounded-lg flex items-start gap-2 text-yellow-300">
                         <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
                         <div>
-                          <p className="text-sm font-medium">首次登录需要修改密码</p>
-                          <p className="text-xs mt-1">为了您的账户安全，请修改默认密码后继续使用</p>
+                          <p className="text-sm font-medium">{t('settings.security.password.mustChangeTitle')}</p>
+                          <p className="text-xs mt-1">{t('settings.security.password.mustChangeDesc')}</p>
                         </div>
                       </div>
                     )}
                     <div className="space-y-4 max-w-md">
                       <div>
-                        <label className="block text-sm font-medium text-text-secondary mb-2">当前密码</label>
+                        <label className="block text-sm font-medium text-text-secondary mb-2">{t('settings.security.password.current')}</label>
                         <input
                           type="password"
                           value={currentPassword}
                           onChange={(e) => setCurrentPassword(e.target.value)}
-                          placeholder="请输入当前密码"
+                          placeholder={t('settings.security.password.currentPlaceholder')}
                           className="w-full px-4 py-2 bg-surface border border-border rounded-lg text-text-primary focus:outline-none focus:border-primary"
                         />
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-text-secondary mb-2">新密码</label>
+                        <label className="block text-sm font-medium text-text-secondary mb-2">{t('settings.security.password.new')}</label>
                         <input
                           type="password"
                           value={newPassword}
                           onChange={(e) => setNewPassword(e.target.value)}
-                          placeholder="请输入新密码（至少8位）"
+                          placeholder={t('settings.security.password.newPlaceholder')}
                           className="w-full px-4 py-2 bg-surface border border-border rounded-lg text-text-primary focus:outline-none focus:border-primary"
                         />
                         {newPassword && (
                           <div className="mt-2 space-y-2">
                             <div className="flex items-center justify-between">
-                              <span className="text-sm text-text-secondary">密码强度</span>
+                              <span className="text-sm text-text-secondary">{t('settings.security.password.strength')}</span>
                               <span className={`text-sm font-medium ${getPasswordStrength(newPassword).color}`}>
-                                {getPasswordStrength(newPassword).label}
+                                {passwordStrengthLabel(newPassword)}
                               </span>
                             </div>
                             <div className="flex gap-1">
@@ -1204,11 +1218,7 @@ export default function Settings() {
                                 <div key={key} className={`flex items-center gap-1 ${value ? 'text-status-success' : 'text-text-tertiary'}`}>
                                   {value ? <CheckCircle2 className="w-3 h-3" /> : <div className="w-3 h-3 rounded-full border border-current" />}
                                   <span>
-                                    {key === 'minLength' && '至少8位'}
-                                    {key === 'uppercase' && '大写字母'}
-                                    {key === 'lowercase' && '小写字母'}
-                                    {key === 'number' && '数字'}
-                                    {key === 'special' && '特殊字符'}
+                                    {passwordRequirementLabel(key)}
                                   </span>
                                 </div>
                               ))}
@@ -1217,12 +1227,12 @@ export default function Settings() {
                         )}
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-text-secondary mb-2">确认新密码</label>
+                        <label className="block text-sm font-medium text-text-secondary mb-2">{t('settings.security.password.confirm')}</label>
                         <input
                           type="password"
                           value={confirmPassword}
                           onChange={(e) => setConfirmPassword(e.target.value)}
-                          placeholder="请再次输入新密码"
+                          placeholder={t('settings.security.password.confirmPlaceholder')}
                           className="w-full px-4 py-2 bg-surface border border-border rounded-lg text-text-primary focus:outline-none focus:border-primary"
                         />
                         {confirmPassword && newPassword && (
@@ -1230,12 +1240,12 @@ export default function Settings() {
                             {newPassword === confirmPassword ? (
                               <>
                                 <CheckCircle2 className="w-3 h-3 text-status-success" />
-                                <span className="text-status-success">密码匹配</span>
+                                <span className="text-status-success">{t('settings.security.password.match')}</span>
                               </>
                             ) : (
                               <>
                                 <AlertCircle className="w-3 h-3 text-status-failed" />
-                                <span className="text-status-failed">密码不匹配</span>
+                                <span className="text-status-failed">{t('settings.security.password.notMatch')}</span>
                               </>
                             )}
                           </div>
@@ -1254,7 +1264,7 @@ export default function Settings() {
                         {passwordStatus === 'saved' && (
                           <p className="text-sm text-status-success flex items-center gap-1">
                             <CheckCircle2 className="w-4 h-4" />
-                            密码修改成功
+                            {t('settings.security.password.changeSuccess')}
                           </p>
                         )}
                         <button
@@ -1265,16 +1275,16 @@ export default function Settings() {
                           {passwordStatus === 'saving' && (
                             <Loader2 className="w-4 h-4 animate-spin" />
                           )}
-                          修改密码
+                          {t('settings.security.password.change')}
                         </button>
                       </div>
                     </div>
                   </div>
 
                   <div className="bg-background rounded-lg p-4">
-                    <h4 className="font-medium text-text-primary mb-2">CORS配置</h4>
+                    <h4 className="font-medium text-text-primary mb-2">{t('settings.security.cors')}</h4>
                     <p className="text-sm text-text-secondary mb-3">
-                      允许的前端域名
+                      {t('settings.security.allowedOrigins')}
                     </p>
                     <input
                       type="text"
