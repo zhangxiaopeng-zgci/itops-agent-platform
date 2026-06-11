@@ -6,6 +6,7 @@ import {
   updateEvolutionProposalStatus
 } from './evolutionProposalService';
 import { getLatestEvolutionProposalEvaluation } from './evolutionEvaluationService';
+import { getStructuredPatchFromProposal, validateStructuredPatch } from './evolutionPatchService';
 
 export interface EvolutionReleaseVersionRecord {
   id: string;
@@ -208,6 +209,11 @@ function assertPublishable(proposal: EvolutionProposalRecord): void {
   if (!evaluation || !evaluation.passed) {
     throw new Error('Proposal must have a passing evaluation before publishing');
   }
+
+  const patchValidation = validateStructuredPatch(getStructuredPatchFromProposal(proposal));
+  if (!patchValidation.valid) {
+    throw new Error('Proposal must include a valid structured patch before publishing');
+  }
 }
 
 function normalizeTarget(proposal: EvolutionProposalRecord): { objectType: string; targetId: string | null } {
@@ -256,6 +262,7 @@ function buildVersionPayload(
   target: { objectType: string; targetId: string | null },
   previousVersionId: string | null
 ): Record<string, unknown> {
+  const structuredPatch = getStructuredPatchFromProposal(proposal);
   return {
     proposalId: proposal.id,
     proposalType: proposal.type,
@@ -263,6 +270,8 @@ function buildVersionPayload(
     objectType: target.objectType,
     targetId: target.targetId,
     proposalBody: proposal.proposal_body,
+    structuredPatch,
+    structuredPatchValidation: validateStructuredPatch(structuredPatch),
     targetDescriptor: proposal.target_descriptor,
     evidenceRefs: proposal.evidence_refs,
     evalSummary: proposal.eval_summary,

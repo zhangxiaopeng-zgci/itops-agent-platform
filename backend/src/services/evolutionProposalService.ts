@@ -3,6 +3,7 @@ import db from '../models/database';
 import { executeAgentRun } from './agentExecutor';
 import { AgentRunResult } from './agentRuntime/types';
 import { createHermesSession } from './hermesSessionService';
+import { ensureStructuredPatchDescriptor } from './evolutionPatchService';
 
 export type EvolutionProposalType =
   | 'skill_update'
@@ -156,6 +157,13 @@ export function createEvolutionProposal(input: {
   const priority = normalizePriority(input.priority);
   const title = normalizeRequiredText(input.title, 'title', 160);
   const proposalBody = normalizeRequiredText(input.proposalBody, 'proposalBody', 20000);
+  const targetDescriptor = ensureStructuredPatchDescriptor({
+    proposalType: type,
+    title,
+    proposalBody,
+    targetDescriptor: input.targetDescriptor,
+    evidenceRefs: input.evidenceRefs
+  });
   const id = randomUUID();
 
   db.prepare(`
@@ -172,7 +180,7 @@ export function createEvolutionProposal(input: {
     priority,
     input.source || 'manual',
     input.sourceRef || null,
-    JSON.stringify(input.targetDescriptor ?? null),
+    JSON.stringify(targetDescriptor),
     proposalBody,
     JSON.stringify(input.evidenceRefs ?? null),
     normalizeOptionalText(input.riskNotes, 5000),
@@ -455,6 +463,15 @@ function buildEvolutionPrompt(input: {
     '5. Expected benefit',
     '6. Evaluation plan',
     '7. Risk and rollback',
+    '',
+    'Also make the proposal concrete enough to be converted into a structured patch:',
+    '- skill_update -> skill_patch',
+    '- workflow_template_update -> workflow_template_patch',
+    '- tool_policy_update -> tool_policy_patch',
+    '- knowledge_update -> knowledge_patch',
+    '- mcp_binding_update -> mcp_binding_patch',
+    '- prompt_update -> prompt_patch',
+    'The patch must remain proposal_only and must require human approval before any runtime effect.',
     '',
     'Evidence snapshot:',
     JSON.stringify(input.evidence, null, 2)

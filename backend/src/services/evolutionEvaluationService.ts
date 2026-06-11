@@ -5,6 +5,10 @@ import {
   getEvolutionProposal,
   updateEvolutionProposalStatus
 } from './evolutionProposalService';
+import {
+  getStructuredPatchFromProposal,
+  validateStructuredPatch
+} from './evolutionPatchService';
 
 export interface EvolutionEvaluationFinding {
   severity: 'info' | 'warning' | 'critical';
@@ -107,7 +111,9 @@ export function evaluateEvolutionProposal(input: {
   const evidenceScore = evaluateEvidence(proposal, findings);
   const replaySamples = collectReplaySamples(proposal);
   const replayScore = evaluateReplaySamples(replaySamples, findings);
-  const score = Math.round((safetyScore * 0.35) + (evidenceScore * 0.25) + (completenessScore * 0.25) + (replayScore * 0.15));
+  const patchValidation = evaluateStructuredPatch(proposal, findings);
+  const patchScore = patchValidation.score;
+  const score = Math.round((safetyScore * 0.30) + (evidenceScore * 0.20) + (completenessScore * 0.20) + (replayScore * 0.15) + (patchScore * 0.15));
   const hasCriticalFinding = findings.some(finding => finding.severity === 'critical');
   const passed = score >= 75 && !hasCriticalFinding;
   const status = passed ? 'passed' : 'failed';
@@ -118,7 +124,13 @@ export function evaluateEvolutionProposal(input: {
     evidenceScore,
     completenessScore,
     replayScore,
+    patchScore,
     replaySampleCount: replaySamples.length,
+    structuredPatch: {
+      valid: patchValidation.valid,
+      score: patchValidation.score,
+      findingCount: patchValidation.findings.length
+    },
     findingCounts: {
       critical: findings.filter(finding => finding.severity === 'critical').length,
       warning: findings.filter(finding => finding.severity === 'warning').length,
@@ -284,6 +296,18 @@ function evaluateEvidence(proposal: EvolutionProposalRecord, findings: Evolution
   }
 
   return clampScore(score);
+}
+
+function evaluateStructuredPatch(proposal: EvolutionProposalRecord, findings: EvolutionEvaluationFinding[]): ReturnType<typeof validateStructuredPatch> {
+  const validation = validateStructuredPatch(getStructuredPatchFromProposal(proposal));
+  validation.findings.forEach(finding => {
+    findings.push({
+      severity: finding.severity,
+      code: finding.code,
+      message: finding.message
+    });
+  });
+  return validation;
 }
 
 function collectReplaySamples(proposal: EvolutionProposalRecord): EvolutionReplaySample[] {

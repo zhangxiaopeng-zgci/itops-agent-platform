@@ -40,6 +40,34 @@ interface EvolutionProposal {
   updated_at: string;
 }
 
+interface StructuredPatchOperation {
+  op: string;
+  path: string;
+  value?: unknown;
+  reason?: string;
+  riskLevel?: string;
+  requiresApproval?: boolean;
+}
+
+interface StructuredPatch {
+  schemaVersion: string;
+  patchId: string;
+  kind: string;
+  applyMode: string;
+  target?: {
+    objectType?: string;
+    targetId?: string | null;
+    selector?: Record<string, unknown>;
+  };
+  summary?: string;
+  operations?: StructuredPatchOperation[];
+  rollbackPlan?: {
+    strategy?: string;
+    notes?: string;
+  };
+  createdAt?: string;
+}
+
 interface ProposalEvent {
   id: string;
   event_type: string;
@@ -576,6 +604,8 @@ export default function EvolutionProposals() {
 
               <EvaluationPanel evaluations={detail?.evaluations || []} />
 
+              <StructuredPatchPanel proposal={activeProposal} />
+
               <ReleasePanel
                 releases={detail?.releases || []}
                 canRollback={canApprove}
@@ -610,6 +640,73 @@ export default function EvolutionProposals() {
           )}
         </section>
       </div>
+    </div>
+  );
+}
+
+function StructuredPatchPanel({ proposal }: { proposal: EvolutionProposal }) {
+  const { t } = useLocale();
+  const patch = getStructuredPatch(proposal);
+
+  return (
+    <DetailSection title={t('evolution.patch.title')} icon={<FileText className="w-4 h-4" />}>
+      {!patch ? (
+        <div className="text-sm text-text-tertiary">{t('evolution.patch.empty')}</div>
+      ) : (
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+            <PatchInfo label={t('evolution.patch.schema')} value={patch.schemaVersion} />
+            <PatchInfo label={t('evolution.patch.kind')} value={patch.kind} />
+            <PatchInfo label={t('evolution.patch.applyMode')} value={patch.applyMode} />
+            <PatchInfo label={t('evolution.patch.target')} value={`${patch.target?.objectType || '-'} / ${patch.target?.targetId || 'global'}`} />
+          </div>
+
+          <div>
+            <div className="text-xs font-medium text-text-tertiary mb-2">{t('evolution.patch.operations')}</div>
+            <div className="space-y-2">
+              {(patch.operations || []).map((operation, index) => (
+                <div key={`${operation.op}-${operation.path}-${index}`} className="rounded-lg bg-background border border-border px-3 py-2">
+                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="text-sm font-medium text-text-primary truncate">{operation.op} {operation.path}</div>
+                      <div className="text-xs text-text-tertiary mt-1 line-clamp-2">{operation.reason || '-'}</div>
+                    </div>
+                    <div className="flex items-center gap-2 text-xs">
+                      <span className="px-2 py-1 rounded-md bg-surface border border-border text-text-secondary">
+                        {operation.riskLevel || 'medium'}
+                      </span>
+                      <span className={clsx(
+                        'px-2 py-1 rounded-md border',
+                        operation.requiresApproval
+                          ? 'bg-status-success/10 text-status-success border-status-success/30'
+                          : 'bg-status-failed/10 text-status-failed border-status-failed/30'
+                      )}>
+                        {operation.requiresApproval ? t('evolution.patch.approvalRequired') : t('evolution.patch.approvalMissing')}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="rounded-lg bg-background border border-border px-3 py-2">
+            <div className="text-xs text-text-tertiary">{t('evolution.patch.rollback')}</div>
+            <div className="text-sm text-text-secondary mt-1">
+              {patch.rollbackPlan?.strategy || '-'} · {patch.rollbackPlan?.notes || '-'}
+            </div>
+          </div>
+        </div>
+      )}
+    </DetailSection>
+  );
+}
+
+function PatchInfo({ label, value }: { label: string; value?: string | null }) {
+  return (
+    <div className="rounded-lg bg-background border border-border px-3 py-2 min-w-0">
+      <div className="text-xs text-text-tertiary">{label}</div>
+      <div className="text-sm text-text-primary truncate mt-1">{value || '-'}</div>
     </div>
   );
 }
@@ -870,10 +967,12 @@ function ActionButton({ label, icon, disabled, onClick }: { label: string; icon:
 }
 
 function InfoGrid({ proposal }: { proposal: EvolutionProposal }) {
+  const patch = getStructuredPatch(proposal);
   const items = [
     ['Correlation', proposal.correlation_id || '-'],
     ['Agent execution', proposal.agent_execution_id || '-'],
     ['Hermes session', proposal.hermes_session_id || '-'],
+    ['Structured patch', patch ? `${patch.kind} / ${patch.applyMode}` : '-'],
     ['Updated', formatTime(proposal.updated_at)]
   ];
 
@@ -914,4 +1013,20 @@ function formatTime(value?: string | null): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return date.toLocaleString();
+}
+
+function getStructuredPatch(proposal: EvolutionProposal): StructuredPatch | null {
+  if (!proposal.target_descriptor || typeof proposal.target_descriptor !== 'object' || Array.isArray(proposal.target_descriptor)) {
+    return null;
+  }
+  const descriptor = proposal.target_descriptor as Record<string, unknown>;
+  const patch = descriptor.structuredPatch;
+  if (!patch || typeof patch !== 'object' || Array.isArray(patch)) {
+    return null;
+  }
+  const record = patch as Record<string, unknown>;
+  if (record.schemaVersion !== 'evolution.patch.v1') {
+    return null;
+  }
+  return record as unknown as StructuredPatch;
 }
