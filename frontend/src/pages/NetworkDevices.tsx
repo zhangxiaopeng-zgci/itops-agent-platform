@@ -12,6 +12,7 @@ import NetworkDeviceCard from '../components/NetworkDeviceCard';
 import InspectionResult from '../components/InspectionResult';
 import InspectionHistory from '../components/InspectionHistory';
 import { useEscapeKey } from '../hooks/useEscapeKey';
+import { useLocale, type MessageKey } from '../contexts/LocaleContext';
 
 interface NetworkDevice {
   id: string;
@@ -34,6 +35,7 @@ interface NetworkDevice {
 export default function NetworkDevices() {
   const queryClient = useQueryClient();
   const toast = useToast();
+  const { t } = useLocale();
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [editingDevice, setEditingDevice] = useState<NetworkDevice | null>(null);
   const [selectedVendor, setSelectedVendor] = useState<string>('all');
@@ -65,10 +67,10 @@ export default function NetworkDevices() {
   const deleteMutation = useMutation({
     mutationFn: (id: string) => api.delete(`/api/network-devices/${id}`),
     onSuccess: () => {
-      toast.success('设备删除成功');
+      toast.success(t('networkDevices.toast.deleted'));
       queryClient.invalidateQueries({ queryKey: ['network-devices'] });
     },
-    onError: () => toast.error('删除设备失败')
+    onError: () => toast.error(t('networkDevices.toast.deleteFailed'))
   });
 
   const handleDelete = (device: NetworkDevice) => {
@@ -96,17 +98,17 @@ export default function NetworkDevices() {
 
   const handleTestConnection = async (device: NetworkDevice) => {
     try {
-      toast.info(`正在测试 ${device.name} 的连接...`);
+      toast.info(t('networkDevices.toast.testingConnection', { name: device.name }));
       const response = await api.post(`/api/network-devices/${device.id}/test-connection`);
       const result = response.data;
       
       if (result.success) {
-        toast.success(`连接成功 (${result.data.latency}ms)`);
+        toast.success(t('networkDevices.toast.connectionSuccess', { latency: result.data.latency }));
       } else {
-        toast.error(`连接失败: ${result.data.message}`);
+        toast.error(t('networkDevices.toast.connectionFailed', { message: result.data.message }));
       }
     } catch (error: any) {
-      toast.error('测试连接失败');
+      toast.error(t('networkDevices.toast.connectionTestFailed'));
     }
   };
 
@@ -125,10 +127,10 @@ export default function NetworkDevices() {
       });
 
       setInspectionResult(response.data.data);
-      toast.success('巡检完成');
+      toast.success(t('networkDevices.toast.inspectionComplete'));
       queryClient.invalidateQueries({ queryKey: ['network-devices'] });
     } catch (error: any) {
-      toast.error('巡检失败: ' + (error.response?.data?.error || error.message));
+      toast.error(t('networkDevices.toast.inspectionFailed', { error: error.response?.data?.error || error.message }));
     } finally {
       setIsInspecting(false);
     }
@@ -154,7 +156,7 @@ export default function NetworkDevices() {
 
   const handleBatchInspect = () => {
     if (selectedDevices.size === 0) {
-      toast.error('请至少选择一台设备');
+      toast.error(t('networkDevices.toast.selectAtLeastOne'));
       return;
     }
     setShowBatchModal(true);
@@ -170,12 +172,12 @@ export default function NetworkDevices() {
         inspectionType: 'standard'
       });
 
-      toast.success(`批量巡检完成，共 ${response.data.data.length} 台设备`);
+      toast.success(t('networkDevices.toast.batchComplete', { count: response.data.data.length }));
       queryClient.invalidateQueries({ queryKey: ['network-devices'] });
       setSelectedDevices(new Set());
       setShowBatchModal(false);
     } catch (error: any) {
-      toast.error('批量巡检失败: ' + (error.response?.data?.error || error.message));
+      toast.error(t('networkDevices.toast.batchFailed', { error: error.response?.data?.error || error.message }));
     } finally {
       setIsBatchInspecting(false);
     }
@@ -200,27 +202,54 @@ export default function NetworkDevices() {
   }, [devices, selectedVendor, searchQuery]);
 
   const vendors = ['all', 'huawei', 'cisco', 'h3c', 'ruijie', 'zte'];
-  const vendorLabels: Record<string, string> = {
-    all: '全部厂商',
-    huawei: '华为',
-    cisco: '思科',
-    h3c: '华三',
-    ruijie: '锐捷',
-    zte: '中兴'
+  const vendorLabels: Record<string, MessageKey> = {
+    all: 'networkDevices.vendor.all',
+    huawei: 'networkDevices.vendor.huawei',
+    cisco: 'networkDevices.vendor.cisco',
+    h3c: 'networkDevices.vendor.h3c',
+    ruijie: 'networkDevices.vendor.ruijie',
+    zte: 'networkDevices.vendor.zte'
   };
+
+  const standardInspectionItems = [
+    'networkDevices.inspect.item.cpuUsage',
+    'networkDevices.inspect.item.memoryUsage',
+    'networkDevices.inspect.item.interfaceStatus',
+    'networkDevices.inspect.item.versionInfo',
+    'networkDevices.inspect.item.routingTable',
+    'networkDevices.inspect.item.systemLogs',
+    'networkDevices.inspect.item.environmentStatus',
+    'networkDevices.inspect.item.powerFans'
+  ] as const satisfies readonly MessageKey[];
+
+  const fullInspectionItems = [
+    'networkDevices.inspect.item.cpu',
+    'networkDevices.inspect.item.memory',
+    'networkDevices.inspect.item.interface',
+    'networkDevices.inspect.item.version',
+    'networkDevices.inspect.item.routing',
+    'networkDevices.inspect.item.logs',
+    'networkDevices.inspect.item.environment',
+    'networkDevices.inspect.item.power',
+    'networkDevices.inspect.item.fans',
+    'networkDevices.inspect.item.stp',
+    'networkDevices.inspect.item.vlan',
+    'networkDevices.inspect.item.arp',
+    'networkDevices.inspect.item.mac'
+  ] as const satisfies readonly MessageKey[];
 
   return (
     <div className="p-6">
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-text-primary mb-1">网络设备管理</h1>
-        <p className="text-sm text-text-secondary">管理和巡检您的网络设备（路由器/交换机/防火墙）</p>
+        <h1 className="text-2xl font-bold text-text-primary mb-1">{t('networkDevices.title')}</h1>
+        <p className="text-sm text-text-secondary">{t('networkDevices.subtitle')}</p>
       </div>
 
       <div className="bg-surface rounded-xl border border-border mb-6">
         <div className="px-6 py-4 border-b border-border">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-4">
-              <h2 className="text-base font-medium text-text-primary">设备列表</h2>
+              <h2 className="text-base font-medium text-text-primary">{t('networkDevices.listTitle')}</h2>
               <div className="flex items-center gap-2">
                 {vendors.map(vendor => (
                   <button
@@ -232,7 +261,7 @@ export default function NetworkDevices() {
                         : 'bg-background border border-border text-text-secondary hover:bg-surface hover:text-text-primary'
                     }`}
                   >
-                    {vendorLabels[vendor]}
+                    {t(vendorLabels[vendor])}
                   </button>
                 ))}
               </div>
@@ -241,25 +270,25 @@ export default function NetworkDevices() {
               <button
                 onClick={() => queryClient.invalidateQueries({ queryKey: ['network-devices'] })}
                 className="p-2 text-text-secondary hover:text-text-primary hover:bg-surface rounded-md transition-colors"
-                title="刷新"
+                title={t('common.refresh')}
               >
                 <RefreshCw className="w-4 h-4" />
               </button>
               {selectedDevices.size > 0 && (
                 <>
-                  <span className="text-xs text-primary font-medium">{selectedDevices.size} 台已选</span>
+                  <span className="text-xs text-primary font-medium">{t('networkDevices.selectedCount', { count: selectedDevices.size })}</span>
                   <button
                     onClick={handleBatchInspect}
                     className="flex items-center gap-2 px-3 py-2 bg-green-600/90 text-white text-xs font-medium rounded-md hover:bg-green-600 transition-colors"
                   >
                     <ClipboardCheck className="w-3.5 h-3.5" />
-                    批量巡检
+                    {t('networkDevices.actions.batchInspect')}
                   </button>
                   <button
                     onClick={() => setSelectedDevices(new Set())}
                     className="px-3 py-2 text-xs text-text-secondary hover:text-text-primary hover:bg-surface rounded-md transition-colors"
                   >
-                    取消选择
+                    {t('networkDevices.actions.clearSelection')}
                   </button>
                 </>
               )}
@@ -268,7 +297,7 @@ export default function NetworkDevices() {
                 className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-600 to-blue-700 text-white text-sm font-medium rounded-md hover:from-blue-500 hover:to-blue-600 transition-all shadow-lg shadow-blue-600/20"
               >
                 <Plus className="w-4 h-4" />
-                新建设备
+                {t('networkDevices.actions.newDevice')}
               </button>
             </div>
           </div>
@@ -279,7 +308,7 @@ export default function NetworkDevices() {
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="搜索设备名称、IP地址、位置..."
+              placeholder={t('networkDevices.searchPlaceholder')}
               className="w-full pl-10 pr-4 py-2 text-sm bg-background border border-border rounded-md text-text-primary placeholder-text-secondary/50 focus:ring-2 focus:ring-primary/50 focus:border-primary transition-colors"
             />
           </div>
@@ -293,10 +322,10 @@ export default function NetworkDevices() {
           <div className="flex flex-col items-center justify-center py-12">
             <Network className="w-12 h-12 text-text-secondary/40 mb-3" />
             <p className="text-sm text-text-secondary mb-1">
-              {searchQuery ? '未找到匹配的设备' : '暂无网络设备'}
+              {searchQuery ? t('networkDevices.empty.noMatch') : t('networkDevices.empty.title')}
             </p>
             <p className="text-xs text-text-secondary/60 mb-4">
-              {searchQuery ? '尝试更换搜索条件' : '点击"新建设备"添加第一个网络设备'}
+              {searchQuery ? t('networkDevices.empty.adjustSearch') : t('networkDevices.empty.desc')}
             </p>
             {!searchQuery && (
               <button
@@ -304,7 +333,7 @@ export default function NetworkDevices() {
                 className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-600 to-blue-700 text-white text-sm font-medium rounded-md hover:from-blue-500 hover:to-blue-600 transition-all shadow-lg shadow-blue-600/20"
               >
                 <Plus className="w-4 h-4" />
-                新建设备
+                {t('networkDevices.actions.newDevice')}
               </button>
             )}
           </div>
@@ -320,7 +349,7 @@ export default function NetworkDevices() {
                 ) : (
                   <Square className="w-4 h-4 text-text-secondary" />
                 )}
-                全选 ({selectedDevices.size}/{filteredDevices.length})
+                {t('networkDevices.selectAll', { selected: selectedDevices.size, total: filteredDevices.length })}
               </button>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -370,7 +399,7 @@ export default function NetworkDevices() {
           <div className="bg-surface border border-border rounded-xl shadow-2xl w-full max-w-md mx-4">
             <div className="flex items-center justify-between px-6 py-4 border-b border-border">
               <h3 className="text-base font-medium text-text-primary">
-                巡检 - {inspectingDevice.name}
+                {t('networkDevices.inspect.title', { name: inspectingDevice.name })}
               </h3>
               <button
                 onClick={() => setShowInspectionModal(false)}
@@ -383,35 +412,35 @@ export default function NetworkDevices() {
             <div className="p-6">
               {inspectionType === 'standard' ? (
                 <div className="space-y-3">
-                  <p className="text-sm text-text-secondary">标准巡检将检查以下项目：</p>
+                  <p className="text-sm text-text-secondary">{t('networkDevices.inspect.standardDesc')}</p>
                   <div className="grid grid-cols-2 gap-2 text-xs">
-                    {['CPU 使用率', '内存使用率', '接口状态', '版本信息', '路由表', '系统日志', '环境状态', '电源/风扇'].map(item => (
-                      <div key={item} className="flex items-center gap-2 text-text-secondary">
+                    {standardInspectionItems.map(itemKey => (
+                      <div key={itemKey} className="flex items-center gap-2 text-text-secondary">
                         <CheckCircle2 className="w-3 h-3 text-green-500" />
-                        {item}
+                        {t(itemKey)}
                       </div>
                     ))}
                   </div>
                 </div>
               ) : inspectionType === 'custom' ? (
                 <div className="space-y-3">
-                  <label className="block text-sm font-medium text-text-primary">巡检需求描述</label>
+                  <label className="block text-sm font-medium text-text-primary">{t('networkDevices.inspect.customLabel')}</label>
                   <textarea
                     value={customDescription}
                     onChange={(e) => setCustomDescription(e.target.value)}
-                    placeholder="例如：检查 BGP 邻居状态，查看 ACL 配置..."
+                    placeholder={t('networkDevices.inspect.customPlaceholder')}
                     className="w-full h-24 px-3 py-2 text-sm bg-background border border-border rounded-md text-text-primary placeholder-text-secondary/50 focus:ring-2 focus:ring-primary/50 focus:border-primary resize-none transition-colors"
                   />
-                  <p className="text-xs text-text-secondary/60">系统将通过知识库检索相关命令并分析结果</p>
+                  <p className="text-xs text-text-secondary/60">{t('networkDevices.inspect.customHelp')}</p>
                 </div>
               ) : (
                 <div className="space-y-3">
-                  <p className="text-sm text-text-secondary">全面巡检将执行所有标准巡检项，包括：</p>
+                  <p className="text-sm text-text-secondary">{t('networkDevices.inspect.fullDesc')}</p>
                   <div className="grid grid-cols-2 gap-2 text-xs">
-                    {['CPU', '内存', '接口', '版本', '路由', '日志', '环境', '电源', '风扇', 'STP', 'VLAN', 'ARP', 'MAC'].map(item => (
-                      <div key={item} className="flex items-center gap-2 text-text-secondary">
+                    {fullInspectionItems.map(itemKey => (
+                      <div key={itemKey} className="flex items-center gap-2 text-text-secondary">
                         <CheckCircle2 className="w-3 h-3 text-primary" />
-                        {item}
+                        {t(itemKey)}
                       </div>
                     ))}
                   </div>
@@ -424,7 +453,7 @@ export default function NetworkDevices() {
                 onClick={() => setShowInspectionModal(false)}
                 className="px-4 py-2 text-sm text-text-secondary hover:text-text-primary transition-colors rounded-md"
               >
-                取消
+                {t('common.cancel')}
               </button>
               <button
                 onClick={executeInspection}
@@ -434,12 +463,12 @@ export default function NetworkDevices() {
                 {isInspecting ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    巡检中...
+                    {t('networkDevices.inspect.inspecting')}
                   </>
                 ) : (
                   <>
                     <Wifi className="w-4 h-4" />
-                    开始巡检
+                    {t('networkDevices.inspect.start')}
                   </>
                 )}
               </button>
@@ -453,7 +482,7 @@ export default function NetworkDevices() {
           <div className="bg-surface border border-border rounded-xl shadow-2xl w-full max-w-md mx-4">
             <div className="flex items-center justify-between px-6 py-4 border-b border-border">
               <h3 className="text-base font-medium text-text-primary">
-                批量巡检 ({selectedDevices.size} 台设备)
+                {t('networkDevices.batch.title', { count: selectedDevices.size })}
               </h3>
               <button
                 onClick={() => setShowBatchModal(false)}
@@ -466,8 +495,8 @@ export default function NetworkDevices() {
               <div className="flex items-start gap-3 p-4 bg-amber-500/10 border border-amber-500/30 rounded-lg">
                 <AlertTriangle className="w-5 h-5 text-amber-500 flex-shrink-0 mt-0.5" />
                 <div className="text-sm text-amber-300">
-                  <p className="font-medium mb-1">确认批量巡检</p>
-                  <p>将对 {selectedDevices.size} 台设备执行标准巡检，此操作可能需要较长时间。</p>
+                  <p className="font-medium mb-1">{t('networkDevices.batch.confirmTitle')}</p>
+                  <p>{t('networkDevices.batch.confirmDesc', { count: selectedDevices.size })}</p>
                 </div>
               </div>
             </div>
@@ -476,7 +505,7 @@ export default function NetworkDevices() {
                 onClick={() => setShowBatchModal(false)}
                 className="px-4 py-2 text-sm text-text-secondary hover:text-text-primary transition-colors rounded-md"
               >
-                取消
+                {t('common.cancel')}
               </button>
               <button
                 onClick={executeBatchInspection}
@@ -486,12 +515,12 @@ export default function NetworkDevices() {
                 {isBatchInspecting ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    巡检中...
+                    {t('networkDevices.inspect.inspecting')}
                   </>
                 ) : (
                   <>
                     <ClipboardCheck className="w-4 h-4" />
-                    确认巡检
+                    {t('networkDevices.batch.confirm')}
                   </>
                 )}
               </button>
@@ -525,25 +554,25 @@ export default function NetworkDevices() {
                   <Trash2 className="w-5 h-5 text-red-500" />
                 </div>
                 <div>
-                  <h3 className="text-base font-medium text-text-primary">确认删除</h3>
-                  <p className="text-sm text-text-secondary">此操作不可撤销</p>
+                  <h3 className="text-base font-medium text-text-primary">{t('networkDevices.delete.title')}</h3>
+                  <p className="text-sm text-text-secondary">{t('networkDevices.delete.irreversible')}</p>
                 </div>
               </div>
               <p className="text-sm text-text-secondary mb-4">
-                确定要删除设备 <span className="font-medium text-text-primary">{deleteConfirmDevice.name}</span>（{deleteConfirmDevice.ip_address}）吗？
+                {t('networkDevices.delete.confirmPrefix')} <span className="font-medium text-text-primary">{deleteConfirmDevice.name}</span> ({deleteConfirmDevice.ip_address}){t('networkDevices.delete.confirmSuffix')}
               </p>
               <div className="flex items-center justify-end gap-2">
                 <button
                   onClick={() => setDeleteConfirmDevice(null)}
                   className="px-4 py-2 text-sm text-text-secondary hover:text-text-primary transition-colors rounded-md"
                 >
-                  取消
+                  {t('common.cancel')}
                 </button>
                 <button
                   onClick={confirmDelete}
                   className="px-4 py-2 text-sm bg-red-600 text-white font-medium rounded-md hover:bg-red-500 transition-colors shadow-lg shadow-red-600/20"
                 >
-                  确认删除
+                  {t('networkDevices.delete.confirmDelete')}
                 </button>
               </div>
             </div>

@@ -1,5 +1,6 @@
 import { Network, MoreHorizontal, Cpu, Wifi, History, Play, Settings, Edit, Trash2 } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
+import { useLocale, type MessageKey } from '../contexts/LocaleContext';
 
 interface NetworkDevice {
   id: string;
@@ -28,22 +29,27 @@ interface NetworkDeviceCardProps {
   onHistory: (device: NetworkDevice) => void;
 }
 
-const vendorConfig: Record<string, { label: string; color: string; bgClass: string; icon: string }> = {
-  huawei: { label: '华为', color: 'text-red-400', bgClass: 'bg-red-500/10 border border-red-500/20', icon: '🔴' },
-  cisco: { label: '思科', color: 'text-blue-400', bgClass: 'bg-blue-500/10 border border-blue-500/20', icon: '🔵' },
-  h3c: { label: '华三', color: 'text-green-400', bgClass: 'bg-green-500/10 border border-green-500/20', icon: '' },
-  ruijie: { label: '锐捷', color: 'text-purple-400', bgClass: 'bg-purple-500/10 border border-purple-500/20', icon: '🟣' },
-  zte: { label: '中兴', color: 'text-orange-400', bgClass: 'bg-orange-500/10 border border-orange-500/20', icon: '' }
+type VendorPresentation = { labelKey: MessageKey | null; color: string; bgClass: string; icon: string };
+type RolePresentation = { icon: string; labelKey: MessageKey | null };
+
+const vendorConfig: Record<string, VendorPresentation> = {
+  huawei: { labelKey: 'networkDevices.vendor.huawei', color: 'text-red-400', bgClass: 'bg-red-500/10 border border-red-500/20', icon: '🔴' },
+  cisco: { labelKey: 'networkDevices.vendor.cisco', color: 'text-blue-400', bgClass: 'bg-blue-500/10 border border-blue-500/20', icon: '🔵' },
+  h3c: { labelKey: 'networkDevices.vendor.h3c', color: 'text-green-400', bgClass: 'bg-green-500/10 border border-green-500/20', icon: '' },
+  ruijie: { labelKey: 'networkDevices.vendor.ruijie', color: 'text-purple-400', bgClass: 'bg-purple-500/10 border border-purple-500/20', icon: '🟣' },
+  zte: { labelKey: 'networkDevices.vendor.zte', color: 'text-orange-400', bgClass: 'bg-orange-500/10 border border-orange-500/20', icon: '' }
 };
 
-const roleIcons: Record<string, { icon: string; label: string }> = {
-  router: { icon: '🌐', label: '路由器' },
-  switch: { icon: '🔀', label: '交换机' },
-  firewall: { icon: '🛡️', label: '防火墙' },
-  ap: { icon: '📡', label: 'AP' }
+const roleIcons: Record<string, RolePresentation> = {
+  router: { icon: '🌐', labelKey: 'networkDevices.role.router' },
+  switch: { icon: '🔀', labelKey: 'networkDevices.role.switch' },
+  firewall: { icon: '🛡️', labelKey: 'networkDevices.role.firewall' },
+  ap: { icon: '📡', labelKey: 'networkDevices.role.ap' },
+  other: { icon: '📦', labelKey: 'networkDevices.role.other' }
 };
 
 export default function NetworkDeviceCard({ device, onEdit, onDelete, onInspect, onTestConnection, onHistory }: NetworkDeviceCardProps) {
+  const { locale, t } = useLocale();
   const [showMenu, setShowMenu] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
@@ -71,23 +77,25 @@ export default function NetworkDeviceCard({ device, onEdit, onDelete, onInspect,
     setShowMenu(!showMenu);
   };
 
-  const vendor = vendorConfig[device.vendor] || { label: device.vendor, color: 'text-text-secondary', bgClass: 'bg-surface border border-border', icon: '⚪' };
-  const role = roleIcons[device.role || ''] || { icon: '📦', label: device.role || '设备' };
+  const vendor = vendorConfig[device.vendor] || { labelKey: null, color: 'text-text-secondary', bgClass: 'bg-surface border border-border', icon: '⚪' };
+  const role = roleIcons[device.role || ''] || { icon: '📦', labelKey: null };
+  const vendorLabel = vendor.labelKey ? t(vendor.labelKey) : device.vendor;
+  const roleLabel = role.labelKey ? t(role.labelKey) : device.role || t('networkDevices.role.device');
 
   const statusColor = device.status === 'online' ? 'bg-green-500' : 'bg-gray-500';
-  const statusText = device.status === 'online' ? '在线' : '离线';
+  const statusText = device.status === 'online' ? t('common.online') : t('common.offline');
 
   const formatLastInspection = (date?: string) => {
-    if (!date) return '未巡检';
+    if (!date) return t('networkDevices.card.notInspected');
     const d = new Date(date);
     const now = new Date();
     const diff = now.getTime() - d.getTime();
     const hours = Math.floor(diff / (1000 * 60 * 60));
-    if (hours < 1) return `${Math.floor(diff / (1000 * 60))} 分钟前`;
-    if (hours < 24) return `${hours} 小时前`;
+    if (hours < 1) return t('networkDevices.card.minutesAgo', { count: Math.max(0, Math.floor(diff / (1000 * 60))) });
+    if (hours < 24) return t('networkDevices.card.hoursAgo', { count: hours });
     const days = Math.floor(hours / 24);
-    if (days < 7) return `${days} 天前`;
-    return d.toLocaleDateString('zh-CN');
+    if (days < 7) return t('networkDevices.card.daysAgo', { count: days });
+    return d.toLocaleDateString(locale === 'zh-CN' ? 'zh-CN' : 'en-US');
   };
 
   return (
@@ -122,21 +130,21 @@ export default function NetworkDeviceCard({ device, onEdit, onDelete, onInspect,
                   className="w-full flex items-center gap-2 px-3 py-2 text-xs text-text-secondary hover:text-text-primary hover:bg-background transition-colors"
                 >
                   <Play className="w-3 h-3" />
-                  标准巡检
+                  {t('networkDevices.inspect.standard')}
                 </button>
                 <button
                   onClick={() => { setShowMenu(false); onInspect(device, 'full'); }}
                   className="w-full flex items-center gap-2 px-3 py-2 text-xs text-text-secondary hover:text-text-primary hover:bg-background transition-colors"
                 >
                   <Cpu className="w-3 h-3" />
-                  全面巡检
+                  {t('networkDevices.inspect.full')}
                 </button>
                 <button
                   onClick={() => { setShowMenu(false); onInspect(device, 'custom'); }}
                   className="w-full flex items-center gap-2 px-3 py-2 text-xs text-text-secondary hover:text-text-primary hover:bg-background transition-colors"
                 >
                   <Settings className="w-3 h-3" />
-                  自定义巡检
+                  {t('networkDevices.inspect.custom')}
                 </button>
                 <div className="border-t border-border my-1" />
                 <button
@@ -144,14 +152,14 @@ export default function NetworkDeviceCard({ device, onEdit, onDelete, onInspect,
                   className="w-full flex items-center gap-2 px-3 py-2 text-xs text-text-secondary hover:text-text-primary hover:bg-background transition-colors"
                 >
                   <Wifi className="w-3 h-3" />
-                  测试连接
+                  {t('networkDevices.actions.testConnection')}
                 </button>
                 <button
                   onClick={() => { setShowMenu(false); onHistory(device); }}
                   className="w-full flex items-center gap-2 px-3 py-2 text-xs text-text-secondary hover:text-text-primary hover:bg-background transition-colors"
                 >
                   <History className="w-3 h-3" />
-                  巡检历史
+                  {t('networkDevices.actions.history')}
                 </button>
                 <div className="border-t border-border my-1" />
                 <button
@@ -159,14 +167,14 @@ export default function NetworkDeviceCard({ device, onEdit, onDelete, onInspect,
                   className="w-full flex items-center gap-2 px-3 py-2 text-xs text-text-secondary hover:text-text-primary hover:bg-background transition-colors"
                 >
                   <Edit className="w-3 h-3" />
-                  编辑
+                  {t('common.edit')}
                 </button>
                 <button
                   onClick={() => { setShowMenu(false); onDelete(device); }}
                   className="w-full flex items-center gap-2 px-3 py-2 text-xs text-red-400 hover:bg-red-500/10 transition-colors"
                 >
                   <Trash2 className="w-3 h-3" />
-                  删除
+                  {t('common.delete')}
                 </button>
               </div>
             )}
@@ -175,7 +183,7 @@ export default function NetworkDeviceCard({ device, onEdit, onDelete, onInspect,
 
         <div className="flex items-center gap-2 mb-3">
           <span className={`px-2 py-0.5 text-xs font-medium rounded ${vendor.bgClass} ${vendor.color}`}>
-            {vendor.icon} {vendor.label}
+            {vendor.icon} {vendorLabel}
           </span>
           {device.model && (
             <span className="px-2 py-0.5 text-xs text-text-secondary bg-background border border-border rounded">
@@ -183,31 +191,31 @@ export default function NetworkDeviceCard({ device, onEdit, onDelete, onInspect,
             </span>
           )}
           <span className="px-2 py-0.5 text-xs text-text-secondary bg-background border border-border rounded">
-            {role.icon} {role.label}
+            {role.icon} {roleLabel}
           </span>
         </div>
 
         <div className="space-y-2 text-xs">
           {device.location && (
             <div className="flex items-center justify-between">
-              <span className="text-text-secondary">位置</span>
+              <span className="text-text-secondary">{t('networkDevices.card.location')}</span>
               <span className="font-medium text-text-primary">{device.location}</span>
             </div>
           )}
           <div className="flex items-center justify-between">
-            <span className="text-text-secondary">状态</span>
+            <span className="text-text-secondary">{t('common.status')}</span>
             <div className="flex items-center gap-1.5">
               <span className={`w-2 h-2 rounded-full ${statusColor}`} />
               <span className="font-medium text-text-primary">{statusText}</span>
             </div>
           </div>
           <div className="flex items-center justify-between">
-            <span className="text-text-secondary">最后巡检</span>
+            <span className="text-text-secondary">{t('networkDevices.card.lastInspection')}</span>
             <span className="font-medium text-text-primary">{formatLastInspection(device.last_inspection_at)}</span>
           </div>
           {device.last_inspection_result && (
             <div className="flex items-center justify-between">
-              <span className="text-text-secondary">巡检结果</span>
+              <span className="text-text-secondary">{t('networkDevices.card.inspectionResult')}</span>
               <span className="font-medium text-text-primary truncate max-w-[100px]">{device.last_inspection_result}</span>
             </div>
           )}
@@ -220,27 +228,27 @@ export default function NetworkDeviceCard({ device, onEdit, onDelete, onInspect,
           className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-primary hover:bg-primary/10 rounded-md transition-colors"
         >
           <Play className="w-3 h-3" />
-          一键巡检
+          {t('networkDevices.actions.quickInspect')}
         </button>
         <div className="flex items-center gap-1">
           <button
             onClick={() => onTestConnection(device)}
             className="p-1.5 text-text-secondary hover:text-green-400 hover:bg-green-500/10 rounded-md transition-colors"
-            title="测试连接"
+            title={t('networkDevices.actions.testConnection')}
           >
             <Wifi className="w-3.5 h-3.5" />
           </button>
           <button
             onClick={() => onHistory(device)}
             className="p-1.5 text-text-secondary hover:text-primary hover:bg-primary/10 rounded-md transition-colors"
-            title="巡检历史"
+            title={t('networkDevices.actions.history')}
           >
             <History className="w-3.5 h-3.5" />
           </button>
           <button
             onClick={() => onEdit(device)}
             className="p-1.5 text-text-secondary hover:text-text-primary hover:bg-surface rounded-md transition-colors"
-            title="编辑"
+            title={t('common.edit')}
           >
             <Edit className="w-3.5 h-3.5" />
           </button>
