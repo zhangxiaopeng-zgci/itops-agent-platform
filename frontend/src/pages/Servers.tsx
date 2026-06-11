@@ -1215,20 +1215,20 @@ ${serverInfo.disk_gb ? `磁盘大小：${serverInfo.disk_gb}GB` : ''}
         <div className="bg-surface border border-border rounded-lg p-6">
           <div className="flex items-center justify-between mb-6">
             <div>
-              <h2 className="text-lg font-bold text-text-primary">合规检查结果</h2>
+              <h2 className="text-lg font-bold text-text-primary">{t('servers.compliance.resultsTitle')}</h2>
               <p className="text-sm text-text-secondary">{selectedServer.name} - {selectedServer.hostname}</p>
             </div>
             {isRunningCompliance && (
               <div className="flex items-center gap-2 text-sm text-text-secondary">
                 <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-                正在执行检查...
+                {t('servers.compliance.running')}
               </div>
             )}
           </div>
 
           {/* 合规检查选项 */}
           <div className="mb-6 p-4 bg-background rounded-lg border border-border">
-            <h3 className="text-sm font-medium text-text-primary mb-4">检查选项</h3>
+            <h3 className="text-sm font-medium text-text-primary mb-4">{t('servers.compliance.options')}</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <label className="flex items-center gap-3 cursor-pointer p-3 rounded-lg hover:bg-surface/50 transition-colors border border-transparent hover:border-border">
                 <div className="relative">
@@ -1250,23 +1250,23 @@ ${serverInfo.disk_gb ? `磁盘大小：${serverInfo.disk_gb}GB` : ''}
                 </div>
                 <div className="flex flex-col flex-1">
                   <div className="flex items-center gap-2">
-                    <span className="text-sm font-semibold text-text-primary">AI 智能分析</span>
+                    <span className="text-sm font-semibold text-text-primary">{t('servers.compliance.aiAnalysis')}</span>
                     {complianceOptions.useAI && (
-                      <span className="text-[10px] px-1.5 py-0.5 bg-primary/10 text-primary rounded-full font-medium">推荐</span>
+                      <span className="text-[10px] px-1.5 py-0.5 bg-primary/10 text-primary rounded-full font-medium">{t('servers.compliance.recommended')}</span>
                     )}
                   </div>
                   <span className="text-xs text-text-tertiary mt-0.5">
                     {complianceOptions.useAI 
-                      ? '🤖 对检查结果进行智能分析，给出专业建议' 
-                      : '⚡ 仅执行命令，检查速度提升 60%'
+                      ? t('servers.compliance.aiDesc')
+                      : t('servers.compliance.fastDesc')
                     }
                   </span>
                 </div>
               </label>
               <div className="flex items-center gap-3 p-2 rounded-lg">
                 <div className="flex flex-col">
-                  <span className="text-sm font-medium text-text-primary">并发执行数</span>
-                  <span className="text-xs text-text-secondary mt-0.5">同时执行的检查命令数量</span>
+                  <span className="text-sm font-medium text-text-primary">{t('servers.compliance.concurrency')}</span>
+                  <span className="text-xs text-text-secondary mt-0.5">{t('servers.compliance.concurrencyDesc')}</span>
                 </div>
                 <select
                   value={complianceOptions.concurrency}
@@ -1279,10 +1279,10 @@ ${serverInfo.disk_gb ? `磁盘大小：${serverInfo.disk_gb}GB` : ''}
                   disabled={isRunningCompliance}
                   className="ml-auto w-28 bg-surface border border-border rounded-lg px-3 py-1.5 text-sm text-text-primary font-medium"
                 >
-                  <option value={3}>3 (较慢)</option>
-                  <option value={5}>5 (推荐)</option>
-                  <option value={8}>8 (较快)</option>
-                  <option value={10}>10 (最快)</option>
+                  <option value={3}>{t('servers.compliance.speed.slow')}</option>
+                  <option value={5}>{t('servers.compliance.speed.recommended')}</option>
+                  <option value={8}>{t('servers.compliance.speed.fast')}</option>
+                  <option value={10}>{t('servers.compliance.speed.fastest')}</option>
                 </select>
               </div>
             </div>
@@ -1300,7 +1300,7 @@ ${serverInfo.disk_gb ? `磁盘大小：${serverInfo.disk_gb}GB` : ''}
                       'px-2 py-1 rounded text-xs font-medium',
                       result.success ? 'bg-status-success/10 text-status-success' : 'bg-status-failed/10 text-status-failed'
                     )}>
-                      {result.success ? '成功' : '失败'}
+                      {result.success ? t('common.success') : t('common.failed')}
                     </span>
                   </div>
                   
@@ -1309,7 +1309,7 @@ ${serverInfo.disk_gb ? `磁盘大小：${serverInfo.disk_gb}GB` : ''}
                     <div className="mb-3 p-3 bg-primary/5 border border-primary/20 rounded-lg">
                       <div className="flex items-center gap-2 mb-2">
                         <div className="w-5 h-5 text-primary">🤖</div>
-                        <span className="text-sm font-medium text-primary">AI 分析建议</span>
+                        <span className="text-sm font-medium text-primary">{t('servers.compliance.aiSuggestions')}</span>
                       </div>
                       <p className="text-sm text-text-secondary whitespace-pre-wrap">{result.aiAnalysis}</p>
                     </div>
@@ -1317,13 +1317,13 @@ ${serverInfo.disk_gb ? `磁盘大小：${serverInfo.disk_gb}GB` : ''}
                   
                   <details className="mt-2">
                     <summary className="text-xs text-text-secondary cursor-pointer hover:text-text-primary">
-                      查看原始命令和输出
+                      {t('servers.compliance.viewRaw')}
                     </summary>
                     <div className="mt-2">
-                      <div className="text-sm text-text-secondary mb-1">命令: <code className="font-mono text-xs bg-surface px-1 rounded">{result.command}</code></div>
+                      <div className="text-sm text-text-secondary mb-1">{t('servers.command.command')}: <code className="font-mono text-xs bg-surface px-1 rounded">{result.command}</code></div>
                       {result.stdout && (
                         <div className="mt-2">
-                          <p className="text-xs text-text-secondary mb-1">输出:</p>
+                          <p className="text-xs text-text-secondary mb-1">{t('common.output')}:</p>
                           <pre className="bg-surface p-3 rounded text-xs overflow-x-auto text-text-primary font-mono max-h-40 overflow-y-auto">
                             {result.stdout}
                           </pre>
@@ -1331,7 +1331,7 @@ ${serverInfo.disk_gb ? `磁盘大小：${serverInfo.disk_gb}GB` : ''}
                       )}
                       {result.stderr && (
                         <div className="mt-2">
-                          <p className="text-xs text-status-warning mb-1">错误:</p>
+                          <p className="text-xs text-status-warning mb-1">{t('common.error')}:</p>
                           <pre className="bg-status-failed/5 p-3 rounded text-xs overflow-x-auto text-status-failed font-mono max-h-40 overflow-y-auto">
                             {result.stderr}
                           </pre>
@@ -1345,7 +1345,7 @@ ${serverInfo.disk_gb ? `磁盘大小：${serverInfo.disk_gb}GB` : ''}
           ) : (
             <div className="text-center py-12 text-text-secondary">
               <ShieldCheck className="w-12 h-12 mx-auto mb-4 opacity-50" />
-              <p>点击&quot;合规检查&quot;按钮开始执行检查</p>
+              <p>{t('servers.compliance.empty')}</p>
             </div>
           )}
 
@@ -1357,7 +1357,7 @@ ${serverInfo.disk_gb ? `磁盘大小：${serverInfo.disk_gb}GB` : ''}
                 className="flex items-center gap-2 px-6 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors"
               >
                 <Settings className="w-4 h-4" />
-                重新执行检查（设置选项）
+                {t('servers.compliance.rerun')}
               </button>
             </div>
           )}
@@ -1377,20 +1377,20 @@ ${serverInfo.disk_gb ? `磁盘大小：${serverInfo.disk_gb}GB` : ''}
           link.click();
           link.remove();
         } catch (error) {
-          console.error('导出失败:', error);
+          console.error('Export failed:', error);
         }
       };
 
       return (
         <div className="bg-surface border border-border rounded-lg p-6">
           <div className="flex items-center justify-between mb-6">
-            <h2 className="text-lg font-bold text-text-primary">命令历史 - {selectedServer.name}</h2>
+            <h2 className="text-lg font-bold text-text-primary">{t('servers.history.commandTitle', { name: selectedServer.name })}</h2>
             <button
               onClick={handleExportCommandHistory}
               className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors"
             >
               <span>📥</span>
-              导出历史
+              {t('servers.history.export')}
             </button>
           </div>
           <div className="space-y-4">
@@ -1400,14 +1400,14 @@ ${serverInfo.disk_gb ? `磁盘大小：${serverInfo.disk_gb}GB` : ''}
                   <div className="flex items-center gap-2">
                     <Terminal className="w-4 h-4 text-text-secondary" />
                     <span className="text-xs text-text-secondary">
-                      {new Date(item.executed_at).toLocaleString()}
+                      {new Date(item.executed_at).toLocaleString(locale === 'zh-CN' ? 'zh-CN' : 'en-US')}
                     </span>
                   </div>
                   <span className={clsx(
                     'px-2 py-1 rounded text-xs font-medium',
                     item.success ? 'bg-status-success/10 text-status-success' : 'bg-status-failed/10 text-status-failed'
                   )}>
-                    {item.success ? '成功' : '失败'}
+                    {item.success ? t('common.success') : t('common.failed')}
                   </span>
                 </div>
                 <div className="mb-2">
@@ -1418,7 +1418,7 @@ ${serverInfo.disk_gb ? `磁盘大小：${serverInfo.disk_gb}GB` : ''}
                 {item.stdout && (
                   <details className="mt-2">
                     <summary className="text-xs text-text-secondary cursor-pointer hover:text-text-primary">
-                      输出 ({item.stdout.length} 字符)
+                      {t('servers.history.outputChars', { count: item.stdout.length })}
                     </summary>
                     <pre className="mt-2 bg-surface p-3 rounded text-xs overflow-x-auto text-text-primary font-mono max-h-40 overflow-y-auto">
                       {item.stdout}
@@ -1428,7 +1428,7 @@ ${serverInfo.disk_gb ? `磁盘大小：${serverInfo.disk_gb}GB` : ''}
                 {item.stderr && (
                   <details className="mt-2">
                     <summary className="text-xs text-status-warning cursor-pointer hover:text-text-primary">
-                      错误 ({item.stderr.length} 字符)
+                      {t('servers.history.errorChars', { count: item.stderr.length })}
                     </summary>
                     <pre className="mt-2 bg-status-failed/5 p-3 rounded text-xs overflow-x-auto text-status-failed font-mono max-h-40 overflow-y-auto">
                       {item.stderr}
@@ -1440,7 +1440,7 @@ ${serverInfo.disk_gb ? `磁盘大小：${serverInfo.disk_gb}GB` : ''}
             {(!commandHistory || commandHistory.length === 0) && (
               <div className="text-center py-12 text-text-secondary">
                 <History className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                <p>暂无命令历史</p>
+                <p>{t('servers.history.noCommands')}</p>
               </div>
             )}
           </div>
@@ -1460,20 +1460,20 @@ ${serverInfo.disk_gb ? `磁盘大小：${serverInfo.disk_gb}GB` : ''}
           link.click();
           link.remove();
         } catch (error) {
-          console.error('导出失败:', error);
+          console.error('Export failed:', error);
         }
       };
 
       return (
         <div className="bg-surface border border-border rounded-lg p-6">
           <div className="flex items-center justify-between mb-6">
-            <h2 className="text-lg font-bold text-text-primary">合规检查历史 - {selectedServer.name}</h2>
+            <h2 className="text-lg font-bold text-text-primary">{t('servers.history.complianceTitle', { name: selectedServer.name })}</h2>
             <button
               onClick={handleExportComplianceHistory}
               className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors"
             >
               <span>📥</span>
-              导出历史
+              {t('servers.history.export')}
             </button>
           </div>
           <div className="space-y-4">
@@ -1487,17 +1487,17 @@ ${serverInfo.disk_gb ? `磁盘大小：${serverInfo.disk_gb}GB` : ''}
                     check.status === 'running' ? 'bg-status-running/10 text-status-running' : 
                     'bg-status-failed/10 text-status-failed'
                   )}>
-                    {check.status === 'completed' ? '已完成' : check.status === 'running' ? '执行中' : '失败'}
+                    {check.status === 'completed' ? t('status.task.completed') : check.status === 'running' ? t('status.task.running') : t('common.failed')}
                   </span>
                 </div>
                 <div className="text-xs text-text-secondary space-y-1">
-                  <p>开始: {check.started_at ? new Date(check.started_at).toLocaleString() : '-'}</p>
-                  <p>完成: {check.completed_at ? new Date(check.completed_at).toLocaleString() : '-'}</p>
+                  <p>{t('servers.history.startedAt')}: {check.started_at ? new Date(check.started_at).toLocaleString(locale === 'zh-CN' ? 'zh-CN' : 'en-US') : '-'}</p>
+                  <p>{t('servers.history.completedAt')}: {check.completed_at ? new Date(check.completed_at).toLocaleString(locale === 'zh-CN' ? 'zh-CN' : 'en-US') : '-'}</p>
                 </div>
                 {check.check_results && (
                   <details className="mt-3">
                     <summary className="text-xs text-text-secondary cursor-pointer hover:text-text-primary">
-                      查看结果
+                      {t('servers.history.viewResult')}
                     </summary>
                     <pre className="mt-2 bg-surface p-3 rounded text-xs overflow-x-auto text-text-primary font-mono max-h-60 overflow-y-auto">
                       {check.check_results}
@@ -1509,7 +1509,7 @@ ${serverInfo.disk_gb ? `磁盘大小：${serverInfo.disk_gb}GB` : ''}
             {(!complianceHistory || complianceHistory.length === 0) && (
               <div className="text-center py-12 text-text-secondary">
                 <ShieldCheck className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                <p>暂无合规检查历史</p>
+                <p>{t('servers.history.noCompliance')}</p>
               </div>
             )}
           </div>
@@ -2099,34 +2099,34 @@ ${serverInfo.disk_gb ? `磁盘大小：${serverInfo.disk_gb}GB` : ''}
         {isImportModalOpen && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
             <div className="bg-surface rounded-xl p-6 w-full max-w-4xl mx-4 max-h-[90vh] overflow-y-auto">
-              <h3 className="text-xl font-bold text-text-primary mb-4">批量导入服务器</h3>
-              <p className="text-sm text-text-secondary mb-4">每行一个 JSON 对象，包含以下字段：name, hostname, port, username, password, use_ssh_key(0/1), description, tags(逗号分隔)</p>
+              <h3 className="text-xl font-bold text-text-primary mb-4">{t('servers.import.title')}</h3>
+              <p className="text-sm text-text-secondary mb-4">{t('servers.import.desc')}</p>
               <div className="mb-4 p-3 bg-background rounded-lg">
-                <p className="text-xs text-text-secondary font-mono mb-2">示例:</p>
-                <pre className="text-xs text-text-secondary font-mono overflow-x-auto">{`{"name":"Web-01","hostname":"192.168.1.10","port":22,"username":"root","password":"xxx","use_ssh_key":0,"description":"生产服务器","tags":"prod,web"}`}</pre>
+                <p className="text-xs text-text-secondary font-mono mb-2">{t('servers.import.example')}:</p>
+                <pre className="text-xs text-text-secondary font-mono overflow-x-auto">{`{"name":"Web-01","hostname":"192.168.1.10","port":22,"username":"root","password":"xxx","use_ssh_key":0,"description":"production server","tags":"prod,web"}`}</pre>
               </div>
               <textarea
                 value={importData}
                 onChange={(e) => setImportData(e.target.value)}
-                placeholder="每行一个 JSON 对象..."
+                placeholder={t('servers.import.placeholder')}
                 rows={8}
                 className="w-full px-4 py-2 bg-background border border-border rounded-lg focus:outline-none focus:border-primary text-text-primary font-mono text-sm"
               />
               {importResult && (
                 <div className="mt-4 p-4 bg-background rounded-lg">
-                  <h4 className="font-medium text-text-primary mb-2">导入结果</h4>
+                  <h4 className="font-medium text-text-primary mb-2">{t('servers.import.result')}</h4>
                   <div className="grid grid-cols-3 gap-4 text-center">
                     <div>
                       <span className="text-2xl font-bold text-status-success">{importResult.success}</span>
-                      <p className="text-xs text-text-secondary">成功</p>
+                      <p className="text-xs text-text-secondary">{t('common.success')}</p>
                     </div>
                     <div>
                       <span className="text-2xl font-bold text-status-failed">{importResult.failed}</span>
-                      <p className="text-xs text-text-secondary">失败</p>
+                      <p className="text-xs text-text-secondary">{t('common.failed')}</p>
                     </div>
                     <div>
                       <span className="text-2xl font-bold text-text-secondary">{importResult.skipped}</span>
-                      <p className="text-xs text-text-secondary">跳过(重复)</p>
+                      <p className="text-xs text-text-secondary">{t('servers.import.skipped')}</p>
                     </div>
                   </div>
                   {importResult.details && importResult.details.length > 0 && (
@@ -2135,7 +2135,7 @@ ${serverInfo.disk_gb ? `磁盘大小：${serverInfo.disk_gb}GB` : ''}
                         <div key={i} className="flex items-center justify-between py-1 text-xs">
                           <span>{d.name} ({d.hostname})</span>
                           <span className={d.status === 'success' ? 'text-status-success' : d.status === 'duplicate' ? 'text-text-secondary' : 'text-status-failed'}>
-                            {d.status === 'success' ? '✓ 成功' : d.status === 'duplicate' ? '跳过' : `✗ ${d.error}`}
+                            {d.status === 'success' ? t('servers.import.detailSuccess') : d.status === 'duplicate' ? t('servers.import.detailSkipped') : `✗ ${d.error}`}
                           </span>
                         </div>
                       ))}
@@ -2148,7 +2148,7 @@ ${serverInfo.disk_gb ? `磁盘大小：${serverInfo.disk_gb}GB` : ''}
                   onClick={() => setIsImportModalOpen(false)}
                   className="flex-1 px-4 py-2 bg-surface border border-border text-text-primary rounded-lg hover:bg-background transition-colors"
                 >
-                  关闭
+                  {t('common.close')}
                 </button>
                 <button
                   onClick={handleImport}
@@ -2156,7 +2156,7 @@ ${serverInfo.disk_gb ? `磁盘大小：${serverInfo.disk_gb}GB` : ''}
                   className="flex-1 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors flex items-center justify-center gap-2 disabled:opacity-50"
                 >
                   <Upload className="w-4 h-4" />
-                  导入
+                  {t('servers.import.import')}
                 </button>
               </div>
             </div>
@@ -2168,39 +2168,39 @@ ${serverInfo.disk_gb ? `磁盘大小：${serverInfo.disk_gb}GB` : ''}
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
             <div className="bg-surface rounded-xl p-6 w-full max-w-md mx-4">
               <h3 className="text-xl font-bold text-text-primary mb-6">
-                {editingGroup ? '编辑分组' : '新建分组'}
+                {editingGroup ? t('servers.groups.editTitle') : t('servers.groups.newTitle')}
               </h3>
               <form onSubmit={handleGroupSubmit} className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-text-secondary mb-2">分组名称 *</label>
+                  <label className="block text-sm font-medium text-text-secondary mb-2">{t('servers.groups.name')} *</label>
                   <input
                     type="text"
                     value={groupFormData.name}
                     onChange={(e) => setGroupFormData({ ...groupFormData, name: e.target.value })}
-                    placeholder="例如: 生产环境"
+                    placeholder={t('servers.groups.namePlaceholder')}
                     className="w-full px-4 py-2 bg-background border border-border rounded-lg focus:outline-none focus:border-primary text-text-primary"
                     required
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-text-secondary mb-2">父分组</label>
+                  <label className="block text-sm font-medium text-text-secondary mb-2">{t('servers.groups.parent')}</label>
                   <select
                     value={groupFormData.parent_id}
                     onChange={(e) => setGroupFormData({ ...groupFormData, parent_id: e.target.value })}
                     className="w-full px-4 py-2 bg-background border border-border rounded-lg focus:outline-none focus:border-primary text-text-primary"
                   >
-                    <option value="">无 (根分组)</option>
+                    <option value="">{t('servers.groups.noParent')}</option>
                     {(groupsData || []).map((g) => (
                       <option key={g.id} value={g.id}>{g.name}</option>
                     ))}
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-text-secondary mb-2">描述</label>
+                  <label className="block text-sm font-medium text-text-secondary mb-2">{t('servers.form.description')}</label>
                   <textarea
                     value={groupFormData.description}
                     onChange={(e) => setGroupFormData({ ...groupFormData, description: e.target.value })}
-                    placeholder="分组描述..."
+                    placeholder={t('servers.groups.descriptionPlaceholder')}
                     rows={3}
                     className="w-full px-4 py-2 bg-background border border-border rounded-lg focus:outline-none focus:border-primary text-text-primary"
                   />
@@ -2211,14 +2211,14 @@ ${serverInfo.disk_gb ? `磁盘大小：${serverInfo.disk_gb}GB` : ''}
                     onClick={() => { setIsGroupModalOpen(false); setEditingGroup(null); }}
                     className="flex-1 px-4 py-2 bg-surface border border-border text-text-primary rounded-lg hover:bg-background transition-colors"
                   >
-                    取消
+                    {t('common.cancel')}
                   </button>
                   <button
                     type="submit"
                     className="flex-1 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors flex items-center justify-center gap-2"
                   >
                     <CheckCircle2 className="w-4 h-4" />
-                    {editingGroup ? '保存更改' : '创建分组'}
+                    {editingGroup ? t('servers.form.saveChanges') : t('servers.groups.create')}
                   </button>
                 </div>
               </form>
