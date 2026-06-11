@@ -3,6 +3,7 @@ import { Bot, GitBranch, Play, Bell, TrendingUp, TrendingDown, Minus, Clock, Ser
 import { useNavigate, Link } from 'react-router-dom';
 import api from '../lib/api';
 import { safeFormatDistance } from '../lib/date';
+import { useLocale, type MessageKey } from '../contexts/LocaleContext';
 
 interface Agent {
   id: string;
@@ -50,35 +51,36 @@ interface Knowledge {
 
 export default function Dashboard() {
   const navigate = useNavigate();
+  const { t } = useLocale();
 
   const quickActions = [
     {
-      name: '系统巡检',
-      description: '快速检查服务器状态',
+      nameKey: 'dashboard.quick.inspect.title',
+      descriptionKey: 'dashboard.quick.inspect.desc',
       icon: Activity,
       color: 'text-blue-600',
       bg: 'bg-blue-600/10',
       action: () => navigate('/workflows'),
     },
     {
-      name: '执行脚本',
-      description: '运行常用运维脚本',
+      nameKey: 'dashboard.quick.script.title',
+      descriptionKey: 'dashboard.quick.script.desc',
       icon: Zap,
       color: 'text-purple-600',
       bg: 'bg-purple-600/10',
       action: () => navigate('/scripts'),
     },
     {
-      name: '安全检查',
-      description: '执行安全合规检查',
+      nameKey: 'dashboard.quick.security.title',
+      descriptionKey: 'dashboard.quick.security.desc',
       icon: Shield,
       color: 'text-green-600',
       bg: 'bg-green-600/10',
       action: () => navigate('/workflows'),
     },
     {
-      name: '查看告警',
-      description: '查看最新系统告警',
+      nameKey: 'dashboard.quick.alerts.title',
+      descriptionKey: 'dashboard.quick.alerts.desc',
       icon: Bell,
       color: 'text-red-600',
       bg: 'bg-red-600/10',
@@ -144,42 +146,42 @@ export default function Dashboard() {
 
   const stats = [
     {
-      name: '服务器',
+      nameKey: 'dashboard.stats.servers',
       value: servers?.length || 0,
       icon: Server,
       color: 'text-purple-500',
       bg: 'bg-purple-500/10',
     },
     {
-      name: 'Agent总数',
+      nameKey: 'dashboard.stats.agents',
       value: agents?.length || 0,
       icon: Bot,
       color: 'text-blue-500',
       bg: 'bg-blue-500/10',
     },
     {
-      name: '工作流模板',
+      nameKey: 'dashboard.stats.workflowTemplates',
       value: workflows?.filter((w) => w.is_template === 1).length || 0,
       icon: GitBranch,
       color: 'text-green-500',
       bg: 'bg-green-500/10',
     },
     {
-      name: '运行中任务',
+      nameKey: 'dashboard.stats.runningTasks',
       value: tasks?.filter((t) => t.status === 'running').length || 0,
       icon: Play,
       color: 'text-yellow-500',
       bg: 'bg-yellow-500/10',
     },
     {
-      name: '活跃告警',
+      nameKey: 'dashboard.stats.activeAlerts',
       value: alerts?.filter((a) => a.status === 'new').length || 0,
       icon: Bell,
       color: 'text-red-500',
       bg: 'bg-red-500/10',
     },
     {
-      name: '知识库',
+      nameKey: 'dashboard.stats.knowledge',
       value: knowledge?.length || 0,
       icon: BookOpen,
       color: 'text-cyan-500',
@@ -187,12 +189,26 @@ export default function Dashboard() {
     },
   ];
 
+  const formatEnabled = (enabled: number) => t(enabled ? 'status.enabled' : 'status.disabled');
+  const formatOnline = (enabled: number) => t(enabled ? 'status.online' : 'status.offline');
+  const formatUsageCount = (count: number) => t('dashboard.usageCount', { count });
+  const formatTaskStatus = (status: string) => {
+    const key = `status.task.${status}` as MessageKey;
+    const text = t(key);
+    return text === key ? status : text;
+  };
+  const formatSeverity = (severity: string) => {
+    const key = `status.severity.${severity}` as MessageKey;
+    const text = t(key);
+    return text === key ? severity : text;
+  };
+
   return (
     <div className="h-full overflow-auto p-6">
       <div className="space-y-6">
         <div>
-          <h1 className="text-2xl font-bold text-text-primary mb-2">仪表盘</h1>
-          <p className="text-text-secondary">AIOps Agent 智能运维平台概览</p>
+          <h1 className="text-2xl font-bold text-text-primary mb-2">{t('dashboard.title')}</h1>
+          <p className="text-text-secondary">{t('dashboard.subtitle')}</p>
         </div>
 
         {isLoading ? (
@@ -212,7 +228,7 @@ export default function Dashboard() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {stats.map((stat) => (
             <div
-              key={stat.name}
+              key={stat.nameKey}
               className="bg-surface rounded-xl p-6 border border-border hover:border-primary/50 hover:shadow-lg hover:shadow-primary/10 transition-all"
             >
               <div className="flex items-center justify-between mb-4">
@@ -228,7 +244,7 @@ export default function Dashboard() {
               <h3 className="text-3xl font-bold text-text-primary mb-1">
                 {stat.value}
               </h3>
-              <p className="text-sm text-text-secondary">{stat.name}</p>
+              <p className="text-sm text-text-secondary">{t(stat.nameKey as MessageKey)}</p>
             </div>
           ))}
         </div>
@@ -238,21 +254,21 @@ export default function Dashboard() {
           <div className="flex items-center justify-between mb-6">
             <h2 className="text-lg font-semibold text-text-primary flex items-center gap-2">
               <Zap className="w-5 h-5 text-primary" />
-              一键执行
+              {t('dashboard.quickActions')}
             </h2>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             {quickActions.map((action) => (
               <button
-                key={action.name}
+                key={action.nameKey}
                 onClick={action.action}
                 className="p-4 rounded-xl bg-background hover:bg-background/80 border border-border hover:border-primary/50 transition-all text-left group"
               >
                 <div className={`w-12 h-12 rounded-lg ${action.bg} flex items-center justify-center mb-3 group-hover:scale-110 transition-transform`}>
                   <action.icon className={`w-6 h-6 ${action.color}`} />
                 </div>
-                <h3 className="font-semibold text-text-primary mb-1">{action.name}</h3>
-                <p className="text-sm text-text-secondary">{action.description}</p>
+                <h3 className="font-semibold text-text-primary mb-1">{t(action.nameKey as MessageKey)}</h3>
+                <p className="text-sm text-text-secondary">{t(action.descriptionKey as MessageKey)}</p>
               </button>
             ))}
           </div>
@@ -263,10 +279,10 @@ export default function Dashboard() {
             <div className="flex items-center justify-between mb-6">
               <h2 className="text-lg font-semibold text-text-primary flex items-center gap-2">
                 <Server className="w-5 h-5 text-purple-500" />
-                服务器
+                {t('dashboard.sections.servers')}
               </h2>
               <Link to="/servers" className="text-sm text-primary hover:underline">
-                查看全部
+                {t('common.viewAll')}
               </Link>
             </div>
             <div className="space-y-3">
@@ -289,7 +305,7 @@ export default function Dashboard() {
                         : 'bg-status-failed/10 text-status-failed'
                     }`}
                   >
-                    {server.enabled ? '启用' : '禁用'}
+                    {formatEnabled(server.enabled)}
                   </span>
                 </div>
               ))}
@@ -298,13 +314,13 @@ export default function Dashboard() {
                   <div className="p-4 rounded-xl bg-surface border border-border mb-3">
                     <Server className="w-8 h-8 text-text-secondary opacity-50" />
                   </div>
-                  <p className="text-sm text-text-secondary mb-2">暂无服务器</p>
-                  <p className="text-xs text-text-tertiary mb-3">添加服务器以开始管理</p>
+                  <p className="text-sm text-text-secondary mb-2">{t('dashboard.empty.servers.title')}</p>
+                  <p className="text-xs text-text-tertiary mb-3">{t('dashboard.empty.servers.desc')}</p>
                   <button
                     onClick={() => navigate('/servers')}
                     className="px-3 py-1.5 bg-primary/10 text-primary rounded-lg text-xs hover:bg-primary/20 transition-colors"
                   >
-                    前往服务器管理
+                    {t('dashboard.empty.servers.action')}
                   </button>
                 </div>
               ) : null}
@@ -315,10 +331,10 @@ export default function Dashboard() {
             <div className="flex items-center justify-between mb-6">
               <h2 className="text-lg font-semibold text-text-primary flex items-center gap-2">
                 <Bot className="w-5 h-5 text-primary" />
-                在线Agent
+                {t('dashboard.sections.agents')}
               </h2>
               <Link to="/agents" className="text-sm text-primary hover:underline">
-                查看全部
+                {t('common.viewAll')}
               </Link>
             </div>
             <div className="space-y-3">
@@ -339,7 +355,7 @@ export default function Dashboard() {
                         : 'bg-status-failed/10 text-status-failed'
                     }`}
                   >
-                    {agent.enabled ? '在线' : '离线'}
+                    {formatOnline(agent.enabled)}
                   </span>
                 </div>
               ))}
@@ -350,10 +366,10 @@ export default function Dashboard() {
             <div className="flex items-center justify-between mb-6">
               <h2 className="text-lg font-semibold text-text-primary flex items-center gap-2">
                 <BookOpen className="w-5 h-5 text-cyan-500" />
-                知识库
+                {t('dashboard.sections.knowledge')}
               </h2>
               <Link to="/knowledge" className="text-sm text-primary hover:underline">
-                查看全部
+                {t('common.viewAll')}
               </Link>
             </div>
             <div className="space-y-3">
@@ -370,7 +386,7 @@ export default function Dashboard() {
                     <div className="flex items-center justify-between mt-1">
                       <span className="text-xs text-text-secondary">{item.category}</span>
                       <span className="text-xs text-status-success">
-                        {item.usage_count || 0} 次使用
+                        {formatUsageCount(item.usage_count || 0)}
                       </span>
                     </div>
                   </div>
@@ -381,13 +397,13 @@ export default function Dashboard() {
                   <div className="p-4 rounded-xl bg-surface border border-border mb-3">
                     <BookOpen className="w-8 h-8 text-text-secondary opacity-50" />
                   </div>
-                  <p className="text-sm text-text-secondary mb-2">暂无知识条目</p>
-                  <p className="text-xs text-text-tertiary mb-3">添加运维知识以便快速查阅</p>
+                  <p className="text-sm text-text-secondary mb-2">{t('dashboard.empty.knowledge.title')}</p>
+                  <p className="text-xs text-text-tertiary mb-3">{t('dashboard.empty.knowledge.desc')}</p>
                   <button
                     onClick={() => navigate('/knowledge')}
                     className="px-3 py-1.5 bg-cyan-500/10 text-cyan-500 rounded-lg text-xs hover:bg-cyan-500/20 transition-colors"
                   >
-                    前往知识库
+                    {t('dashboard.empty.knowledge.action')}
                   </button>
                 </div>
               ) : null}
@@ -398,10 +414,10 @@ export default function Dashboard() {
             <div className="flex items-center justify-between mb-6">
               <h2 className="text-lg font-semibold text-text-primary flex items-center gap-2">
                 <Bell className="w-5 h-5 text-red-500" />
-                最新告警
+                {t('dashboard.sections.alerts')}
               </h2>
               <Link to="/alerts" className="text-sm text-primary hover:underline">
-                查看全部
+                {t('common.viewAll')}
               </Link>
             </div>
             <div className="space-y-3">
@@ -421,7 +437,7 @@ export default function Dashboard() {
                           : 'bg-status-pending/10 text-status-pending'
                       }`}
                     >
-                      {alert.severity}
+                      {formatSeverity(alert.severity)}
                     </span>
                   </div>
                   <div className="flex items-center gap-2 text-xs text-text-secondary">
@@ -437,19 +453,19 @@ export default function Dashboard() {
             <div className="flex items-center justify-between mb-6">
               <h2 className="text-lg font-semibold text-text-primary flex items-center gap-2">
                 <Play className="w-5 h-5 text-green-500" />
-                最近任务
+                {t('dashboard.sections.tasks')}
               </h2>
               <Link to="/tasks" className="text-sm text-primary hover:underline">
-                查看全部
+                {t('common.viewAll')}
               </Link>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full">
                 <thead>
                   <tr className="text-left text-sm text-text-secondary border-b border-border">
-                    <th className="pb-3 font-medium">任务名称</th>
-                    <th className="pb-3 font-medium">状态</th>
-                    <th className="pb-3 font-medium">执行时间</th>
+                    <th className="pb-3 font-medium">{t('dashboard.tasks.name')}</th>
+                    <th className="pb-3 font-medium">{t('common.status')}</th>
+                    <th className="pb-3 font-medium">{t('dashboard.tasks.executedAt')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -468,7 +484,7 @@ export default function Dashboard() {
                               : 'bg-status-pending/10 text-status-pending'
                           }`}
                         >
-                          {task.status}
+                          {formatTaskStatus(task.status)}
                         </span>
                       </td>
                       <td className="py-3 text-sm text-text-secondary">
