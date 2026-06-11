@@ -6,6 +6,11 @@ import { resolveHermesRuntimeConfigForAgent } from '../hermesChannelService';
 import { McpRuntimeContext } from '../mcpServerService';
 import { SkillRuntimeContext } from '../skillService';
 import {
+  buildEvolutionOverlayPrompt,
+  EvolutionRuntimeOverlay,
+  resolveEvolutionRuntimeOverlay
+} from '../evolutionOverlayService';
+import {
   HermesWorkerRunMetadata,
   HermesWorkerRunTelemetry,
   isHermesWorkerFallbackEnabled,
@@ -33,6 +38,7 @@ interface HermesRuntimeConfig {
   skills?: SkillRuntimeContext[];
   mcpServers?: McpRuntimeContext[];
   temperature?: number;
+  policyId?: string | null;
 }
 
 interface HermesConnectionTestResult {
@@ -114,11 +120,20 @@ export class HermesAgentRuntime implements AgentRuntime {
     const trace: AgentTraceEvent[] = [];
     const { invokeTool, listTools } = await import('../toolApi/toolRegistry');
     const tools = getHermesTools(listTools, config.allowedTools);
-    const messages = buildInitialMessages(agent, request, config);
     const maxToolRounds = config.maxToolRounds ?? DEFAULT_MAX_TOOL_ROUNDS;
     const correlationId = typeof request.context?.correlationId === 'string' ? request.context.correlationId : undefined;
     const runtimeSkills = config.skills || [];
     const runtimeMcpServers = config.mcpServers || [];
+    const releaseOverlays = resolveEvolutionRuntimeOverlay({
+      agentId: agent.id,
+      agentName: agent.name,
+      channelId: config.channelId,
+      channelType: config.channelType,
+      policyId: config.policyId,
+      skillIds: runtimeSkills.map(skill => skill.id),
+      mcpServerIds: runtimeMcpServers.map(server => server.id)
+    });
+    const messages = buildInitialMessages(agent, request, config, releaseOverlays);
     let lastWorker: HermesWorkerRunMetadata | undefined;
 
     logger.info(`🧠 Calling Hermes runtime for agent ${agent.name}`, {
@@ -127,10 +142,26 @@ export class HermesAgentRuntime implements AgentRuntime {
       channelType: config.channelType,
       tools: tools.map(tool => tool.function.name),
       skills: runtimeSkills.map(skill => skill.id),
-      mcpServers: runtimeMcpServers.map(server => server.id)
+      mcpServers: runtimeMcpServers.map(server => server.id),
+      releaseOverlays: releaseOverlays.map(overlay => overlay.versionId)
     });
 
     let lastUsage: Record<string, unknown> | undefined;
+
+    trace.push({
+      type: 'release_overlay_resolved',
+      content: JSON.stringify({
+        count: releaseOverlays.length,
+        overlays: releaseOverlays.map(toOverlayTraceSummary)
+      }),
+      timestamp: new Date().toISOString(),
+      metadata: {
+        correlationId,
+        channelId: config.channelId,
+        channelType: config.channelType,
+        releaseOverlayVersionIds: releaseOverlays.map(overlay => overlay.versionId)
+      }
+    });
 
     for (let round = 0; round <= maxToolRounds; round++) {
       const completion = await callHermesCompletion({
@@ -192,9 +223,11 @@ export class HermesAgentRuntime implements AgentRuntime {
             channelId: config.channelId,
             channelName: config.channelName,
             channelType: config.channelType,
+            policyId: config.policyId,
             agentName: agent.name,
             correlationId,
             worker: lastWorker,
+            releaseOverlays: releaseOverlays.map(toOverlayTraceSummary),
             skills: runtimeSkills.map(skill => ({
               id: skill.id,
               name: skill.name,
@@ -465,14 +498,21 @@ function serializeRawConfig(rawConfig?: unknown): string | null {
   return typeof rawConfig === 'string' ? rawConfig : JSON.stringify(rawConfig);
 }
 
-function buildInitialMessages(agent: RuntimeAgentRecord, request: AgentRunRequest, config: HermesRuntimeConfig): ChatMessage[] {
+function buildInitialMessages(
+  agent: RuntimeAgentRecord,
+  request: AgentRunRequest,
+  config: HermesRuntimeConfig,
+  releaseOverlays: EvolutionRuntimeOverlay[]
+): ChatMessage[] {
   const skillPrompt = buildSkillPrompt(config.skills || []);
+  const overlayPrompt = buildEvolutionOverlayPrompt(releaseOverlays);
   const systemPrompt = [
     agent.system_prompt || `You are ${agent.name}, an ITOps operations assistant.`,
     'Use tools only when they help with observation, diagnosis, or read-only verification.',
     'Never claim that an action was executed unless a tool result confirms it.',
     'When tool execution is denied or requires approval, explain the policy decision and provide a safe next step.',
-    skillPrompt
+    skillPrompt,
+    overlayPrompt
   ].filter(Boolean).join('\n\n');
 
   const context = request.context && Object.keys(request.context).length > 0
@@ -483,6 +523,20 @@ function buildInitialMessages(agent: RuntimeAgentRecord, request: AgentRunReques
     { role: 'system', content: systemPrompt },
     { role: 'user', content: `${request.input}${context}` }
   ];
+}
+
+function toOverlayTraceSummary(overlay: EvolutionRuntimeOverlay): Record<string, unknown> {
+  return {
+    versionId: overlay.versionId,
+    proposalId: overlay.proposalId,
+    versionLabel: overlay.versionLabel,
+    objectType: overlay.objectType,
+    targetId: overlay.targetId,
+    patchId: overlay.patchId,
+    patchKind: overlay.patchKind,
+    operationCount: overlay.operationCount,
+    publishedAt: overlay.publishedAt
+  };
 }
 
 function buildSkillPrompt(skills: SkillRuntimeContext[]): string {
