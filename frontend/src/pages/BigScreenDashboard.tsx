@@ -15,6 +15,7 @@ import ParticleBackground from '../components/ParticleBackground';
 import AnimatedLineChart from '../components/AnimatedLineChart';
 import AnimatedBarChart from '../components/AnimatedBarChart';
 import CircularProgress from '../components/CircularProgress';
+import { useLocale, type MessageKey } from '../contexts/LocaleContext';
 
 const RETRY_CONFIG = { retry: 3, retryDelay: (attemptIndex: number) => Math.min(1000 * 2 ** attemptIndex, 5000) };
 
@@ -210,12 +211,14 @@ interface RemediationStats {
 
 export default function BigScreenDashboard() {
   const navigate = useNavigate();
+  const { locale, t } = useLocale();
+  const defaultDashboardTitle = t('bigScreen.defaultTitle');
   const [currentTime, setCurrentTime] = useState(new Date());
   const [refreshKey, setRefreshKey] = useState(0);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [dashboardTitle, setDashboardTitle] = useState(() => {
     const saved = localStorage.getItem('dashboardTitle');
-    return !saved || saved === 'ITOps 运维监控大屏' ? 'AIOps 运维监控大屏' : saved;
+    return !saved || saved === 'ITOps 运维监控大屏' || saved === 'AIOps 运维监控大屏' ? defaultDashboardTitle : saved;
   });
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [titleInputValue, setTitleInputValue] = useState(dashboardTitle);
@@ -241,10 +244,17 @@ export default function BigScreenDashboard() {
   }, []);
 
   useEffect(() => {
-    if (dashboardTitle !== 'AIOps 运维监控大屏') {
+    if (dashboardTitle !== defaultDashboardTitle) {
       localStorage.setItem('dashboardTitle', dashboardTitle);
     }
-  }, [dashboardTitle]);
+  }, [dashboardTitle, defaultDashboardTitle]);
+
+  useEffect(() => {
+    if (dashboardTitle === 'AIOps 运维监控大屏' || dashboardTitle === 'AIOps Operations Wallboard') {
+      setDashboardTitle(defaultDashboardTitle);
+      setTitleInputValue(defaultDashboardTitle);
+    }
+  }, [dashboardTitle, defaultDashboardTitle]);
 
   const handleSaveTitle = () => {
     if (titleInputValue.trim()) {
@@ -468,10 +478,10 @@ export default function BigScreenDashboard() {
   const systemHealthStatus = hasCriticalAlerts ? 'critical' : hasHighAlerts ? 'warning' : 'healthy';
 
   const getStatusFooterText = () => {
-    if (systemHealthStatus === 'critical') return '严重告警中';
-    if (systemHealthStatus === 'warning') return '存在高等级告警';
-    if ((remediationStats?.waiting_approval || 0) > 0) return '有待审批修复';
-    return '系统运行正常';
+    if (systemHealthStatus === 'critical') return t('bigScreen.status.critical');
+    if (systemHealthStatus === 'warning') return t('bigScreen.status.warning');
+    if ((remediationStats?.waiting_approval || 0) > 0) return t('bigScreen.status.pendingApproval');
+    return t('bigScreen.status.healthy');
   };
 
   const getStatusFooterColor = () => {
@@ -581,6 +591,30 @@ export default function BigScreenDashboard() {
     };
   }, [serverMetricsData, cpuData, memoryData, networkData, diskIOData]);
 
+  const formatTaskStatus = (status: string) => {
+    const key = `status.task.${status}` as MessageKey;
+    const text = t(key);
+    return text === key ? status : text;
+  };
+
+  const formatAlertStatus = (status: string) => {
+    const key = `bigScreen.alertStatus.${status}` as MessageKey;
+    const text = t(key);
+    return text === key ? status : text;
+  };
+
+  const formatSeverity = (severity: string) => {
+    const key = `status.severity.${severity}` as MessageKey;
+    const text = t(key);
+    return text === key ? severity : text;
+  };
+
+  const formatRemediationStatus = (status: string) => {
+    const key = `bigScreen.remediation.status.${status}` as MessageKey;
+    const text = t(key);
+    return text === key ? status : text;
+  };
+
   const taskDistData = (taskDistribution?.byStatus || []).map(s => {
     const colors: Record<string, string> = {
       completed: '#22c55e',
@@ -589,7 +623,7 @@ export default function BigScreenDashboard() {
       pending: '#64748b',
     };
     return {
-      label: s.status,
+      label: formatTaskStatus(s.status),
       value: s.count,
       color: colors[s.status] || '#64748b',
     };
@@ -629,15 +663,15 @@ export default function BigScreenDashboard() {
             <div className="flex items-center gap-3">
               <Bell className="w-6 h-6 text-red-300" />
               <div>
-                <span className="text-red-100 font-bold text-lg">严重告警</span>
-                <span className="text-red-200 ml-2">当前有 <span className="text-red-100 font-bold text-xl">{criticalAlertCount}</span> 个严重级别告警需要处理</span>
+                <span className="text-red-100 font-bold text-lg">{t('bigScreen.critical.title')}</span>
+                <span className="text-red-200 ml-2">{t('bigScreen.critical.message', { count: criticalAlertCount })}</span>
               </div>
             </div>
             <button
               onClick={() => navigate('/alerts')}
               className="px-4 py-2 bg-red-500/30 hover:bg-red-500/50 border border-red-400/50 rounded-lg text-red-100 font-medium text-sm flex items-center gap-2 transition-all"
             >
-              立即查看 <ChevronRight className="w-4 h-4" />
+              {t('bigScreen.critical.action')} <ChevronRight className="w-4 h-4" />
             </button>
           </div>
         )}
@@ -646,15 +680,15 @@ export default function BigScreenDashboard() {
           <div className="mb-3 px-4 py-3 bg-red-900/40 border border-red-500/50 rounded-xl backdrop-blur-md flex items-center justify-between">
             <div className="flex items-center gap-2">
               <AlertCircle className="w-5 h-5 text-red-400 animate-pulse" />
-              <span className="text-red-200 font-medium">后端服务连接异常</span>
-              <span className="text-red-300 text-sm">数据可能不是最新的</span>
+              <span className="text-red-200 font-medium">{t('bigScreen.error.backend')}</span>
+              <span className="text-red-300 text-sm">{t('bigScreen.error.staleData')}</span>
             </div>
             <button
               onClick={refreshData}
               className="px-3 py-1.5 bg-red-500/20 hover:bg-red-500/30 border border-red-500/30 rounded-lg text-red-200 text-sm flex items-center gap-1 transition-all"
             >
               <RefreshCcw className="w-3 h-3" />
-              重试
+              {t('common.refresh')}
             </button>
           </div>
         )}
@@ -672,20 +706,20 @@ export default function BigScreenDashboard() {
                     if (e.key === 'Escape') handleCancelEditTitle();
                   }}
                   className="px-4 py-2 bg-slate-800/80 backdrop-blur-md border border-blue-500/50 rounded-lg text-white text-2xl font-bold focus:outline-none focus:border-blue-400 w-96"
-                  placeholder="请输入大屏标题"
+                  placeholder={t('bigScreen.title.placeholder')}
                   autoFocus
                 />
                 <button
                   onClick={handleSaveTitle}
                   className="px-3 py-2 bg-blue-500 hover:bg-blue-600 rounded-lg text-white transition-all"
                 >
-                  保存
+                  {t('common.save')}
                 </button>
                 <button
                   onClick={handleCancelEditTitle}
                   className="px-3 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-white transition-all"
                 >
-                  取消
+                  {t('common.cancel')}
                 </button>
               </div>
             ) : (
@@ -710,9 +744,9 @@ export default function BigScreenDashboard() {
           {/* 顶部中间快捷入口 */}
           <div className="flex items-center gap-2">
             {[
-              { icon: Terminal, label: '终端', color: 'text-green-400', href: '/terminal' },
-              { icon: FileCode, label: '脚本', color: 'text-purple-400', href: '/scripts' },
-              { icon: Shield, label: '审计', color: 'text-yellow-400', href: '/audit' },
+              { icon: Terminal, label: t('bigScreen.quick.terminal'), color: 'text-green-400', href: '/terminal' },
+              { icon: FileCode, label: t('bigScreen.quick.scripts'), color: 'text-purple-400', href: '/scripts' },
+              { icon: Shield, label: t('bigScreen.quick.audit'), color: 'text-yellow-400', href: '/audit' },
             ].map((item) => (
               <div
                 key={item.label}
@@ -734,7 +768,7 @@ export default function BigScreenDashboard() {
                 onClick={() => navigate('/servers')}
               >
                 <Server className="w-4 h-4 text-purple-400" />
-                <span className="text-slate-300">服务器</span>
+                <span className="text-slate-300">{t('bigScreen.top.servers')}</span>
                 <span className="text-white font-bold">{stats?.servers.enabled || 0}/{stats?.servers.total || 0}</span>
               </div>
               <div
@@ -750,7 +784,7 @@ export default function BigScreenDashboard() {
                 onClick={() => navigate('/tasks')}
               >
                 <Play className="w-4 h-4 text-green-400" />
-                <span className="text-slate-300">运行中</span>
+                <span className="text-slate-300">{t('bigScreen.top.running')}</span>
                 <span className="text-white font-bold">{stats?.tasks.running || 0}</span>
               </div>
               <div
@@ -758,24 +792,24 @@ export default function BigScreenDashboard() {
                 onClick={() => navigate('/alerts')}
               >
                 <Bell className="w-4 h-4 text-red-400" />
-                <span className="text-slate-300">活跃告警</span>
+                <span className="text-slate-300">{t('bigScreen.top.activeAlerts')}</span>
                 <span className="text-status-failed font-bold">{stats?.alerts.active || 0}</span>
               </div>
             </div>
 
             <div className="text-right">
               <div className="text-3xl font-bold text-white font-mono">
-                {currentTime.toLocaleTimeString('zh-CN', { hour12: false })}
+                {currentTime.toLocaleTimeString(locale === 'zh-CN' ? 'zh-CN' : 'en-US', { hour12: false })}
               </div>
               <div className="text-sm text-slate-400">
-                {currentTime.toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', weekday: 'long' })}
+                {currentTime.toLocaleDateString(locale === 'zh-CN' ? 'zh-CN' : 'en-US', { year: 'numeric', month: '2-digit', day: '2-digit', weekday: 'long' })}
               </div>
             </div>
 
             <button
               onClick={toggleFullscreen}
               className="p-2 rounded-lg bg-slate-800/50 hover:bg-slate-700/50 border border-slate-700/50 transition-all"
-              title={isFullscreen ? '退出全屏 (Esc)' : '全屏模式 (F11)'}
+              title={isFullscreen ? t('bigScreen.fullscreen.exit') : t('bigScreen.fullscreen.enter')}
             >
               {isFullscreen ? <Minimize2 className="w-5 h-5 text-slate-400" /> : <Maximize2 className="w-5 h-5 text-slate-400" />}
             </button>
@@ -795,24 +829,24 @@ export default function BigScreenDashboard() {
               <h2 className="text-lg font-semibold text-white mb-4 flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
-                  系统资源监控
+                  {t('bigScreen.resources.title')}
                 </div>
                 {serverMetricsData?.has_real_data ? (
-                  <span className="text-xs px-2 py-0.5 rounded bg-green-500/20 text-green-400 border border-green-500/30">实时数据</span>
+                  <span className="text-xs px-2 py-0.5 rounded bg-green-500/20 text-green-400 border border-green-500/30">{t('bigScreen.resources.realData')}</span>
                 ) : (
-                  <span className="text-xs px-2 py-0.5 rounded bg-slate-700/50 text-slate-400 border border-slate-600/30">演示模式</span>
+                  <span className="text-xs px-2 py-0.5 rounded bg-slate-700/50 text-slate-400 border border-slate-600/30">{t('bigScreen.resources.demoMode')}</span>
                 )}
               </h2>
               <div className="grid grid-cols-2 gap-3 mb-4">
                 <CircularProgress value={aggregatedMetrics.cpu != null && Number.isFinite(aggregatedMetrics.cpu) ? aggregatedMetrics.cpu : 0} color="#3b82f6" size={80} strokeWidth={8} label="CPU" />
-                <CircularProgress value={aggregatedMetrics.memory != null && Number.isFinite(aggregatedMetrics.memory) ? aggregatedMetrics.memory : 0} color="#8b5cf6" size={80} strokeWidth={8} label="内存" />
-                <CircularProgress value={(aggregatedMetrics.networkIn ?? 0) + (aggregatedMetrics.networkOut ?? 0)} color="#06b6d4" size={80} strokeWidth={8} label="网络" />
-                <CircularProgress value={aggregatedMetrics.disk != null && Number.isFinite(aggregatedMetrics.disk) ? aggregatedMetrics.disk : 0} color="#f59e0b" size={80} strokeWidth={8} label="磁盘" />
+                <CircularProgress value={aggregatedMetrics.memory != null && Number.isFinite(aggregatedMetrics.memory) ? aggregatedMetrics.memory : 0} color="#8b5cf6" size={80} strokeWidth={8} label={t('bigScreen.metric.memory')} />
+                <CircularProgress value={(aggregatedMetrics.networkIn ?? 0) + (aggregatedMetrics.networkOut ?? 0)} color="#06b6d4" size={80} strokeWidth={8} label={t('bigScreen.metric.network')} />
+                <CircularProgress value={aggregatedMetrics.disk != null && Number.isFinite(aggregatedMetrics.disk) ? aggregatedMetrics.disk : 0} color="#f59e0b" size={80} strokeWidth={8} label={t('bigScreen.metric.disk')} />
               </div>
               <div className="space-y-3">
                 <div className="space-y-2">
                   <div className="flex items-center justify-between text-sm">
-                    <span className="text-slate-400">CPU使用率</span>
+                    <span className="text-slate-400">{t('bigScreen.metric.cpuUsage')}</span>
                     <span className="text-white font-mono">{aggregatedMetrics.cpu?.toFixed(1) ?? '--'}%</span>
                   </div>
                   <div className="h-3 bg-slate-700/50 rounded-full overflow-hidden">
@@ -824,7 +858,7 @@ export default function BigScreenDashboard() {
                 </div>
                 <div className="space-y-2">
                   <div className="flex items-center justify-between text-sm">
-                    <span className="text-slate-400">内存使用率</span>
+                    <span className="text-slate-400">{t('bigScreen.metric.memoryUsage')}</span>
                     <span className="text-white font-mono">{aggregatedMetrics.memory?.toFixed(1) ?? '--'}%</span>
                   </div>
                   <div className="h-3 bg-slate-700/50 rounded-full overflow-hidden">
@@ -836,7 +870,7 @@ export default function BigScreenDashboard() {
                 </div>
                 <div className="space-y-2">
                   <div className="flex items-center justify-between text-sm">
-                    <span className="text-slate-400">磁盘使用率</span>
+                    <span className="text-slate-400">{t('bigScreen.metric.diskUsage')}</span>
                     <span className="text-white font-mono">{aggregatedMetrics.disk?.toFixed(1) ?? '--'}%</span>
                   </div>
                   <div className="h-3 bg-slate-700/50 rounded-full overflow-hidden">
@@ -852,13 +886,13 @@ export default function BigScreenDashboard() {
             <div className="bg-slate-800/40 backdrop-blur-md rounded-2xl p-5 border border-slate-700/50 flex-1">
               <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
                 <div className="w-2 h-2 rounded-full bg-purple-500 animate-pulse" />
-                服务器负载
+                {t('bigScreen.serverLoad.title')}
               </h2>
               {serverMetrics.length > 0 ? (
                 <AnimatedBarChart data={serverMetrics} height={180} fitLabels />
               ) : (
                 <div className="flex items-center justify-center h-[180px] text-slate-500 text-sm">
-                  暂无已启用的服务器
+                  {t('bigScreen.serverLoad.empty')}
                 </div>
               )}
             </div>
@@ -868,9 +902,9 @@ export default function BigScreenDashboard() {
             <div className="grid grid-cols-4 gap-4">
               <StatCard
                 icon={Server}
-                label="服务器"
+                label={t('bigScreen.stats.servers')}
                 value={`${stats?.servers.enabled || 0}/${stats?.servers.total || 0}`}
-                subValue="已启用 / 总计"
+                subValue={t('bigScreen.stats.enabledTotal')}
                 color="from-purple-600 to-purple-800"
                 onClick={() => navigate('/servers')}
               />
@@ -878,23 +912,23 @@ export default function BigScreenDashboard() {
                 icon={Bot}
                 label="Agent"
                 value={`${stats?.agents.enabled || 0}/${stats?.agents.total || 0}`}
-                subValue="在线 / 总计"
+                subValue={t('bigScreen.stats.onlineTotal')}
                 color="from-blue-600 to-blue-800"
                 onClick={() => navigate('/agents')}
               />
               <StatCard
                 icon={Play}
-                label="任务成功率"
+                label={t('bigScreen.stats.taskSuccessRate')}
                 value={`${stats?.tasks.successRate || 0}%`}
-                subValue={`成功 ${stats?.tasks.completed || 0} / 总计 ${stats?.tasks.total || 0}`}
+                subValue={t('bigScreen.stats.successTotal', { success: stats?.tasks.completed || 0, total: stats?.tasks.total || 0 })}
                 color="from-green-600 to-green-800"
                 onClick={() => navigate('/tasks')}
               />
               <StatCard
                 icon={Bell}
-                label="活跃告警"
+                label={t('bigScreen.stats.activeAlerts')}
                 value={stats?.alerts.active || 0}
-                subValue={`严重 ${stats?.alerts.critical || 0} / 高 ${stats?.alerts.high || 0}`}
+                subValue={t('bigScreen.stats.criticalHigh', { critical: stats?.alerts.critical || 0, high: stats?.alerts.high || 0 })}
                 color="from-red-600 to-red-800"
                 onClick={() => navigate('/alerts')}
               />
@@ -904,7 +938,7 @@ export default function BigScreenDashboard() {
               <div className="bg-slate-800/40 backdrop-blur-md rounded-2xl p-4 border border-slate-700/50">
                 <div className="flex items-center gap-2 mb-2">
                   <Clock className="w-4 h-4 text-cyan-400" />
-                  <span className="text-xs text-slate-400">MTTR (平均修复时间)</span>
+                  <span className="text-xs text-slate-400">{t('bigScreen.sla.mttr')}</span>
                 </div>
                 <div className="text-xl font-bold text-white">
                   {slaStats?.mttr_minutes ? `${slaStats.mttr_minutes} min` : '--'}
@@ -913,7 +947,7 @@ export default function BigScreenDashboard() {
               <div className="bg-slate-800/40 backdrop-blur-md rounded-2xl p-4 border border-slate-700/50">
                 <div className="flex items-center gap-2 mb-2">
                   <TrendingUp className="w-4 h-4 text-green-400" />
-                  <span className="text-xs text-slate-400">系统可用性</span>
+                  <span className="text-xs text-slate-400">{t('bigScreen.sla.uptime')}</span>
                 </div>
                 <div className="text-xl font-bold text-white">
                   {slaStats?.uptime_percentage ? `${slaStats.uptime_percentage}%` : '--'}
@@ -922,7 +956,7 @@ export default function BigScreenDashboard() {
               <div className="bg-slate-800/40 backdrop-blur-md rounded-2xl p-4 border border-slate-700/50">
                 <div className="flex items-center gap-2 mb-2">
                   <Target className="w-4 h-4 text-amber-400" />
-                  <span className="text-xs text-slate-400">告警响应时间</span>
+                  <span className="text-xs text-slate-400">{t('bigScreen.sla.responseTime')}</span>
                 </div>
                 <div className="text-xl font-bold text-white">
                   {slaStats?.avg_response_seconds ? `${slaStats.avg_response_seconds} s` : '--'}
@@ -931,7 +965,7 @@ export default function BigScreenDashboard() {
               <div className="bg-slate-800/40 backdrop-blur-md rounded-2xl p-4 border border-slate-700/50">
                 <div className="flex items-center gap-2 mb-2">
                   <CheckCircle className="w-4 h-4 text-emerald-400" />
-                  <span className="text-xs text-slate-400">今日告警解决率</span>
+                  <span className="text-xs text-slate-400">{t('bigScreen.sla.resolutionRate')}</span>
                 </div>
                 <div className="text-xl font-bold text-white">
                   {slaStats?.alert_resolution_rate ? `${slaStats.alert_resolution_rate}%` : '--'}
@@ -943,14 +977,14 @@ export default function BigScreenDashboard() {
               <div className="bg-slate-800/40 backdrop-blur-md rounded-2xl p-5 border border-slate-700/50">
                 <h3 className="text-sm font-semibold text-slate-400 mb-3 flex items-center gap-2">
                   <Cpu className="w-4 h-4 text-blue-400" />
-                  CPU趋势
+                  {t('bigScreen.trend.cpu')}
                 </h3>
                 <AnimatedLineChart data={cpuData} color="#3b82f6" height={120} />
               </div>
               <div className="bg-slate-800/40 backdrop-blur-md rounded-2xl p-5 border border-slate-700/50">
                 <h3 className="text-sm font-semibold text-slate-400 mb-3 flex items-center gap-2">
                   <MemoryStick className="w-4 h-4 text-purple-400" />
-                  内存趋势
+                  {t('bigScreen.trend.memory')}
                 </h3>
                 <AnimatedLineChart data={memoryData} color="#8b5cf6" height={120} />
               </div>
@@ -960,14 +994,14 @@ export default function BigScreenDashboard() {
               <div className="bg-slate-800/40 backdrop-blur-md rounded-2xl p-5 border border-slate-700/50">
                 <h3 className="text-sm font-semibold text-slate-400 mb-3 flex items-center gap-2">
                   <Network className="w-4 h-4 text-cyan-400" />
-                  网络流量 (Mbps)
+                  {t('bigScreen.trend.network')}
                 </h3>
                 <AnimatedLineChart data={networkData} color="#06b6d4" height={120} />
               </div>
               <div className="bg-slate-800/40 backdrop-blur-md rounded-2xl p-5 border border-slate-700/50">
                 <h3 className="text-sm font-semibold text-slate-400 mb-3 flex items-center gap-2">
                   <HardDrive className="w-4 h-4 text-yellow-400" />
-                  磁盘I/O (MB/s)
+                  {t('bigScreen.trend.diskIo')}
                 </h3>
                 <AnimatedLineChart data={diskIOData} color="#f59e0b" height={120} />
               </div>
@@ -977,13 +1011,13 @@ export default function BigScreenDashboard() {
               <div className="bg-slate-800/40 backdrop-blur-md rounded-2xl p-5 border border-slate-700/50 flex flex-col">
                 <h2 className="text-lg font-semibold text-white mb-3 flex items-center gap-2">
                   <AlertCircle className="w-5 h-5 text-red-400" />
-                  告警趋势 (24h)
+                  {t('bigScreen.trend.alerts24h')}
                 </h2>
                 <div className="flex-1 min-h-0">
                   {alertTrendData.length > 0 ? (
                     <AnimatedLineChart data={alertTrendData} color="#ef4444" height={160} />
                   ) : (
-                    <div className="flex items-center justify-center h-[160px] text-slate-500 text-sm">暂无告警数据</div>
+                    <div className="flex items-center justify-center h-[160px] text-slate-500 text-sm">{t('bigScreen.empty.alertData')}</div>
                   )}
                 </div>
               </div>
@@ -991,13 +1025,13 @@ export default function BigScreenDashboard() {
               <div className="bg-slate-800/40 backdrop-blur-md rounded-2xl p-5 border border-slate-700/50 flex flex-col">
                 <h2 className="text-lg font-semibold text-white mb-3 flex items-center gap-2">
                   <Play className="w-5 h-5 text-green-400" />
-                  任务趋势 (24h)
+                  {t('bigScreen.trend.tasks24h')}
                 </h2>
                 <div className="flex-1 min-h-0">
                   {taskTrendData.length > 0 ? (
                     <AnimatedLineChart data={taskTrendData} color="#22c55e" height={160} />
                   ) : (
-                    <div className="flex items-center justify-center h-[160px] text-slate-500 text-sm">暂无任务数据</div>
+                    <div className="flex items-center justify-center h-[160px] text-slate-500 text-sm">{t('bigScreen.empty.taskData')}</div>
                   )}
                 </div>
               </div>
@@ -1007,13 +1041,13 @@ export default function BigScreenDashboard() {
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-lg font-semibold text-white flex items-center gap-2">
                   <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-                  最近任务执行
+                  {t('bigScreen.recentTasks.title')}
                 </h2>
                 <span
                   className="text-xs text-slate-400 bg-slate-700/50 px-3 py-1 rounded-full cursor-pointer hover:bg-slate-600/50"
                   onClick={() => navigate('/tasks')}
                 >
-                  {tasks?.length || 0} 条记录 →
+                  {t('bigScreen.records', { count: tasks?.length || 0 })}
                 </span>
               </div>
               <div className="space-y-2 max-h-[180px] overflow-y-auto scrollbar-thin">
@@ -1033,14 +1067,14 @@ export default function BigScreenDashboard() {
                         <span className="text-sm text-white truncate max-w-[200px]">{task.name}</span>
                       </div>
                       <span className={`px-2 py-0.5 rounded text-xs font-medium capitalize ${getStatusColor(task.status)} bg-slate-700/50`}>
-                        {task.status}
+                        {formatTaskStatus(task.status)}
                       </span>
                     </div>
 
                     {task.status === 'running' && task.totalNodes > 0 && (
                       <div className="ml-5">
                         <div className="flex items-center justify-between text-xs mb-1">
-                          <span className="text-slate-400">{task.completedNodes}/{task.totalNodes} 节点完成</span>
+                          <span className="text-slate-400">{t('bigScreen.tasks.nodesCompleted', { completed: task.completedNodes, total: task.totalNodes })}</span>
                           <span className="text-blue-400 font-mono">{task.progress}%</span>
                         </div>
                         <div className="h-1 bg-slate-700/50 rounded-full overflow-hidden">
@@ -1068,13 +1102,13 @@ export default function BigScreenDashboard() {
               <div className="flex items-center justify-between mb-3">
                 <h2 className="text-lg font-semibold text-white flex items-center gap-2">
                   <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-                  实时告警
+                  {t('bigScreen.alerts.title')}
                 </h2>
                 <span
                   className="text-xs text-slate-400 bg-slate-700/50 px-2 py-1 rounded-full cursor-pointer hover:bg-slate-600/50"
                   onClick={() => navigate('/alerts')}
                 >
-                  全部 →
+                  {t('bigScreen.all')}
                 </span>
               </div>
               <div className="space-y-2 max-h-[200px] overflow-y-auto scrollbar-thin">
@@ -1092,14 +1126,14 @@ export default function BigScreenDashboard() {
                       <div className="flex items-start justify-between mb-2">
                         <span className="text-sm text-white flex-1 truncate">{alert.title}</span>
                         <span className={`px-2 py-0.5 rounded text-xs font-medium ml-2 ${getSeverityBadge(alert.severity)}`}>
-                          {alert.severity}
+                          {formatSeverity(alert.severity)}
                         </span>
                       </div>
                       <div className="flex items-center justify-between text-xs text-slate-400">
                         <span className={`px-2 py-0.5 rounded ${
                           alert.status === 'new' ? 'bg-blue-500/20 text-blue-400' : 'bg-slate-700/50'
                         }`}>
-                          {alert.status}
+                          {formatAlertStatus(alert.status)}
                         </span>
                         <span>{formatDistanceToNow(new Date(alert.created_at), { addSuffix: true })}</span>
                       </div>
@@ -1126,32 +1160,32 @@ export default function BigScreenDashboard() {
               <div className="flex items-center justify-between mb-3">
                 <h2 className="text-lg font-semibold text-white flex items-center gap-2">
                   <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
-                  Agent调用统计
+                  {t('bigScreen.agentStats.title')}
                 </h2>
                 <span
                   className="text-xs text-slate-400 bg-slate-700/50 px-2 py-1 rounded-full cursor-pointer hover:bg-slate-600/50"
                   onClick={() => navigate('/agents')}
                 >
-                  详情 →
+                  {t('common.details')}
                 </span>
               </div>
 
               <div className="grid grid-cols-2 gap-3 mb-4">
                 <div className="bg-gradient-to-br from-blue-600/20 to-blue-800/20 rounded-xl p-3 border border-blue-500/30">
                   <div className="text-2xl font-bold text-white">{agentStats?.overall.totalExecutions || 0}</div>
-                  <div className="text-xs text-blue-300">总调用次数</div>
+                  <div className="text-xs text-blue-300">{t('bigScreen.agentStats.totalCalls')}</div>
                 </div>
                 <div className="bg-gradient-to-br from-green-600/20 to-green-800/20 rounded-xl p-3 border border-green-500/30">
                   <div className="text-2xl font-bold text-white">{agentStats?.overall.overallSuccessRate || 0}%</div>
-                  <div className="text-xs text-green-300">总体成功率</div>
+                  <div className="text-xs text-green-300">{t('bigScreen.agentStats.successRate')}</div>
                 </div>
                 <div className="bg-gradient-to-br from-purple-600/20 to-purple-800/20 rounded-xl p-3 border border-purple-500/30">
                   <div className="text-2xl font-bold text-white">{agentStats?.overall.todayExecutions || 0}</div>
-                  <div className="text-xs text-purple-300">今日调用</div>
+                  <div className="text-xs text-purple-300">{t('bigScreen.agentStats.todayCalls')}</div>
                 </div>
                 <div className="bg-gradient-to-br from-red-600/20 to-red-800/20 rounded-xl p-3 border border-red-500/30">
                   <div className="text-2xl font-bold text-white">{(agentStats?.overall.totalExecutions || 0) - (agentStats?.overall.totalSuccess || 0)}</div>
-                  <div className="text-xs text-red-300">失败次数</div>
+                  <div className="text-xs text-red-300">{t('bigScreen.agentStats.failedCalls')}</div>
                 </div>
               </div>
 
@@ -1165,7 +1199,7 @@ export default function BigScreenDashboard() {
                     <div className="flex-1 min-w-0">
                       <div className="text-sm text-white truncate">{agent.name}</div>
                       <div className="text-xs text-slate-400">
-                        {agent.total_executions}次调用 · 成功率{agent.successRate ?? 'N/A'}%
+                        {t('bigScreen.agentStats.agentLine', { count: agent.total_executions, rate: agent.successRate ?? 'N/A' })}
                       </div>
                     </div>
                     <div className={`w-2 h-2 rounded-full ${agent.enabled ? 'bg-status-success' : 'bg-slate-500'}`} />
@@ -1177,12 +1211,12 @@ export default function BigScreenDashboard() {
             <div className="bg-slate-800/40 backdrop-blur-md rounded-2xl p-5 border border-slate-700/50">
               <h2 className="text-lg font-semibold text-white mb-3 flex items-center gap-2">
                 <div className="w-2 h-2 rounded-full bg-yellow-500 animate-pulse" />
-                任务状态分布
+                {t('bigScreen.taskDistribution.title')}
               </h2>
               {taskDistData.length > 0 ? (
                 <AnimatedBarChart data={taskDistData} height={140} />
               ) : (
-                <div className="flex items-center justify-center h-[140px] text-slate-500 text-sm">暂无任务数据</div>
+                <div className="flex items-center justify-center h-[140px] text-slate-500 text-sm">{t('bigScreen.empty.taskData')}</div>
               )}
             </div>
 
@@ -1190,32 +1224,32 @@ export default function BigScreenDashboard() {
               <div className="flex items-center justify-between mb-3">
                 <h2 className="text-lg font-semibold text-white flex items-center gap-2">
                   <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                  自动修复统计
+                  {t('bigScreen.remediation.title')}
                 </h2>
                 <span
                   className="text-xs text-slate-400 bg-slate-700/50 px-2 py-1 rounded-full cursor-pointer hover:bg-slate-600/50"
                   onClick={() => navigate('/remediation-executions')}
                 >
-                  详情 →
+                  {t('common.details')}
                 </span>
               </div>
 
               <div className="grid grid-cols-2 gap-3 mb-4">
                 <div className="bg-gradient-to-br from-emerald-600/20 to-emerald-800/20 rounded-xl p-3 border border-emerald-500/30">
                   <div className="text-2xl font-bold text-white">{remediationStats?.today.total || 0}</div>
-                  <div className="text-xs text-emerald-300">今日执行</div>
+                  <div className="text-xs text-emerald-300">{t('bigScreen.remediation.today')}</div>
                 </div>
                 <div className="bg-gradient-to-br from-blue-600/20 to-blue-800/20 rounded-xl p-3 border border-blue-500/30">
                   <div className="text-2xl font-bold text-white">{remediationStats?.today.success_rate || 0}%</div>
-                  <div className="text-xs text-blue-300">成功率</div>
+                  <div className="text-xs text-blue-300">{t('bigScreen.remediation.successRate')}</div>
                 </div>
                 <div className="bg-gradient-to-br from-amber-600/20 to-amber-800/20 rounded-xl p-3 border border-amber-500/30">
                   <div className="text-2xl font-bold text-white">{remediationStats?.waiting_approval || 0}</div>
-                  <div className="text-xs text-amber-300">待审批</div>
+                  <div className="text-xs text-amber-300">{t('bigScreen.remediation.pendingApproval')}</div>
                 </div>
                 <div className="bg-gradient-to-br from-red-600/20 to-red-800/20 rounded-xl p-3 border border-red-500/30">
                   <div className="text-2xl font-bold text-white">{remediationStats?.today.failed || 0}</div>
-                  <div className="text-xs text-red-300">失败/回滚</div>
+                  <div className="text-xs text-red-300">{t('bigScreen.remediation.failedRollback')}</div>
                 </div>
               </div>
 
@@ -1227,15 +1261,6 @@ export default function BigScreenDashboard() {
                     rolled_back: 'bg-yellow-500',
                     waiting_approval: 'bg-blue-500',
                     running: 'bg-status-running',
-                  };
-                  const statusTextMap: Record<string, string> = {
-                    success: '成功',
-                    failed: '失败',
-                    rolled_back: '回滚',
-                    waiting_approval: '待审批',
-                    running: '执行中',
-                    pending: '待处理',
-                    skipped: '已跳过',
                   };
                   return (
                     <div
@@ -1254,7 +1279,7 @@ export default function BigScreenDashboard() {
                           exec.status === 'waiting_approval' ? 'bg-blue-500/20 text-blue-400' :
                           'bg-slate-700/50 text-slate-400'
                         }`}>
-                          {statusTextMap[exec.status] || exec.status}
+                          {formatRemediationStatus(exec.status)}
                         </span>
                         <span className="text-xs text-slate-500">
                           {formatDistanceToNow(new Date(exec.created_at), { addSuffix: true })}
@@ -1264,7 +1289,7 @@ export default function BigScreenDashboard() {
                   );
                 })}
                 {(!remediationStats?.recent_executions || remediationStats.recent_executions.length === 0) && (
-                  <div className="flex items-center justify-center h-[140px] text-slate-500 text-sm">暂无修复记录</div>
+                  <div className="flex items-center justify-center h-[140px] text-slate-500 text-sm">{t('bigScreen.empty.remediationData')}</div>
                 )}
               </div>
             </div>
@@ -1277,10 +1302,10 @@ export default function BigScreenDashboard() {
               {getSystemStatusIcon()}
               {getStatusFooterText()}
             </span>
-            <span>数据刷新: 30秒</span>
+            <span>{t('bigScreen.footer.refreshInterval')}</span>
             <span className={`flex items-center gap-1 ${isStatsError ? 'text-red-400' : 'text-green-400'}`}>
               <span className={`w-1.5 h-1.5 rounded-full ${isStatsError ? 'bg-red-400' : 'bg-green-400'}`} />
-              {isStatsError ? '连接断开' : '连接正常'}
+              {isStatsError ? t('bigScreen.footer.disconnected') : t('bigScreen.footer.connected')}
             </span>
           </div>
           <div className="flex items-center gap-4">
