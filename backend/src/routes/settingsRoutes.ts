@@ -2,10 +2,11 @@ import { Router, Request, Response } from 'express';
 import db from '../models/database';
 import { safeLog, safeError, maskApiKey } from '../utils/sensitiveMask';
 import { getApiKey, getModelId, getApiBase } from '../utils/apiConfig';
+import { requireRole } from '../middleware/auth';
 
 const router = Router();
 
-router.get('/', (_req: Request, res: Response) => {
+router.get('/', requireRole('admin'), (_req: Request, res: Response) => {
   try {
     const settings = db.prepare('SELECT * FROM settings').all() as Array<{ key: string; value: string }>;
     const settingsObj: Record<string, string> = {};
@@ -18,7 +19,7 @@ router.get('/', (_req: Request, res: Response) => {
   }
 });
 
-router.put('/', (req: Request, res: Response) => {
+router.put('/', requireRole('admin'), (req: Request, res: Response) => {
   try {
     const settings = req.body;
     
@@ -50,7 +51,7 @@ router.put('/', (req: Request, res: Response) => {
   }
 });
 
-router.get('/api-keys', (_req: Request, res: Response) => {
+router.get('/api-keys', requireRole('admin'), (_req: Request, res: Response) => {
   try {
     const doubaoKey = getApiKey(db, 'DOUBAO_API_KEY', 'DOUBAO_API_KEY');
     const openaiKey = getApiKey(db, 'OPENAI_API_KEY', 'OPENAI_API_KEY');
@@ -183,7 +184,7 @@ router.get('/models', (_req: Request, res: Response) => {
 });
 
 // 保存 API 密钥和模型配置
-router.put('/api-keys', (req: Request, res: Response) => {
+router.put('/api-keys', requireRole('admin'), (req: Request, res: Response) => {
   try {
     const { doubaoApiKey, openaiApiKey, doubaoModel, openaiModel, doubaoApiBase, openaiApiBase, localAiModel, localAiApiBase } = req.body;
     
@@ -328,7 +329,7 @@ router.put('/api-keys', (req: Request, res: Response) => {
 });
 
 // 删除特定提供商的API配置
-router.delete('/api-keys/:provider', (req: Request, res: Response) => {
+router.delete('/api-keys/:provider', requireRole('admin'), (req: Request, res: Response) => {
   try {
     const { provider } = req.params;
     safeLog(`🗑️ Deleting API configuration for provider: ${provider}`);

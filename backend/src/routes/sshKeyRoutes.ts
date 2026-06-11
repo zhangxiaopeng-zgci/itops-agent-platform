@@ -24,6 +24,20 @@ interface SSHKey {
   updated_at: string;
 }
 
+interface SafeSSHKey {
+  id: string;
+  name: string;
+  auth_type: 'key' | 'password';
+  key_type: string;
+  fingerprint: string | null;
+  username: string | null;
+  description: string | null;
+  created_at: string;
+  updated_at: string;
+  has_password: number;
+  has_private_key: number;
+}
+
 function extractKeyType(privateKey: string): string {
   if (privateKey.includes('BEGIN OPENSSH PRIVATE KEY')) return 'openssh';
   if (privateKey.includes('BEGIN RSA PRIVATE KEY')) return 'rsa';
@@ -63,19 +77,32 @@ router.get('/', (_req: Request, res: Response) => {
   }
 });
 
-router.get('/:id', validateParams(sshKeyIdSchema), (req: Request, res: Response) => {
+router.get('/:id', validateParams(sshKeyIdSchema), requireRole('admin'), (req: Request, res: Response) => {
   try {
-    const key = db.prepare('SELECT id, name, auth_type, key_type, fingerprint, username, password, private_key, description, created_at, updated_at FROM ssh_keys WHERE id = ?').get(req.params.id) as SSHKey | undefined;
+    const key = db.prepare(`
+      SELECT id, name, auth_type, key_type, fingerprint, username, description, created_at, updated_at,
+             CASE WHEN password IS NOT NULL AND password != '' THEN 1 ELSE 0 END as has_password,
+             CASE WHEN private_key IS NOT NULL AND private_key != '' THEN 1 ELSE 0 END as has_private_key
+      FROM ssh_keys
+      WHERE id = ?
+    `).get(req.params.id) as SafeSSHKey | undefined;
     if (!key) {
       return res.status(404).json({ success: false, error: 'SSH key not found' });
     }
-    res.json({ success: true, data: key });
+    res.json({
+      success: true,
+      data: {
+        ...key,
+        has_password: Boolean(key.has_password),
+        has_private_key: Boolean(key.has_private_key),
+      }
+    });
   } catch {
     res.status(500).json({ success: false, error: 'Failed to get SSH key' });
   }
 });
 
-router.get('/:id/usage', validateParams(sshKeyIdSchema), (req: Request, res: Response) => {
+router.get('/:id/usage', validateParams(sshKeyIdSchema), requireRole('admin'), (req: Request, res: Response) => {
   try {
     const servers = db.prepare('SELECT id, name, hostname FROM servers WHERE ssh_key_id = ?').all(req.params.id);
     res.json({ success: true, data: { count: servers.length, servers } });

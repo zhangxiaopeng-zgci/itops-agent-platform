@@ -64,7 +64,7 @@ export default function SSHKeys() {
     queryFn: async () => {
       if (!expandedKey) return null;
       const res = await api.get(`/api/ssh-keys/${expandedKey}`);
-      return res.data.data as SSHKey & { private_key: string };
+      return res.data.data as SSHKey & { has_private_key?: boolean; has_password?: boolean };
     },
     enabled: !!expandedKey,
   });
@@ -166,13 +166,6 @@ export default function SSHKeys() {
   const handleCopyFingerprint = (fingerprint: string) => {
     navigator.clipboard.writeText(fingerprint);
     toast.success('指纹已复制到剪贴板');
-  };
-
-  const handleCopyKey = () => {
-    if (fullKeyData?.private_key) {
-      navigator.clipboard.writeText(fullKeyData.private_key);
-      toast.success('私钥已复制到剪贴板');
-    }
   };
 
   const handleViewUsage = async (key: SSHKey) => {
@@ -394,19 +387,15 @@ export default function SSHKeys() {
 
                   {expandedKey === key.id && fullKeyData && (
                     <div className="mt-4 p-4 bg-black/60 border border-border rounded-lg">
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-xs text-text-tertiary">私钥内容</span>
-                        <button
-                          onClick={handleCopyKey}
-                          className="text-xs text-text-tertiary hover:text-text-primary flex items-center gap-1 transition-colors"
-                        >
-                          <Copy className="w-3 h-3" />
-                          复制私钥
-                        </button>
+                      <div className="flex items-start gap-2">
+                        <Lock className="mt-0.5 h-4 w-4 shrink-0 text-emerald-400" />
+                        <div>
+                          <div className="text-xs font-medium text-text-primary">凭证内容已加密保存</div>
+                          <p className="mt-1 text-xs leading-5 text-text-tertiary">
+                            为避免密钥或密码在浏览器接口中暴露，系统只返回凭证元数据。连接服务器时后端会按权限读取并解密使用。
+                          </p>
+                        </div>
                       </div>
-                      <pre className="text-xs font-mono text-green-400 whitespace-pre-wrap break-all max-h-40 overflow-y-auto">
-                        {fullKeyData.private_key}
-                      </pre>
                     </div>
                   )}
 

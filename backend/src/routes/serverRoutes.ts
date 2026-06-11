@@ -13,13 +13,14 @@ const router = Router();
 router.get('/', (_req: Request, res: Response) => {
   try {
     const servers = db.prepare('SELECT * FROM servers ORDER BY created_at DESC').all();
-    const processedServers = (servers as Array<{ id: string; tags?: string; [key: string]: unknown }>).map(server => {
+    const processedServers = (servers as Array<{ id: string; password?: string; private_key?: string; vnc_password?: string; tags?: string; [key: string]: unknown }>).map(server => {
+      const { password: _password, private_key: _private_key, vnc_password: _vnc_password, ...safeServer } = server;
       const groups = db.prepare(
         `SELECT sg.id, sg.name FROM server_groups sg
          JOIN server_group_mapping sgm ON sg.id = sgm.group_id
          WHERE sgm.server_id = ?`
       ).all(server.id);
-      return { ...server, tags: server.tags ? JSON.parse(server.tags) : [], groups };
+      return { ...safeServer, tags: server.tags ? JSON.parse(server.tags) : [], groups };
     });
     res.json({ success: true, data: processedServers });
   } catch {
@@ -34,7 +35,7 @@ router.get('/:id', validateParams(serverSchemas.serverId), (req: Request, res: R
     if (!server) {
       return res.status(404).json({ success: false, error: 'Server not found' });
     }
-    const { password: _password, private_key: _private_key, ...safeServer } = server as { password?: string; private_key?: string; tags?: string; [key: string]: unknown };
+    const { password: _password, private_key: _private_key, vnc_password: _vnc_password, ...safeServer } = server as { password?: string; private_key?: string; vnc_password?: string; tags?: string; [key: string]: unknown };
     res.json({
       success: true,
       data: { ...safeServer, tags: safeServer.tags ? JSON.parse(safeServer.tags) : [] }
