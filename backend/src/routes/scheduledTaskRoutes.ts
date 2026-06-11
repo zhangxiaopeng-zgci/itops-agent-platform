@@ -193,7 +193,7 @@ router.delete('/:id', requireRole('admin', 'operator'), (req: Request, res: Resp
   }
 });
 
-router.post('/:id/toggle', (req: Request, res: Response) => {
+router.post('/:id/toggle', requireRole('admin', 'operator'), (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     
@@ -221,7 +221,7 @@ router.post('/:id/toggle', (req: Request, res: Response) => {
   }
 });
 
-router.post('/:id/run', (req: Request, res: Response) => {
+router.post('/:id/run', requireRole('admin', 'operator'), (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     

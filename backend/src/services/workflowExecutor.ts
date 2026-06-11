@@ -371,17 +371,12 @@ async function generateWorkflowExecutionReport(
     logger.info('✅ 报告已通过服务生成:', generatedReport.id);
     
     try {
-      logger.info('📄 正在向 reports 表插入报告...');
+      logger.info('📄 正在关联 reports 表中的报告...');
       db.prepare(`
-        INSERT INTO reports (id, name, content, format, task_id, created_at)
-        VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-      `).run(
-        generatedReport.id,
-        generatedReport.name,
-        generatedReport.content,
-        'markdown',
-        taskId
-      );
+        UPDATE reports
+        SET task_id = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+      `).run(taskId, generatedReport.id);
       
       logger.info('📄 正在更新 tasks 表的 report_id 字段...');
       db.prepare('UPDATE tasks SET report_id = ? WHERE id = ?').run(generatedReport.id, taskId);
