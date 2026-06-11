@@ -9,7 +9,7 @@ import clsx from 'clsx';
 import api from '../lib/api';
 import MarkdownOutput from '../components/MarkdownOutput';
 import { useAuth } from '../contexts/AuthContext';
-import { useLocale } from '../contexts/LocaleContext';
+import { useLocale, type MessageKey } from '../contexts/LocaleContext';
 
 interface Agent {
   id: string;
@@ -107,6 +107,129 @@ const textareaClass = `${inputClass} resize-none`;
 const labelClass = 'block text-sm font-medium text-text-secondary mb-2';
 const mutedTextClass = 'text-text-secondary';
 const subtleTextClass = 'text-text-tertiary';
+
+const AGENT_CATEGORY_OPTIONS = [
+  { value: '\u667a\u80fd\u8bca\u65ad', labelKey: 'agents.category.intelligentDiagnosis' },
+  { value: '\u4fee\u590d\u7f16\u6392', labelKey: 'agents.category.remediationOrchestration' },
+  { value: '\u590d\u76d8\u8fdb\u5316', labelKey: 'agents.category.reviewEvolution' },
+  { value: '\u544a\u8b66\u5904\u7406', labelKey: 'agents.category.alertHandling' },
+  { value: '\u6545\u969c\u8bca\u65ad', labelKey: 'agents.category.incidentDiagnosis' },
+  { value: '\u6545\u969c\u5904\u7406', labelKey: 'agents.category.incidentHandling' },
+  { value: '\u65e5\u5fd7\u5206\u6790', labelKey: 'agents.category.logAnalysis' },
+  { value: '\u6570\u636e\u5206\u6790', labelKey: 'agents.category.dataAnalysis' },
+  { value: '\u7cfb\u7edf\u5de1\u68c0', labelKey: 'agents.category.systemInspection' },
+  { value: '\u7f51\u7edc\u5de1\u68c0', labelKey: 'agents.category.networkInspection' },
+  { value: 'Network\u5de1\u68c0', labelKey: 'agents.category.networkInspection' },
+  { value: '\u5de1\u68c0\u5ba1\u8ba1', labelKey: 'agents.category.inspectionAudit' },
+  { value: '\u670d\u52a1\u5668\u7ba1\u7406', labelKey: 'agents.category.serverManagement' },
+  { value: '\u670d\u52a1\u5668\u64cd\u4f5c', labelKey: 'agents.category.serverOperations' },
+  { value: '\u64cd\u4f5c\u6267\u884c', labelKey: 'agents.category.operationExecution' },
+  { value: '\u53d8\u66f4\u6267\u884c', labelKey: 'agents.category.changeExecution' },
+  { value: '\u5408\u89c4\u68c0\u67e5', labelKey: 'agents.category.complianceCheck' },
+  { value: '\u6587\u6863\u751f\u6210', labelKey: 'agents.category.documentGeneration' },
+  { value: '\u6587\u6863\u62a5\u544a', labelKey: 'agents.category.documentation' }
+] as const satisfies ReadonlyArray<{ value: string; labelKey: MessageKey }>;
+
+const AGENT_TEST_PRESETS = [
+  {
+    names: ['\u544a\u8b66\u5904\u7406 Agent', '\u544a\u8b66\u5904\u7406'],
+    inputKey: 'agents.testPreset.alertHandling'
+  },
+  {
+    names: ['\u6545\u969c\u8bca\u65ad Agent', '\u6545\u969c\u8bca\u65ad'],
+    inputKey: 'agents.testPreset.incidentDiagnosis'
+  },
+  {
+    names: ['\u65e5\u5fd7\u5206\u6790 Agent', '\u65e5\u5fd7\u5206\u6790'],
+    inputKey: 'agents.testPreset.logAnalysis'
+  },
+  {
+    names: ['\u7cfb\u7edf\u5de1\u68c0 Agent', '\u7cfb\u7edf\u5de1\u68c0'],
+    inputKey: 'agents.testPreset.systemInspection'
+  },
+  {
+    names: ['\u53d8\u66f4\u6267\u884c Agent', '\u53d8\u66f4\u6267\u884c'],
+    inputKey: 'agents.testPreset.changeExecution'
+  },
+  {
+    names: ['\u6587\u6863\u751f\u6210 Agent', '\u6587\u6863\u751f\u6210'],
+    inputKey: 'agents.testPreset.documentGeneration'
+  },
+  {
+    names: ['\u5408\u89c4\u68c0\u67e5 Agent', '\u5408\u89c4\u68c0\u67e5'],
+    inputKey: 'agents.testPreset.complianceCheck'
+  },
+  {
+    names: ['\u670d\u52a1\u5668\u547d\u4ee4\u6267\u884c Agent', '\u670d\u52a1\u5668\u547d\u4ee4\u6267\u884c'],
+    inputKey: 'agents.testPreset.serverCommand'
+  },
+  {
+    names: ['\u81ea\u52a8\u5de1\u68c0 Agent', '\u81ea\u52a8\u5de1\u68c0'],
+    inputKey: 'agents.testPreset.autoInspection'
+  }
+] as const satisfies ReadonlyArray<{ names: readonly string[]; inputKey: MessageKey }>;
+
+const AGENT_DISPLAY_TEXTS = [
+  { value: 'Hermes \u4fee\u590d\u7f16\u6392 Agent', labelKey: 'agents.preset.hermesRemediate.name' },
+  { value: 'Hermes \u5ba1\u6279\u5f0f\u4fee\u590d\u5de5\u4f5c\u6d41\u7f16\u6392\u4e13\u5bb6', labelKey: 'agents.preset.hermesRemediate.role' },
+  { value: '\u5c06\u5df2\u786e\u8ba4\u7684\u4fee\u590d\u65b9\u6848\u8f6c\u6210\u53d7\u63a7\u5de5\u4f5c\u6d41\u5ba1\u6279\u3001\u4efb\u52a1\u8ffd\u8e2a\u548c\u4fee\u590d\u9a8c\u8bc1', labelKey: 'agents.preset.hermesRemediate.desc' },
+  { value: 'Hermes \u590d\u76d8\u8fdb\u5316 Agent', labelKey: 'agents.preset.hermesEvolve.name' },
+  { value: 'Hermes \u8fd0\u884c\u590d\u76d8\u4e0e\u8fdb\u5316\u5efa\u8bae\u4e13\u5bb6', labelKey: 'agents.preset.hermesEvolve.role' },
+  { value: '\u590d\u76d8 Agent trace\u3001\u5ba1\u6279\u3001\u4efb\u52a1\u548c\u9a8c\u8bc1\u7ed3\u679c\uff0c\u751f\u6210\u53ef\u5ba1\u6279\u7684\u6539\u8fdb\u5efa\u8bae', labelKey: 'agents.preset.hermesEvolve.desc' },
+  { value: 'Hermes \u8bca\u65ad\u4fee\u590d Agent', labelKey: 'agents.preset.hermesDiagnose.name' },
+  { value: 'Hermes \u8fd0\u7ef4\u8bca\u65ad\u4e0e\u5ba1\u6279\u4fee\u590d\u7f16\u6392\u4e13\u5bb6', labelKey: 'agents.preset.hermesDiagnose.role' },
+  { value: '\u901a\u8fc7 Hermes Runtime \u6267\u884c\u53ea\u8bfb\u8bca\u65ad\uff0c\u5e76\u5728\u9700\u8981\u4fee\u590d\u65f6\u63d0\u4ea4\u53d7\u63a7\u5de5\u4f5c\u6d41\u5ba1\u6279', labelKey: 'agents.preset.hermesDiagnose.desc' },
+  { value: '\u53d8\u66f4\u6267\u884c Agent', labelKey: 'agents.preset.change.name' },
+  { value: '\u53d8\u66f4\u6267\u884c\u4e13\u5bb6', labelKey: 'agents.preset.change.role' },
+  { value: '\u6267\u884c\u7cfb\u7edf\u53d8\u66f4\u64cd\u4f5c\uff0c\u9a8c\u8bc1\u64cd\u4f5c\u7ed3\u679c', labelKey: 'agents.preset.change.desc' },
+  { value: '\u5408\u89c4\u68c0\u67e5 Agent', labelKey: 'agents.preset.compliance.name' },
+  { value: '\u5408\u89c4\u68c0\u67e5\u4e13\u5bb6', labelKey: 'agents.preset.compliance.role' },
+  { value: '\u9a8c\u8bc1\u7cfb\u7edf\u914d\u7f6e\u662f\u5426\u7b26\u5408\u5b89\u5168\u57fa\u7ebf\u548c\u5408\u89c4\u8981\u6c42', labelKey: 'agents.preset.compliance.desc' },
+  { value: '\u544a\u8b66\u5904\u7406 Agent', labelKey: 'agents.preset.alert.name' },
+  { value: '\u544a\u8b66\u5206\u6790\u4e0e\u5904\u7406\u4e13\u5bb6', labelKey: 'agents.preset.alert.role' },
+  { value: '\u8d1f\u8d23\u5206\u6790\u544a\u8b66\u4fe1\u606f\uff0c\u8bc4\u4f30\u4e25\u91cd\u7a0b\u5ea6\uff0c\u5e76\u63d0\u4f9b\u5904\u7406\u5efa\u8bae', labelKey: 'agents.preset.alert.desc' },
+  { value: '\u547d\u4ee4\u751f\u6210\u4e13\u5bb6', labelKey: 'agents.preset.commandGenerator.name' },
+  { value: '\u8fd0\u7ef4\u547d\u4ee4\u751f\u6210\u4e13\u5bb6', labelKey: 'agents.preset.commandGenerator.role' },
+  { value: '[COMMAND_GENERATOR] \u6839\u636e\u81ea\u7136\u8bed\u8a00\u9700\u6c42\uff0c\u667a\u80fd\u751f\u6210\u5bf9\u5e94\u7684\u670d\u52a1\u5668\u547d\u4ee4', labelKey: 'agents.preset.commandGenerator.desc' },
+  { value: '\u6545\u969c\u8bca\u65ad Agent', labelKey: 'agents.preset.incident.name' },
+  { value: '\u6545\u969c\u8bca\u65ad\u4e13\u5bb6', labelKey: 'agents.preset.incident.role' },
+  { value: '\u5206\u6790\u7cfb\u7edf\u6545\u969c\uff0c\u8bc6\u522b\u6839\u56e0\uff0c\u5e76\u63d0\u4f9b\u89e3\u51b3\u65b9\u6848', labelKey: 'agents.preset.incident.desc' },
+  { value: '\u6587\u6863\u751f\u6210 Agent', labelKey: 'agents.preset.document.name' },
+  { value: '\u6587\u6863\u751f\u6210\u4e13\u5bb6', labelKey: 'agents.preset.document.role' },
+  { value: '\u6839\u636e\u4efb\u52a1\u6267\u884c\u7ed3\u679c\uff0c\u751f\u6210\u7ed3\u6784\u5316\u7684\u8fd0\u7ef4\u62a5\u544a', labelKey: 'agents.preset.document.desc' },
+  { value: '\u65e5\u5fd7\u5206\u6790 Agent', labelKey: 'agents.preset.log.name' },
+  { value: '\u65e5\u5fd7\u5206\u6790\u4e13\u5bb6', labelKey: 'agents.preset.log.role' },
+  { value: '\u5206\u6790\u7cfb\u7edf\u548c\u5e94\u7528\u65e5\u5fd7\uff0c\u8bc6\u522b\u9519\u8bef\u6a21\u5f0f\u548c\u5f02\u5e38\u4e8b\u4ef6', labelKey: 'agents.preset.log.desc' },
+  { value: '\u670d\u52a1\u5668\u547d\u4ee4\u6267\u884c Agent', labelKey: 'agents.preset.serverCommand.name' },
+  { value: '\u670d\u52a1\u5668\u64cd\u4f5c\u4e13\u5bb6', labelKey: 'agents.preset.serverCommand.role' },
+  { value: '\u5728\u76ee\u6807\u670d\u52a1\u5668\u4e0a\u6267\u884c\u547d\u4ee4\u5e76\u8fd4\u56de\u7ed3\u679c', labelKey: 'agents.preset.serverCommand.desc' },
+  { value: '\u7cfb\u7edf\u5de1\u68c0 Agent', labelKey: 'agents.preset.systemInspection.name' },
+  { value: '\u7cfb\u7edf\u5065\u5eb7\u68c0\u67e5\u4e13\u5bb6', labelKey: 'agents.preset.systemInspection.role' },
+  { value: '\u6267\u884c\u7cfb\u7edf\u5065\u5eb7\u68c0\u67e5\uff0c\u8bc4\u4f30\u5404\u9879\u6307\u6807\u72b6\u6001', labelKey: 'agents.preset.systemInspection.desc' },
+  { value: '\u7f51\u7edc\u5de1\u68c0\u4e13\u5bb6', labelKey: 'agents.preset.networkInspection.name' },
+  { value: '\u7f51\u7edc\u8bbe\u5907\u5de1\u68c0\u4e0e\u5065\u5eb7\u8bca\u65ad\u4e13\u5bb6', labelKey: 'agents.preset.networkInspection.role' },
+  { value: '\u5bf9\u8def\u7531\u5668\u3001\u4ea4\u6362\u673a\u3001\u9632\u706b\u5899\u7b49\u7f51\u7edc\u8bbe\u5907\u6267\u884c\u6807\u51c6\u5316\u6216\u81ea\u5b9a\u4e49\u5de1\u68c0', labelKey: 'agents.preset.networkInspection.desc' },
+  { value: '\u81ea\u52a8\u5de1\u68c0 Agent', labelKey: 'agents.preset.autoInspection.name' },
+  { value: '\u81ea\u52a8\u5de1\u68c0\u4e13\u5bb6', labelKey: 'agents.preset.autoInspection.role' },
+  { value: '\u5bf9\u591a\u53f0\u670d\u52a1\u5668\u6267\u884c\u81ea\u52a8\u5316\u5de1\u68c0\u4efb\u52a1', labelKey: 'agents.preset.autoInspection.desc' }
+] as const satisfies ReadonlyArray<{ value: string; labelKey: MessageKey }>;
+
+function getAgentCategoryLabel(category: string | undefined, t: (key: MessageKey, values?: Record<string, string | number>) => string): string {
+  if (!category) return '-';
+  const option = AGENT_CATEGORY_OPTIONS.find((item) => item.value === category);
+  return option ? t(option.labelKey) : category;
+}
+
+function getAgentDisplayText(value: string | undefined, t: (key: MessageKey, values?: Record<string, string | number>) => string): string {
+  if (!value) return '';
+  const option = AGENT_DISPLAY_TEXTS.find((item) => item.value === value);
+  return option ? t(option.labelKey) : value;
+}
+
+function getAgentTestPresetInput(agentName: string, t: (key: MessageKey, values?: Record<string, string | number>) => string): string {
+  const preset = AGENT_TEST_PRESETS.find((item) => item.names.some((name) => name === agentName));
+  return preset ? t(preset.inputKey) : t('agents.testPreset.default');
+}
 
 function parseRuntimeConfig(value: Agent['runtime_config']): HermesRuntimeConfig {
   if (!value) return {};
@@ -272,35 +395,12 @@ export default function Agents() {
     setTestResult(null);
     setShowTestModal(true);
     
-    // 默认选择所有服务器
+    // Select all enabled servers by default.
     if (servers && servers.length > 0 && selectedServerIds.length === 0) {
       setSelectedServerIds(servers.filter((s) => s.enabled).map((s) => s.id));
     }
     
-    // 根据 Agent 名字自动填入预设的测试输入
-    const presetInputs: Record<string, string> = {
-      '告警处理 Agent': '服务器CPU使用率异常，当前值92%，阈值80%，请分析并提供处理建议',
-      '告警处理': '服务器CPU使用率异常，当前值92%，阈值80%，请分析并提供处理建议',
-      '故障诊断 Agent': '应用服务响应超时，请诊断可能的原因并提供排查步骤',
-      '故障诊断': '应用服务响应超时，请诊断可能的原因并提供排查步骤',
-      '日志分析 Agent': '系统日志中有多个错误记录，请分析并找出问题根源',
-      '日志分析': '系统日志中有多个错误记录，请分析并找出问题根源',
-      '系统巡检 Agent': '请执行系统健康检查，检查CPU、内存、磁盘、网络状态',
-      '系统巡检': '请执行系统健康检查，检查CPU、内存、磁盘、网络状态',
-      '变更执行 Agent': '请执行Nginx服务重启操作',
-      '变更执行': '请执行Nginx服务重启操作',
-      '文档生成 Agent': '请生成今天的系统运维报告',
-      '文档生成': '请生成今天的系统运维报告',
-      '合规检查 Agent': '请执行安全合规检查，验证系统配置是否符合安全标准',
-      '合规检查': '请执行安全合规检查，验证系统配置是否符合安全标准',
-      '服务器命令执行 Agent': '请检查服务器磁盘使用情况',
-      '服务器命令执行': '请检查服务器磁盘使用情况',
-      '自动巡检 Agent': '请对所有服务器执行批量巡检',
-      '自动巡检': '请对所有服务器执行批量巡检'
-    };
-    
-    const defaultInput = presetInputs[agent.name] || '请描述您要处理的运维问题';
-    setTestInput(defaultInput);
+    setTestInput(getAgentTestPresetInput(agent.name, t));
   };
 
   const runTest = () => {
@@ -387,9 +487,9 @@ export default function Agents() {
                 selectedCategory === cat
                     ? "bg-primary text-white shadow-lg shadow-black/15"
                     : "bg-background border border-border text-text-secondary hover:bg-surface hover:text-text-primary"
-              )}
+                )}
             >
-                {cat}
+                {getAgentCategoryLabel(cat, t)}
               </button>
             ))}
           </div>
@@ -441,8 +541,8 @@ export default function Agents() {
                       </div>
                     </div>
                     <div>
-                      <h3 className="font-bold text-text-primary tracking-tight group-hover:text-primary transition-colors">{agent.name}</h3>
-                      <p className="text-sm text-text-secondary mt-1">{agent.role}</p>
+                      <h3 className="font-bold text-text-primary tracking-tight group-hover:text-primary transition-colors">{getAgentDisplayText(agent.name, t)}</h3>
+                      <p className="text-sm text-text-secondary mt-1">{getAgentDisplayText(agent.role, t)}</p>
                     </div>
                   </div>
                   <div className="flex flex-col gap-2 items-end">
@@ -453,7 +553,7 @@ export default function Agents() {
                     )}
                     {agent.category && (
                       <span className="px-3 py-1 bg-background text-text-secondary text-xs rounded-full border border-border">
-                        {agent.category}
+                        {getAgentCategoryLabel(agent.category, t)}
                       </span>
                     )}
                   </div>
@@ -461,7 +561,7 @@ export default function Agents() {
 
                 {agent.description && (
                   <p className="text-sm text-text-secondary mb-4 line-clamp-2 leading-relaxed">
-                    {agent.description}
+                    {getAgentDisplayText(agent.description, t)}
                   </p>
                 )}
 
@@ -576,15 +676,15 @@ export default function Agents() {
       {showTestModal && editingAgent && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className={`${panelClass} w-full max-w-3xl shadow-2xl flex flex-col max-h-[90vh]`}>
-            {/* 头部 */}
+            {/* Header */}
             <div className="p-6 border-b border-border flex items-center justify-between flex-shrink-0">
               <div className="flex items-center gap-4">
                 <div className="w-12 h-12 flex items-center justify-center rounded-xl bg-primary/10 border border-primary/30 text-2xl">
                   {editingAgent.avatar}
                 </div>
                 <div>
-                  <h2 className="text-xl font-bold text-text-primary">{t('agents.testAgent', { name: editingAgent.name })}</h2>
-                  <p className="text-sm text-text-secondary">{editingAgent.role}</p>
+                  <h2 className="text-xl font-bold text-text-primary">{t('agents.testAgent', { name: getAgentDisplayText(editingAgent.name, t) })}</h2>
+                  <p className="text-sm text-text-secondary">{getAgentDisplayText(editingAgent.role, t)}</p>
                 </div>
               </div>
               <button
@@ -595,9 +695,9 @@ export default function Agents() {
               </button>
             </div>
             
-            {/* 内容区域 - 可滚动 */}
+            {/* Scrollable content */}
             <div className="p-6 overflow-y-auto flex-1 space-y-4">
-              {/* 服务器选择 */}
+              {/* Server selection */}
               <div className="pt-3 border-t border-border">
                 <label className={`${labelClass} flex items-center gap-2`}>
                   <Server className="w-4 h-4" />
@@ -690,7 +790,7 @@ export default function Agents() {
               )}
             </div>
 
-            {/* 底部 - 固定 */}
+            {/* Fixed footer */}
             <div className="p-6 border-t border-border flex-shrink-0">
               <button
                 type="button"
@@ -759,9 +859,9 @@ function AgentDetailInner({ agentId, onBack, deleteMutation }: AgentDetailInnerP
               </div>
               <div>
                 <h1 className="text-2xl font-bold text-text-primary tracking-tight flex items-center gap-3">
-                  {agent.name}
+                  {getAgentDisplayText(agent.name, t)}
                 </h1>
-                <p className="text-sm text-text-secondary">{agent.role}</p>
+                <p className="text-sm text-text-secondary">{getAgentDisplayText(agent.role, t)}</p>
               </div>
             </div>
           </div>
@@ -772,7 +872,7 @@ function AgentDetailInner({ agentId, onBack, deleteMutation }: AgentDetailInnerP
             <div className="space-y-4">
               <div>
                 <span className="text-sm text-text-tertiary block mb-1">{t('common.category')}</span>
-                <span className="text-text-primary">{agent.category || '-'}</span>
+                <span className="text-text-primary">{getAgentCategoryLabel(agent.category, t)}</span>
               </div>
               <div>
                 <span className="text-sm text-text-tertiary block mb-1">{t('agents.primaryModel')}</span>
@@ -1183,13 +1283,13 @@ function AgentModal({ agent, onClose }: { agent: Agent | null; onClose: () => vo
       const data = res.data.data;
       setConnectionResult({
         success: true,
-        message: `连接成功 · ${data.model} · ${data.latencyMs}ms`
+        message: t('agents.connectionSuccess', { model: data.model, latency: data.latencyMs })
       });
     } catch (error: unknown) {
       const err = error as { response?: { data?: { error?: string; data?: { error?: string } } }; message?: string };
       setConnectionResult({
         success: false,
-        message: err.response?.data?.data?.error || err.response?.data?.error || err.message || '连接测试失败'
+        message: err.response?.data?.data?.error || err.response?.data?.error || err.message || t('agents.connectionFailed')
       });
     } finally {
       setConnectionLoading(false);
@@ -1214,10 +1314,10 @@ function AgentModal({ agent, onClose }: { agent: Agent | null; onClose: () => vo
         input: testInput
       });
       
-      setTestResult(res.data.data.output || '测试完成，无返回结果');
+      setTestResult(res.data.data.output || t('agents.testNoOutput'));
     } catch (error: unknown) {
       const err = error as { response?: { data?: { error?: string; message?: string } }; message?: string };
-      setTestResult(`测试失败: ${err.response?.data?.error || err.response?.data?.message || err.message}`);
+      setTestResult(t('agents.testFailed', { error: err.response?.data?.error || err.response?.data?.message || err.message || t('common.unknownError') }));
     } finally {
       setTestLoading(false);
     }
@@ -1281,13 +1381,11 @@ function AgentModal({ agent, onClose }: { agent: Agent | null; onClose: () => vo
                 className={inputClass}
               >
                 <option value="">{t('agents.chooseCategory')}</option>
-                <option value="告警处理">告警处理</option>
-                <option value="故障处理">故障处理</option>
-                <option value="数据分析">数据分析</option>
-                <option value="巡检审计">巡检审计</option>
-                <option value="服务器管理">服务器管理</option>
-                <option value="操作执行">操作执行</option>
-                <option value="文档报告">文档报告</option>
+                {AGENT_CATEGORY_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {t(option.labelKey)}
+                  </option>
+                ))}
               </select>
             </div>
           </div>
@@ -1339,7 +1437,7 @@ function AgentModal({ agent, onClose }: { agent: Agent | null; onClose: () => vo
 
           <div className={`${softPanelClass} p-4`}>
             <label className="block text-sm font-medium text-text-secondary mb-3">
-              {t('agents.fallbackModel')} (可选)
+              {t('agents.fallbackModel')} {t('common.optional')}
             </label>
             <select
               value={formData.fallback_model_id}
@@ -1564,7 +1662,7 @@ function AgentModal({ agent, onClose }: { agent: Agent | null; onClose: () => vo
           </div>
         </form>
 
-        {/* 测试模态框 */}
+        {/* Test modal */}
         {showTestModal && (
           <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
             <div className={`${panelClass} w-full max-w-3xl shadow-2xl flex flex-col max-h-[90vh]`}>
