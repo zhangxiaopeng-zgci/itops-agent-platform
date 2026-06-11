@@ -2,9 +2,11 @@
 # Entrypoint script for backend container
 # Runs as root to fix volume permissions, then drops to appuser
 
-# Ensure data directory exists and set proper ownership
+# Ensure persistent directories exist and set proper ownership
 mkdir -p /app/data
 chown -R appuser:appgroup /app/data
+mkdir -p /app/backups
+chown -R appuser:appgroup /app/backups
 
 # Read-only host secret mounts may be root-only. Copy the referenced secret into
 # a container-local path that the unprivileged runtime can read without exposing
