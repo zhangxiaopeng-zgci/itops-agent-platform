@@ -1,6 +1,6 @@
 import { type ChangeEvent, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Activity, BookOpenCheck, Cable, CheckCircle2, Clock, Download, PlugZap, RefreshCw, Save, ShieldCheck, Upload, Wrench, XCircle } from 'lucide-react';
+import { Activity, BookOpenCheck, Cable, CheckCircle2, Clock, Download, GitBranch, PlugZap, RefreshCw, Save, ShieldCheck, Upload, Wrench, XCircle } from 'lucide-react';
 import clsx from 'clsx';
 import api from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
@@ -120,6 +120,81 @@ interface HermesWorkerStatus {
   } | null;
 }
 
+interface HermesControlPlaneOverview {
+  generatedAt: string;
+  channels: HermesChannel[];
+  workers: HermesWorkerStatus[];
+  agentBindings: Array<{
+    id: string;
+    name: string;
+    role: string;
+    runtime: string | null;
+    enabled: number;
+    channel_id: string | null;
+    channel_name: string | null;
+    channel_type: string | null;
+  }>;
+  capabilityInventory: Array<{
+    channelId: string;
+    channelName: string;
+    channelType: string;
+    model: string;
+    healthStatus: string;
+    policyId: string | null;
+    enabledTools: number;
+    highRiskTools: number;
+    enabledSkills: number;
+    enabledMcpServers: number;
+    unhealthyMcpServers: number;
+    secretRef: string;
+    workerRole: string | null;
+    workerHealthy: boolean;
+    fallbackRuns24h: number;
+  }>;
+  evolutionState: {
+    proposalsByStatus: Record<string, number>;
+    proposalsByType: Record<string, number>;
+    reviewQueueByStatus: Record<string, number>;
+    taskRunsByStatus24h: Record<string, number>;
+    activeReleaseCount: number;
+    latestProposalAt: string | null;
+    latestReleaseAt: string | null;
+  };
+  releaseState: {
+    active: Array<{ id: string; object_type: string; target_id: string | null; version_label: string; status: string }>;
+    recent: Array<{ id: string; object_type: string; target_id: string | null; version_label: string; status: string }>;
+  };
+  capabilityGraph: {
+    nodes: Array<{
+      id: string;
+      type: 'agent' | 'channel' | 'worker' | 'tool' | 'skill' | 'mcp' | 'release';
+      label: string;
+      status?: string | null;
+      metadata?: Record<string, unknown>;
+    }>;
+    edges: Array<{
+      id: string;
+      source: string;
+      target: string;
+      type: 'binds_to' | 'routes_to' | 'allows' | 'injects' | 'connects' | 'publishes';
+    }>;
+  };
+  riskSummary: {
+    generatedAt: string;
+    items: Array<{
+      id: string;
+      severity: 'info' | 'warning' | 'critical';
+      category: 'runtime' | 'capability' | 'evolution' | 'release';
+      code: string;
+      action: string;
+      channelId?: string | null;
+      channelName?: string | null;
+      workerRole?: string | null;
+      count?: number;
+    }>;
+  };
+}
+
 interface ChannelFormState {
   name: string;
   description: string;
@@ -201,6 +276,15 @@ export default function HermesChannels() {
     queryFn: async () => {
       const res = await api.get('/api/hermes-workers');
       return res.data.data as HermesWorkerStatus[];
+    },
+    refetchInterval: 30000
+  });
+
+  const { data: overview } = useQuery({
+    queryKey: ['hermes-control-plane-overview'],
+    queryFn: async () => {
+      const res = await api.get('/api/hermes-control-plane/overview');
+      return res.data.data as HermesControlPlaneOverview;
     },
     refetchInterval: 30000
   });
@@ -360,7 +444,11 @@ export default function HermesChannels() {
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <button
-              onClick={() => queryClient.invalidateQueries({ queryKey: ['hermes-channels'] })}
+              onClick={() => {
+                queryClient.invalidateQueries({ queryKey: ['hermes-channels'] });
+                queryClient.invalidateQueries({ queryKey: ['hermes-workers'] });
+                queryClient.invalidateQueries({ queryKey: ['hermes-control-plane-overview'] });
+              }}
               className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-surface border border-border text-text-secondary hover:text-text-primary transition-colors"
             >
               <RefreshCw className="w-4 h-4" />
@@ -393,6 +481,8 @@ export default function HermesChannels() {
             )}
           </div>
         </div>
+
+        {overview && <ControlPlaneOverview overview={overview} />}
 
         <WorkerStatusPanel workers={workers || []} />
 
@@ -469,6 +559,254 @@ export default function HermesChannels() {
       </div>
     </div>
   );
+}
+
+function ControlPlaneOverview({ overview }: { overview: HermesControlPlaneOverview }) {
+  const { t } = useLocale();
+  const channelCount = overview.capabilityInventory.length;
+  const workerHealthyCount = overview.workers.filter((worker) => worker.healthy).length;
+  const proposalCount = sumRecord(overview.evolutionState.proposalsByStatus);
+  const reviewQueueCount = sumRecord(overview.evolutionState.reviewQueueByStatus);
+  const fallbackCount = overview.capabilityInventory.reduce((sum, item) => sum + item.fallbackRuns24h, 0);
+  const riskItems = overview.riskSummary.items;
+
+  return (
+    <div className={`${panelClass} p-5`}>
+      <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4 mb-5">
+        <div>
+          <div className="flex items-center gap-2">
+            <GitBranch className="w-5 h-5 text-primary" />
+            <h2 className="text-sm font-semibold text-text-primary">{t('hermesChannels.overview.title')}</h2>
+          </div>
+          <p className="text-xs text-text-tertiary mt-1">{t('hermesChannels.overview.subtitle')}</p>
+        </div>
+        <div className="text-xs text-text-tertiary">
+          {t('hermesChannels.overview.generatedAt')}: {formatDateTime(overview.generatedAt)}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 lg:grid-cols-6 gap-3">
+        <OverviewMetric label={t('hermesChannels.overview.channels')} value={String(channelCount)} />
+        <OverviewMetric label={t('hermesChannels.overview.workers')} value={`${workerHealthyCount}/${overview.workers.length}`} />
+        <OverviewMetric label={t('hermesChannels.overview.proposals')} value={String(proposalCount)} />
+        <OverviewMetric label={t('hermesChannels.overview.reviewQueue')} value={String(reviewQueueCount)} />
+        <OverviewMetric label={t('hermesChannels.overview.fallbacks')} value={String(fallbackCount)} tone={fallbackCount > 0 ? 'warning' : 'normal'} />
+        <OverviewMetric label={t('hermesChannels.overview.activeReleases')} value={String(overview.evolutionState.activeReleaseCount)} />
+      </div>
+
+      <div className="mt-5 grid grid-cols-1 xl:grid-cols-[minmax(0,2fr)_minmax(320px,1fr)] gap-4">
+        <div>
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-text-tertiary">{t('hermesChannels.overview.runtimeTopology')}</h3>
+            <span className="text-xs text-text-tertiary">
+              {overview.capabilityGraph.nodes.length} {t('hermesChannels.overview.nodes')} / {overview.capabilityGraph.edges.length} {t('hermesChannels.overview.edges')}
+            </span>
+          </div>
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+            {overview.capabilityInventory.map((item) => {
+              const boundAgents = overview.agentBindings.filter((agent) => agent.channel_id === item.channelId);
+              const channel = overview.channels.find((entry) => entry.id === item.channelId);
+              return (
+                <div key={item.channelId} className="rounded-lg bg-background border border-border p-3 min-w-0">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="font-medium text-text-primary truncate">{item.channelName}</div>
+                      <div className="text-xs text-text-tertiary mt-1 truncate">{item.channelType} / {item.model}</div>
+                    </div>
+                    <HealthBadge status={item.healthStatus} />
+                  </div>
+
+                  <div className="mt-3 space-y-2 text-xs">
+                    <TopologyRow
+                      label={t('hermesChannels.overview.agents')}
+                      value={boundAgents.length > 0 ? boundAgents.map((agent) => agent.name).join(', ') : t('hermesChannels.overview.noAgentBinding')}
+                    />
+                    <TopologyRow
+                      label={t('hermesChannels.overview.worker')}
+                      value={item.workerRole || t('hermesChannels.workerNotConfigured')}
+                      status={item.workerRole ? (item.workerHealthy ? 'healthy' : 'failed') : 'unknown'}
+                    />
+                    <TopologyRow label={t('hermesChannels.policy')} value={item.policyId || '-'} />
+                    <TopologyRow label="Base URL" value={channel?.base_url || 'HERMES_API_BASE'} />
+                  </div>
+
+                  <div className="mt-3 grid grid-cols-2 gap-2">
+                    <MetricChip label={t('hermesChannels.overview.tools')} value={String(item.enabledTools)} />
+                    <MetricChip label={t('hermesChannels.overview.riskTools')} value={String(item.highRiskTools)} />
+                    <MetricChip label={t('hermesChannels.overview.skills')} value={String(item.enabledSkills)} />
+                    <MetricChip label={t('hermesChannels.overview.mcp')} value={`${item.enabledMcpServers}/${item.unhealthyMcpServers}`} />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="space-y-4">
+          <div>
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-text-tertiary mb-3">{t('hermesChannels.overview.riskSurface')}</h3>
+            <div className="space-y-2">
+              {riskItems.length === 0 ? (
+                <div className="rounded-lg bg-background border border-border p-3 text-sm text-text-secondary">
+                  {t('hermesChannels.overview.noRisks')}
+                </div>
+              ) : (
+                riskItems.slice(0, 6).map((item) => (
+                  <div key={item.id} className="rounded-lg bg-background border border-border p-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="text-sm font-medium text-text-primary">{riskText(item, t)}</div>
+                        <div className="text-xs text-text-tertiary mt-1">{riskActionText(item.action, t)}</div>
+                      </div>
+                      <RiskBadge severity={item.severity} />
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
+          <div>
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-text-tertiary mb-3">{t('hermesChannels.overview.evolutionState')}</h3>
+            <div className="rounded-lg bg-background border border-border p-3">
+              <div className="grid grid-cols-2 gap-2">
+                <MetricChip label={t('hermesChannels.overview.proposals')} value={String(proposalCount)} />
+                <MetricChip label={t('hermesChannels.overview.reviewQueue')} value={String(reviewQueueCount)} />
+                <MetricChip label={t('hermesChannels.overview.activeReleases')} value={String(overview.evolutionState.activeReleaseCount)} />
+                <MetricChip label={t('hermesChannels.overview.recentReleases')} value={String(overview.releaseState.recent.length)} />
+              </div>
+              <div className="mt-3 text-xs text-text-tertiary">
+                {t('hermesChannels.overview.safety')}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function OverviewMetric({
+  label,
+  value,
+  tone = 'normal'
+}: {
+  label: string;
+  value: string;
+  tone?: 'normal' | 'warning';
+}) {
+  return (
+    <div className={clsx(
+      'rounded-lg bg-background border p-3 min-w-0',
+      tone === 'warning' ? 'border-amber-500/35' : 'border-border'
+    )}>
+      <div className="text-xs text-text-tertiary truncate">{label}</div>
+      <div className={clsx(
+        'mt-1 text-xl font-semibold truncate',
+        tone === 'warning' ? 'text-amber-300' : 'text-text-primary'
+      )}>
+        {value}
+      </div>
+    </div>
+  );
+}
+
+function TopologyRow({ label, value, status }: { label: string; value: string; status?: string }) {
+  return (
+    <div className="grid grid-cols-[86px_minmax(0,1fr)] gap-2">
+      <span className="text-text-tertiary">{label}</span>
+      <span className="flex items-center gap-2 min-w-0 text-text-secondary">
+        <span className="truncate">{value}</span>
+        {status && <HealthDot status={status} />}
+      </span>
+    </div>
+  );
+}
+
+function HealthDot({ status }: { status: string }) {
+  return (
+    <span className={clsx(
+      'w-2 h-2 rounded-full shrink-0',
+      status === 'healthy' && 'bg-green-400',
+      status === 'failed' && 'bg-red-400',
+      status !== 'healthy' && status !== 'failed' && 'bg-text-tertiary'
+    )} />
+  );
+}
+
+function RiskBadge({ severity }: { severity: 'info' | 'warning' | 'critical' }) {
+  const { t } = useLocale();
+  return (
+    <span className={clsx(
+      'inline-flex items-center px-2 py-1 rounded-md border text-xs whitespace-nowrap',
+      severity === 'critical' && 'bg-red-500/10 border-red-500/25 text-red-300',
+      severity === 'warning' && 'bg-amber-500/10 border-amber-500/25 text-amber-300',
+      severity === 'info' && 'bg-primary/10 border-primary/25 text-primary'
+    )}>
+      {severity === 'critical' ? t('hermesChannels.risk.critical') : severity === 'warning' ? t('hermesChannels.risk.warning') : t('hermesChannels.risk.info')}
+    </span>
+  );
+}
+
+function riskText(
+  item: HermesControlPlaneOverview['riskSummary']['items'][number],
+  t: ReturnType<typeof useLocale>['t']
+) {
+  const values = {
+    channel: item.channelName || '-',
+    worker: item.workerRole || '-',
+    count: item.count || 0
+  };
+  switch (item.code) {
+    case 'channel_without_worker':
+      return t('hermesChannels.risk.channelWithoutWorker', values);
+    case 'worker_unhealthy':
+      return t('hermesChannels.risk.workerUnhealthy', values);
+    case 'fallback_runs':
+      return t('hermesChannels.risk.fallbackRuns', values);
+    case 'legacy_agent_config':
+      return t('hermesChannels.risk.legacyAgentConfig', values);
+    case 'high_risk_tools_without_policy':
+      return t('hermesChannels.risk.highRiskToolsWithoutPolicy', values);
+    case 'mcp_unhealthy':
+      return t('hermesChannels.risk.mcpUnhealthy', values);
+    case 'stale_review_queue':
+      return t('hermesChannels.risk.staleReviewQueue', values);
+    case 'no_active_release':
+      return t('hermesChannels.risk.noActiveRelease');
+    default:
+      return item.code;
+  }
+}
+
+function riskActionText(action: string, t: ReturnType<typeof useLocale>['t']) {
+  switch (action) {
+    case 'check_worker':
+      return t('hermesChannels.risk.action.checkWorker');
+    case 'bind_channel':
+      return t('hermesChannels.risk.action.bindChannel');
+    case 'review_policy':
+      return t('hermesChannels.risk.action.reviewPolicy');
+    case 'review_mcp':
+      return t('hermesChannels.risk.action.reviewMcp');
+    case 'review_evolution':
+      return t('hermesChannels.risk.action.reviewEvolution');
+    case 'publish_release':
+      return t('hermesChannels.risk.action.publishRelease');
+    default:
+      return action;
+  }
+}
+
+function sumRecord(record: Record<string, number>) {
+  return Object.values(record).reduce((sum, value) => sum + Number(value || 0), 0);
+}
+
+function formatDateTime(value: string | null | undefined) {
+  if (!value) return '-';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString();
 }
 
 function WorkerStatusPanel({ workers }: { workers: HermesWorkerStatus[] }) {

@@ -419,6 +419,41 @@ Hermes 控制台应该提供跳转，而不是复制所有细节。
 - 有 28a-28d 的可执行拆分。
 - 明确说明当前不会自动修改生产对象。
 
+## 实施状态
+
+截至 2026-06-11，阶段 28 已完成以下落地：
+
+- 已新增 `GET /api/hermes-control-plane/overview`。
+- 已新增 `GET /api/hermes-control-plane/capability-graph`。
+- 已新增 `GET /api/hermes-control-plane/risk-summary`。
+- `overview` 聚合返回：
+  - Channel 列表。
+  - 三个 Hermes Worker 状态。
+  - Hermes Agent 到 Channel 的绑定关系。
+  - Channel 级 Tools / Skills / MCP / Policy / Secret 引用摘要。
+  - Evolution proposal / review queue / task run / release 状态摘要。
+  - Capability graph。
+  - Risk summary。
+- Hermes 控制台已新增“能力控制平面”总览区：
+  - 顶部指标：Channel、健康 Worker、提案、复盘队列、24 小时 fallback、生效版本。
+  - Runtime 拓扑：每个 Channel 对应 Agent、Worker、Policy、Base URL 和能力数量。
+  - 风险面：fallback、MCP 异常、未发布 active release 等结构化风险。
+  - 进化状态：proposal、review queue、active release、recent release。
+- 风险摘要采用 `code + metadata`，前端负责中英文渲染，避免后端写死展示语言。
+- 所有新增控制面接口均为只读，继续保持 viewer/operator/admin 可查看、执行和发布仍走原有权限边界。
+- 已在 `10.1.132.58` 生产 compose 环境验证：
+  - backend / frontend 镜像构建通过。
+  - `frontend` 为 nginx production static，不是 Vite dev server。
+  - `backend`、`frontend`、`hermes-diagnose`、`hermes-remediate`、`hermes-evolve` 均 healthy。
+  - overview 返回 3 个 Channel、25 个 capability graph 节点。
+
+阶段 28 当前仍不做：
+
+- 不让 active release 自动改写生产 Skill / MCP / Workflow / Policy。
+- 不开放 MCP tool execution。
+- 不让 Hermes Worker 直接连接数据库。
+- 不绕过 proposal / evaluation / approval / publish 链路。
+
 ## 后续路线
 
 阶段 28 之后，合理的演进顺序是：
