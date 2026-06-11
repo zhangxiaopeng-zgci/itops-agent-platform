@@ -1,6 +1,5 @@
 import { Router, Request, Response } from 'express';
 import db from '../models/database';
-import { randomUUID } from 'crypto';
 import bcrypt from 'bcryptjs';
 import { createAuditLog } from '../services/auditService';
 import { requireRole, authenticateToken, invalidateUserCache } from '../middleware/auth';
@@ -60,24 +59,24 @@ router.post('/', requireRole('admin'), async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, error: 'Username already exists' });
     }
     
-    const id = randomUUID();
     const now = new Date().toISOString();
     
     // 使用bcrypt进行密码哈希
     const saltRounds = 12;
     const hashedPassword = await bcrypt.hash(password, saltRounds);
     
-    db.prepare(`
-      INSERT INTO users (id, username, password, email, role, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(id, username, hashedPassword, email || null, role, now, now);
+    const result = db.prepare(`
+      INSERT INTO users (username, password, email, role, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(username, hashedPassword, email || null, role, now, now);
+    const id = Number(result.lastInsertRowid);
     
     const reqUser = (req as { user?: { id: string } }).user;
     createAuditLog({
       user_id: reqUser?.id || 'system',
       action: 'create_user',
       resource_type: 'user',
-      resource_id: id,
+      resource_id: String(id),
       details: { username, email, role }
     });
     
