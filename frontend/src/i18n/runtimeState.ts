@@ -1,4 +1,4 @@
-import type { Locale } from '../contexts/LocaleContext';
+import type { Locale } from './types';
 
 function getInitialRuntimeLocale(): Locale {
   if (typeof window === 'undefined') return 'zh-CN';
