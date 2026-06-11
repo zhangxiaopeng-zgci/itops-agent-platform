@@ -8,6 +8,7 @@ import clsx from 'clsx';
 import api from '../lib/api';
 import { useToast } from '../contexts/ToastContext';
 import { useEscapeKey } from '../hooks/useEscapeKey';
+import { useLocale } from '../contexts/LocaleContext';
 
 interface SSHKey {
   id: string;
@@ -31,6 +32,7 @@ interface UsageServer {
 export default function SSHKeys() {
   const queryClient = useQueryClient();
   const toast = useToast();
+  const { locale, t } = useLocale();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedKey, setSelectedKey] = useState<SSHKey | null>(null);
   const [formData, setFormData] = useState({
@@ -78,10 +80,10 @@ export default function SSHKeys() {
       queryClient.invalidateQueries({ queryKey: ['ssh-keys'] });
       resetForm();
       setIsModalOpen(false);
-      toast.success('认证凭证已添加');
+      toast.success(t('credentials.toast.created'));
     },
     onError: (error: any) => {
-      const message = error?.response?.data?.error || error?.message || '添加失败，请重试';
+      const message = error?.response?.data?.error || error?.message || t('credentials.toast.createFailed');
       toast.error(message);
     },
   });
@@ -96,10 +98,10 @@ export default function SSHKeys() {
       resetForm();
       setIsModalOpen(false);
       setSelectedKey(null);
-      toast.success('认证凭证已更新');
+      toast.success(t('credentials.toast.updated'));
     },
     onError: (error: any) => {
-      const message = error?.response?.data?.error || error?.message || '更新失败，请重试';
+      const message = error?.response?.data?.error || error?.message || t('credentials.toast.updateFailed');
       toast.error(message);
     },
   });
@@ -111,7 +113,7 @@ export default function SSHKeys() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['ssh-keys'] });
       setDeleteConfirmKey(null);
-      toast.success('认证凭证已删除');
+      toast.success(t('credentials.toast.deleted'));
     },
     onError: () => {
       setDeleteConfirmKey(null);
@@ -165,7 +167,7 @@ export default function SSHKeys() {
 
   const handleCopyFingerprint = (fingerprint: string) => {
     navigator.clipboard.writeText(fingerprint);
-    toast.success('指纹已复制到剪贴板');
+    toast.success(t('credentials.toast.fingerprintCopied'));
   };
 
   const handleViewUsage = async (key: SSHKey) => {
@@ -175,7 +177,7 @@ export default function SSHKeys() {
       const res = await api.get(`/api/ssh-keys/${key.id}/usage`);
       setUsageServers(res.data.data.servers);
     } catch {
-      toast.error('获取使用情况失败');
+      toast.error(t('credentials.toast.usageFailed'));
     }
     setUsageLoading(false);
   };
@@ -192,14 +194,14 @@ export default function SSHKeys() {
   }) : [];
 
   const getKeyTypeText = (type: string, authType: string) => {
-    if (authType === 'password') return '账号密码';
+    if (authType === 'password') return t('credentials.authType.password');
     const map: Record<string, string> = {
       openssh: 'OpenSSH',
       rsa: 'RSA',
       ec: 'EC',
       dsa: 'DSA',
       pkcs8: 'PKCS#8',
-      unknown: '未知',
+      unknown: t('common.unknown'),
     };
     return map[type] || type;
   };
@@ -222,15 +224,15 @@ export default function SSHKeys() {
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-text-primary mb-2">认证凭证管理</h1>
-            <p className="text-text-secondary">统一管理服务器和网络设备的认证凭证（SSH 密钥 / 账号密码）</p>
+            <h1 className="text-2xl font-bold text-text-primary mb-2">{t('credentials.title')}</h1>
+            <p className="text-text-secondary">{t('credentials.subtitle')}</p>
           </div>
           <button
             onClick={() => { resetForm(); setSelectedKey(null); setIsModalOpen(true); }}
             className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors"
           >
             <Plus className="w-4 h-4" />
-            添加认证凭证
+            {t('credentials.add')}
           </button>
         </div>
 
@@ -240,19 +242,19 @@ export default function SSHKeys() {
               <Shield className="w-4 h-4 text-primary" />
             </div>
             <div className="flex-1">
-              <h3 className="text-sm font-medium text-text-primary mb-1">安全说明</h3>
+              <h3 className="text-sm font-medium text-text-primary mb-1">{t('credentials.security.title')}</h3>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs text-text-secondary">
                 <div className="flex items-center gap-2">
                   <Shield className="w-3.5 h-3.5 flex-shrink-0 text-status-success" />
-                  <span><strong>AES 加密存储</strong>：所有凭证在数据库中加密存储</span>
+                  <span><strong>{t('credentials.security.encryptedTitle')}</strong>{t('credentials.security.encryptedDesc')}</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <Key className="w-3.5 h-3.5 flex-shrink-0 text-status-warning" />
-                  <span><strong>双认证方式</strong>：支持 SSH 密钥和账号密码</span>
+                  <span><strong>{t('credentials.security.dualAuthTitle')}</strong>{t('credentials.security.dualAuthDesc')}</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <Info className="w-3.5 h-3.5 flex-shrink-0 text-status-failed" />
-                  <span><strong>按需解密</strong>：连接设备时自动解密凭证</span>
+                  <span><strong>{t('credentials.security.decryptTitle')}</strong>{t('credentials.security.decryptDesc')}</span>
                 </div>
               </div>
             </div>
@@ -265,7 +267,7 @@ export default function SSHKeys() {
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="搜索凭证名称、描述、指纹..."
+            placeholder={t('credentials.searchPlaceholder')}
             className="w-full pl-10 pr-4 py-2 bg-surface border border-border rounded-lg focus:outline-none focus:border-primary text-text-primary"
           />
         </div>
@@ -286,15 +288,15 @@ export default function SSHKeys() {
           ) : filteredKeys.length === 0 ? (
             <div className="col-span-full flex flex-col items-center justify-center py-16 text-text-secondary">
               <Key className="w-14 h-14 mb-4 opacity-40" />
-              <p className="text-lg mb-1">{searchQuery ? '未找到匹配的认证凭证' : '暂无认证凭证'}</p>
-              <p className="text-sm mb-4">{searchQuery ? '请调整搜索关键词' : '添加您的第一个认证凭证（SSH 密钥或账号密码），后续添加服务器/网络设备时可直接选择使用'}</p>
+              <p className="text-lg mb-1">{searchQuery ? t('credentials.empty.noMatch') : t('credentials.empty.title')}</p>
+              <p className="text-sm mb-4">{searchQuery ? t('credentials.empty.adjustSearch') : t('credentials.empty.desc')}</p>
               {!searchQuery && (
                 <button
                   onClick={() => { resetForm(); setSelectedKey(null); setIsModalOpen(true); }}
                   className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors"
                 >
                   <Plus className="w-4 h-4" />
-                  添加第一个认证凭证
+                  {t('credentials.empty.action')}
                 </button>
               )}
             </div>
@@ -328,9 +330,9 @@ export default function SSHKeys() {
                       </div>
                       <div className="mt-0.5 flex items-center gap-1 text-[11px] text-[#94a3b8]">
                         <Server className="h-3 w-3" />
-                        <span>{key.usage_count} 台设备</span>
+                        <span>{t('credentials.card.deviceCount', { count: key.usage_count })}</span>
                         <span className="mx-1 text-[#4a5568]">·</span>
-                        <span>{new Date(key.created_at).toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' })}</span>
+                        <span>{new Date(key.created_at).toLocaleDateString(locale === 'zh-CN' ? 'zh-CN' : 'en-US', { year: 'numeric', month: '2-digit', day: '2-digit' })}</span>
                       </div>
                     </div>
                     <div className="flex shrink-0 items-center gap-0.5 opacity-40 transition-opacity group-hover:opacity-100">
@@ -338,7 +340,7 @@ export default function SSHKeys() {
                         <button
                           onClick={() => handleViewUsage(key)}
                           className="rounded-md p-1.5 text-[#94a3b8] transition-colors hover:bg-white/5 hover:text-[#60a5fa]"
-                          title="查看服务器"
+                          title={t('credentials.actions.viewServers')}
                         >
                           <Server className="h-3.5 w-3.5" />
                         </button>
@@ -346,7 +348,7 @@ export default function SSHKeys() {
                       <button
                         onClick={() => setExpandedKey(expandedKey === key.id ? null : key.id)}
                         className="rounded-md p-1.5 text-[#94a3b8] transition-colors hover:bg-white/5 hover:text-[#60a5fa]"
-                        title="查看私钥"
+                        title={t('credentials.actions.viewSecret')}
                       >
                         {expandedKey === key.id ? (
                           <EyeOff className="h-3.5 w-3.5" />
@@ -357,14 +359,14 @@ export default function SSHKeys() {
                       <button
                         onClick={() => handleEdit(key)}
                         className="rounded-md p-1.5 text-[#94a3b8] transition-colors hover:bg-white/5 hover:text-[#60a5fa]"
-                        title="编辑"
+                        title={t('common.edit')}
                       >
                         <Edit className="h-3.5 w-3.5" />
                       </button>
                       <button
                         onClick={() => setDeleteConfirmKey(key)}
                         className="rounded-md p-1.5 text-[#94a3b8] transition-colors hover:bg-red-500/10 hover:text-red-400"
-                        title="删除"
+                        title={t('common.delete')}
                       >
                         <Trash2 className="h-3.5 w-3.5" />
                       </button>
@@ -378,7 +380,7 @@ export default function SSHKeys() {
                       <button
                         onClick={() => handleCopyFingerprint(key.fingerprint!)}
                         className="ml-auto shrink-0 rounded p-0.5 text-[#64748b] transition-colors hover:text-[#60a5fa]"
-                        title="复制指纹"
+                        title={t('credentials.actions.copyFingerprint')}
                       >
                         <Copy className="h-3 w-3" />
                       </button>
@@ -390,9 +392,9 @@ export default function SSHKeys() {
                       <div className="flex items-start gap-2">
                         <Lock className="mt-0.5 h-4 w-4 shrink-0 text-emerald-400" />
                         <div>
-                          <div className="text-xs font-medium text-text-primary">凭证内容已加密保存</div>
+                          <div className="text-xs font-medium text-text-primary">{t('credentials.encrypted.title')}</div>
                           <p className="mt-1 text-xs leading-5 text-text-tertiary">
-                            为避免密钥或密码在浏览器接口中暴露，系统只返回凭证元数据。连接服务器时后端会按权限读取并解密使用。
+                            {t('credentials.encrypted.desc')}
                           </p>
                         </div>
                       </div>
@@ -402,15 +404,15 @@ export default function SSHKeys() {
                   {usageServers !== null && (
                     <div className="mt-4 p-4 bg-background/50 border border-border rounded-lg">
                       <div className="flex items-center justify-between mb-2">
-                        <span className="text-xs font-medium text-text-primary">使用该凭证的服务器（{usageServers.length} 台）</span>
+                        <span className="text-xs font-medium text-text-primary">{t('credentials.usage.title', { count: usageServers.length })}</span>
                         <button onClick={() => setUsageServers(null)} className="p-0.5 hover:bg-surface rounded transition-colors">
                           <X className="w-3.5 h-3.5 text-text-tertiary" />
                         </button>
                       </div>
                       {usageLoading ? (
-                        <p className="text-xs text-text-tertiary animate-pulse">加载中...</p>
+                        <p className="text-xs text-text-tertiary animate-pulse">{t('common.loading')}</p>
                       ) : usageServers.length === 0 ? (
-                        <p className="text-xs text-text-tertiary">无关联服务器</p>
+                        <p className="text-xs text-text-tertiary">{t('credentials.usage.empty')}</p>
                       ) : (
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
                           {usageServers.map((srv) => (
@@ -435,23 +437,23 @@ export default function SSHKeys() {
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
           <div className="bg-surface rounded-xl p-6 w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto">
             <h3 className="text-xl font-bold text-text-primary mb-6">
-              {selectedKey ? '编辑认证凭证' : '添加认证凭证'}
+              {selectedKey ? t('credentials.modal.editTitle') : t('credentials.modal.addTitle')}
             </h3>
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-text-secondary mb-2">凭证名称</label>
+                <label className="block text-sm font-medium text-text-secondary mb-2">{t('credentials.form.name')}</label>
                 <input
                   type="text"
                   value={formData.name}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  placeholder="例如: production-key, switch-admin"
+                  placeholder={t('credentials.form.namePlaceholder')}
                   className="w-full px-4 py-2 bg-background border border-border rounded-lg focus:outline-none focus:border-primary text-text-primary"
                   required
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-text-secondary mb-2">认证类型</label>
+                <label className="block text-sm font-medium text-text-secondary mb-2">{t('credentials.form.authType')}</label>
                 <div className="flex gap-3">
                   <button
                     type="button"
@@ -464,7 +466,7 @@ export default function SSHKeys() {
                     )}
                   >
                     <Key className="w-4 h-4" />
-                    SSH 密钥
+                    {t('credentials.authType.key')}
                   </button>
                   <button
                     type="button"
@@ -477,7 +479,7 @@ export default function SSHKeys() {
                     )}
                   >
                     <Lock className="w-4 h-4" />
-                    账号密码
+                    {t('credentials.authType.password')}
                   </button>
                 </div>
               </div>
@@ -485,18 +487,18 @@ export default function SSHKeys() {
               {formData.auth_type === 'key' ? (
                 <div>
                   <label className="block text-sm font-medium text-text-secondary mb-2">
-                    私钥 {selectedKey && '（留空则不修改）'}
+                    {t('credentials.form.privateKey')} {selectedKey && t('credentials.form.keepUnchangedHint')}
                   </label>
                   <textarea
                     value={formData.private_key}
                     onChange={(e) => setFormData({ ...formData, private_key: e.target.value })}
-                    placeholder={selectedKey ? '留空以保持当前私钥不变' : '粘贴您的 SSH 私钥内容...'}
+                    placeholder={selectedKey ? t('credentials.form.privateKeyKeepPlaceholder') : t('credentials.form.privateKeyPlaceholder')}
                     rows={8}
                     className="w-full px-4 py-2 bg-black/60 border border-border rounded-lg focus:outline-none focus:border-primary font-mono text-sm text-green-400 resize-none"
                     required={!selectedKey}
                   />
                   <p className="mt-1 text-xs text-text-tertiary">
-                    支持 OpenSSH、RSA、EC、DSA 等格式的私钥
+                    {t('credentials.form.privateKeyHelp')}
                   </p>
                 </div>
               ) : (
@@ -504,13 +506,13 @@ export default function SSHKeys() {
                   <div>
                     <label className="block text-sm font-medium text-text-secondary mb-2">
                       <User className="w-3.5 h-3.5 inline mr-1" />
-                      用户名
+                      {t('credentials.form.username')}
                     </label>
                     <input
                       type="text"
                       value={formData.username}
                       onChange={(e) => setFormData({ ...formData, username: e.target.value })}
-                      placeholder="例如: admin, root"
+                      placeholder={t('credentials.form.usernamePlaceholder')}
                       className="w-full px-4 py-2 bg-background border border-border rounded-lg focus:outline-none focus:border-primary text-text-primary"
                       required
                     />
@@ -518,29 +520,29 @@ export default function SSHKeys() {
                   <div>
                     <label className="block text-sm font-medium text-text-secondary mb-2">
                       <Lock className="w-3.5 h-3.5 inline mr-1" />
-                      密码
+                      {t('credentials.form.password')}
                     </label>
                     <input
                       type="password"
                       value={formData.password}
                       onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                      placeholder={selectedKey ? '留空以保持当前密码不变' : '输入密码...'}
+                      placeholder={selectedKey ? t('credentials.form.passwordKeepPlaceholder') : t('credentials.form.passwordPlaceholder')}
                       className="w-full px-4 py-2 bg-background border border-border rounded-lg focus:outline-none focus:border-primary text-text-primary"
                       required={!selectedKey}
                     />
                     <p className="mt-1 text-xs text-text-tertiary">
-                      密码将使用 AES-256-GCM 加密存储
+                      {t('credentials.form.passwordHelp')}
                     </p>
                   </div>
                 </>
               )}
 
               <div>
-                <label className="block text-sm font-medium text-text-secondary mb-2">描述</label>
+                <label className="block text-sm font-medium text-text-secondary mb-2">{t('credentials.form.description')}</label>
                 <textarea
                   value={formData.description}
                   onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                  placeholder="凭证用途说明..."
+                  placeholder={t('credentials.form.descriptionPlaceholder')}
                   rows={2}
                   className="w-full px-4 py-2 bg-background border border-border rounded-lg focus:outline-none focus:border-primary text-text-primary"
                 />
@@ -552,14 +554,14 @@ export default function SSHKeys() {
                   onClick={() => { setIsModalOpen(false); resetForm(); setSelectedKey(null); }}
                   className="flex-1 px-4 py-2 bg-surface border border-border text-text-primary rounded-lg hover:bg-background transition-colors"
                 >
-                  取消
+                  {t('common.cancel')}
                 </button>
                 <button
                   type="submit"
                   className="flex-1 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors flex items-center justify-center gap-2"
                 >
                   <CheckCircle2 className="w-4 h-4" />
-                  {selectedKey ? '保存更改' : '添加凭证'}
+                  {selectedKey ? t('common.save') : t('credentials.form.addCredential')}
                 </button>
               </div>
             </form>
@@ -574,14 +576,14 @@ export default function SSHKeys() {
               <div className="w-10 h-10 rounded-full bg-red-500/10 flex items-center justify-center">
                 <AlertTriangle className="w-5 h-5 text-red-400" />
               </div>
-              <h3 className="text-lg font-bold text-text-primary">确认删除</h3>
+              <h3 className="text-lg font-bold text-text-primary">{t('credentials.delete.title')}</h3>
             </div>
             <div className="text-sm text-text-secondary mb-4">
-              <p>确定要删除密钥 <strong className="text-text-primary">{deleteConfirmKey.name}</strong> 吗？</p>
+              <p>{t('credentials.delete.confirmPrefix')} <strong className="text-text-primary">{deleteConfirmKey.name}</strong>{t('credentials.delete.confirmSuffix')}</p>
               {deleteConfirmKey.usage_count > 0 && (
                 <p className="mt-2 text-red-400 flex items-center gap-1.5">
                   <AlertTriangle className="w-4 h-4" />
-                  该密钥正被 <strong>{deleteConfirmKey.usage_count}</strong> 台服务器使用，无法删除
+                  {t('credentials.delete.inUsePrefix')} <strong>{deleteConfirmKey.usage_count}</strong> {t('credentials.delete.inUseSuffix')}
                 </p>
               )}
             </div>
@@ -590,7 +592,7 @@ export default function SSHKeys() {
                 onClick={() => setDeleteConfirmKey(null)}
                 className="flex-1 px-4 py-2 bg-surface border border-border text-text-primary rounded-lg hover:bg-background transition-colors"
               >
-                取消
+                {t('common.cancel')}
               </button>
               <button
                 onClick={() => deleteMutation.mutate(deleteConfirmKey.id)}
@@ -603,7 +605,7 @@ export default function SSHKeys() {
                 )}
               >
                 <Trash2 className="w-4 h-4" />
-                删除
+                {t('common.delete')}
               </button>
             </div>
           </div>
