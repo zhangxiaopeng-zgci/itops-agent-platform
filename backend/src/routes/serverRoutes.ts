@@ -67,7 +67,7 @@ router.post('/', validateBody(serverSchemas.createServer), requireRole('admin', 
 });
 
 // Update server
-router.put('/:id', validateParams(serverSchemas.serverId), validateBody(serverSchemas.updateServer), (req: Request, res: Response) => {
+router.put('/:id', validateParams(serverSchemas.serverId), validateBody(serverSchemas.updateServer), requireRole('admin', 'operator'), (req: Request, res: Response) => {
   try {
     const server = db.prepare('SELECT * FROM servers WHERE id = ?').get(req.params.id);
     if (!server) {
