@@ -93,6 +93,16 @@ type AuthCredential = {
   usage_count: number;
 };
 
+const AI_AGENT_MATCHERS = {
+  commandGeneration: ['command generation', 'command generator', '\u547d\u4ee4\u751f\u6210'],
+  server: ['server', 'command', 'service', '\u670d\u52a1\u5668', '\u547d\u4ee4', '\u670d\u52a1']
+};
+
+function matchesAny(value: string | undefined, keywords: string[]) {
+  const normalized = value?.toLowerCase() || '';
+  return keywords.some(keyword => normalized.includes(keyword.toLowerCase()));
+}
+
 export default function Servers() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -638,7 +648,7 @@ export default function Servers() {
 
     const enabledAgent = selectedAiAgent;
     if (!enabledAgent) {
-      setAiGenerationError('没有可用的 AI Agent，请先在 Agent 管理页面创建并启用一个 Agent');
+      setAiGenerationError(t('servers.aiCommand.noAgent'));
       return;
     }
 
@@ -646,7 +656,7 @@ export default function Servers() {
     setIsAiGenerating(true);
     try {
       const serverInfo = {
-        os_name: aiCommandServer.os || '未知',
+        os_name: aiCommandServer.os || t('common.unknown'),
         os_type: aiCommandServer.os_type || 'linux',
         hostname: aiCommandServer.hostname || '',
         ip_address: aiCommandServer.ip_address || '',
@@ -655,15 +665,17 @@ export default function Servers() {
         disk_gb: aiCommandServer.disk_gb || ''
       };
 
-      const userInput = `目标服务器信息：
-操作系统名称：${serverInfo.os_name}
-操作系统类型：${serverInfo.os_type}
-主机名/IP：${serverInfo.hostname || serverInfo.ip_address}
-${serverInfo.cpu_cores ? `CPU核心数：${serverInfo.cpu_cores}` : ''}
-${serverInfo.memory_gb ? `内存大小：${serverInfo.memory_gb}GB` : ''}
-${serverInfo.disk_gb ? `磁盘大小：${serverInfo.disk_gb}GB` : ''}
-
-用户需求：${aiPrompt}`;
+      const userInput = [
+        t('servers.aiCommand.prompt.serverInfoTitle'),
+        t('servers.aiCommand.prompt.osName', { value: serverInfo.os_name }),
+        t('servers.aiCommand.prompt.osType', { value: serverInfo.os_type }),
+        t('servers.aiCommand.prompt.host', { value: serverInfo.hostname || serverInfo.ip_address }),
+        serverInfo.cpu_cores ? t('servers.aiCommand.prompt.cpuCores', { value: serverInfo.cpu_cores }) : '',
+        serverInfo.memory_gb ? t('servers.aiCommand.prompt.memoryGb', { value: serverInfo.memory_gb }) : '',
+        serverInfo.disk_gb ? t('servers.aiCommand.prompt.diskGb', { value: serverInfo.disk_gb }) : '',
+        '',
+        t('servers.aiCommand.prompt.userRequest', { value: aiPrompt })
+      ].filter(line => line !== '').join('\n');
 
       const res = await api.post(`/api/agents/${enabledAgent.id}/test`, {
         input: userInput,
@@ -679,15 +691,15 @@ ${serverInfo.disk_gb ? `磁盘大小：${serverInfo.disk_gb}GB` : ''}
           setAiCommandExplanation(result.explanation);
         } catch {
           setAiGeneratedCommand(output);
-          setAiCommandExplanation('AI 生成的命令，请确认后执行');
+          setAiCommandExplanation(t('servers.aiCommand.defaultExplanation'));
         }
       } else {
         setAiGeneratedCommand(output);
-        setAiCommandExplanation('AI 生成的命令，请确认后执行');
+        setAiCommandExplanation(t('servers.aiCommand.defaultExplanation'));
       }
     } catch (err: any) {
-      const errorMsg = err.response?.data?.error || err.response?.data?.message || err.message || '未知错误';
-      setAiGenerationError(`生成失败：${errorMsg}`);
+      const errorMsg = err.response?.data?.error || err.response?.data?.message || err.message || t('common.unknownError');
+      setAiGenerationError(t('servers.aiCommand.generateFailed', { error: errorMsg }));
     } finally {
       setIsAiGenerating(false);
     }
@@ -1142,15 +1154,14 @@ ${serverInfo.disk_gb ? `磁盘大小：${serverInfo.disk_gb}GB` : ''}
                           if (agents) {
                             const cmdAgent = agents.find(a =>
                               a.enabled === 1 && (
-                                a.name?.includes('命令生成') ||
-                                a.category?.includes('命令生成')
+                                matchesAny(a.name, AI_AGENT_MATCHERS.commandGeneration) ||
+                                matchesAny(a.category, AI_AGENT_MATCHERS.commandGeneration)
                               )
                             );
                             const serverAgent = agents.find(a =>
                               a.enabled === 1 && (
-                                a.category?.includes('服务器') ||
-                                a.name?.includes('命令') ||
-                                a.name?.includes('服务')
+                                matchesAny(a.category, AI_AGENT_MATCHERS.server) ||
+                                matchesAny(a.name, AI_AGENT_MATCHERS.server)
                               )
                             );
                             const firstAgent = agents.find(a => a.enabled === 1);
@@ -2226,7 +2237,7 @@ ${serverInfo.disk_gb ? `磁盘大小：${serverInfo.disk_gb}GB` : ''}
           </div>
         )}
 
-        {/* AI 命令生成模态框 */}
+        {/* AI command generation modal */}
         {isAiCommandModalOpen && aiCommandServer && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
             <div className="bg-surface rounded-xl p-8 w-full max-w-4xl mx-4 max-h-[90vh] overflow-y-auto">
@@ -2236,12 +2247,12 @@ ${serverInfo.disk_gb ? `磁盘大小：${serverInfo.disk_gb}GB` : ''}
                     <Bot className="w-5 h-5 text-text-primary" />
                   </div>
                   <div>
-                    <h3 className="text-lg font-bold text-text-primary">AI 智能命令生成</h3>
+                    <h3 className="text-lg font-bold text-text-primary">{t('servers.aiCommand.title')}</h3>
                     <p className="text-sm text-text-secondary mt-1.5">
                       {aiCommandServer.name} ({aiCommandServer.hostname})
                       {selectedAiAgent && (
                         <span className="ml-2 text-text-tertiary">
-                          · 默认调用 <span className="font-medium text-text-secondary">{selectedAiAgent.name} Agent</span>
+                          {t('servers.aiCommand.defaultAgentPrefix')} <span className="font-medium text-text-secondary">{selectedAiAgent.name} Agent</span>
                         </span>
                       )}
                     </p>
@@ -2262,49 +2273,49 @@ ${serverInfo.disk_gb ? `磁盘大小：${serverInfo.disk_gb}GB` : ''}
                 </button>
               </div>
 
-              {/* 无 Agent 提示 */}
+              {/* No Agent hint */}
               {!selectedAiAgent && (
                 <div className="mb-6 p-4 bg-red-500/10 border border-red-500/30 rounded-lg">
                   <p className="text-sm text-red-300 font-medium">
-                    没有可用的 AI Agent。请先前往「Agent 管理」页面创建并启用一个 Agent。
+                    {t('servers.aiCommand.noAgent')}
                   </p>
                 </div>
               )}
 
-              {/* 生成错误提示 */}
+              {/* Generation error hint */}
               {aiGenerationError && (
                 <div className="mb-6 p-4 bg-red-500/10 border border-red-500/30 rounded-lg">
                   <p className="text-sm text-red-300 font-medium">{aiGenerationError}</p>
                 </div>
               )}
 
-              {/* 操作系统信息展示 */}
+              {/* OS information */}
               <div className="mb-6 p-3 bg-background border border-border rounded-lg">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2 text-sm">
                     <Server className="w-4 h-4 text-text-secondary" />
-                    <span className="text-text-secondary">目标操作系统：</span>
+                    <span className="text-text-secondary">{t('servers.aiCommand.targetOs')}</span>
                     <span className="text-text-primary font-medium">
-                      {aiCommandServer?.os || aiCommandServer?.os_type || 'linux (默认，未采集信息)'}
+                      {aiCommandServer?.os || aiCommandServer?.os_type || t('servers.aiCommand.defaultLinux')}
                     </span>
                   </div>
                   {!aiCommandServer?.os && (
                     <span className="text-xs text-yellow-600 dark:text-yellow-400 flex items-center gap-1">
                       <AlertCircle className="w-3 h-3" />
-                      建议先采集服务器信息，以便生成更准确的命令
+                      {t('servers.aiCommand.collectInfoHint')}
                     </span>
                   )}
                 </div>
               </div>
 
-              {/* 输入提示 */}
+              {/* Input prompt */}
               <div className="mb-6">
-                <label className="block text-sm font-medium text-text-secondary mb-2">请描述您要执行的操作</label>
+                <label className="block text-sm font-medium text-text-secondary mb-2">{t('servers.aiCommand.operationLabel')}</label>
                 <div className="relative">
                   <textarea
                     value={aiPrompt}
                     onChange={(e) => setAiPrompt(e.target.value)}
-                    placeholder="例如：查看磁盘使用情况 / 查看内存占用前 10 的进程 / 检查 Nginx 是否运行..."
+                    placeholder={t('servers.aiCommand.operationPlaceholder')}
                     rows={3}
                     className="w-full px-4 py-3 bg-background border border-border rounded-lg focus:outline-none focus:border-purple-500 text-text-primary resize-none"
                     onKeyDown={(e) => {
@@ -2322,38 +2333,38 @@ ${serverInfo.disk_gb ? `磁盘大小：${serverInfo.disk_gb}GB` : ''}
                     {isAiGenerating ? (
                       <>
                         <RefreshCw className="w-4 h-4 animate-spin" />
-                        生成中...
+                        {t('servers.aiCommand.generating')}
                       </>
                     ) : (
                       <>
                         <Sparkles className="w-4 h-4" />
-                        生成命令
+                        {t('servers.aiCommand.generate')}
                       </>
                     )}
                   </button>
                 </div>
-                {/* 快捷提示 - 根据操作系统类型显示不同选项 */}
+                {/* Quick prompts by OS type */}
                 <div className="mt-3 flex flex-wrap gap-2">
                   {(aiCommandServer?.os_type === 'windows' ? [
-                    '查看磁盘使用情况',
-                    '检查内存占用前10的进程',
-                    '查看端口监听情况',
-                    '检查IIS服务状态',
-                    '查看系统负载情况',
-                    '查看系统事件日志',
-                    '查看当前登录用户',
-                    '清理临时文件',
-                    '检查Windows服务状态'
+                    t('servers.aiCommand.tips.windows.diskUsage'),
+                    t('servers.aiCommand.tips.windows.memoryTop'),
+                    t('servers.aiCommand.tips.windows.ports'),
+                    t('servers.aiCommand.tips.windows.iis'),
+                    t('servers.aiCommand.tips.windows.load'),
+                    t('servers.aiCommand.tips.windows.eventLog'),
+                    t('servers.aiCommand.tips.windows.loggedInUsers'),
+                    t('servers.aiCommand.tips.windows.cleanTemp'),
+                    t('servers.aiCommand.tips.windows.services')
                   ] : [
-                    '查看磁盘使用率',
-                    '检查内存占用前10的进程',
-                    '查看端口监听情况',
-                    '检查Nginx服务状态',
-                    '查看系统负载情况',
-                    '查看系统日志最后20行',
-                    '查看当前登录用户',
-                    '清理临时文件',
-                    '检查Docker容器状态'
+                    t('servers.aiCommand.tips.linux.diskUsage'),
+                    t('servers.aiCommand.tips.linux.memoryTop'),
+                    t('servers.aiCommand.tips.linux.ports'),
+                    t('servers.aiCommand.tips.linux.nginx'),
+                    t('servers.aiCommand.tips.linux.load'),
+                    t('servers.aiCommand.tips.linux.syslog'),
+                    t('servers.aiCommand.tips.linux.loggedInUsers'),
+                    t('servers.aiCommand.tips.linux.cleanTemp'),
+                    t('servers.aiCommand.tips.linux.docker')
                   ]).map((tip) => (
                     <button
                       key={tip}
@@ -2370,12 +2381,12 @@ ${serverInfo.disk_gb ? `磁盘大小：${serverInfo.disk_gb}GB` : ''}
               {aiGeneratedCommand && (
                 <div className="mb-6">
                   <div className="flex items-center justify-between mb-2">
-                    <label className="block text-sm font-medium text-text-secondary">AI 生成的命令（可编辑）</label>
+                    <label className="block text-sm font-medium text-text-secondary">{t('servers.aiCommand.generatedCommand')}</label>
                     <button
                       onClick={() => navigator.clipboard.writeText(aiGeneratedCommand)}
                       className="text-xs text-text-tertiary hover:text-text-secondary"
                     >
-                      复制命令
+                      {t('servers.aiCommand.copy')}
                     </button>
                   </div>
                   <textarea
@@ -2387,13 +2398,13 @@ ${serverInfo.disk_gb ? `磁盘大小：${serverInfo.disk_gb}GB` : ''}
                   {aiCommandExplanation && (
                     <div className="mt-3 p-3 bg-yellow-500/20 border border-yellow-500/40 rounded-lg">
                       <p className="text-sm text-yellow-300 dark:text-yellow-200 font-medium">
-                        <strong>💡 说明：</strong>{aiCommandExplanation}
+                        <strong>{t('servers.aiCommand.explanationLabel')}</strong>{aiCommandExplanation}
                       </p>
                     </div>
                   )}
                   <div className="mt-3 p-3 bg-red-500/20 border border-red-500/40 rounded-lg">
                     <p className="text-sm text-red-300 dark:text-red-200 font-medium">
-                      <strong>⚠️ 警告：</strong>请仔细确认命令的安全性和正确性，再执行！错误的命令可能导致数据丢失或系统故障。
+                      <strong>{t('servers.aiCommand.warningLabel')}</strong>{t('servers.aiCommand.warning')}
                     </p>
                   </div>
                 </div>
@@ -2412,7 +2423,7 @@ ${serverInfo.disk_gb ? `磁盘大小：${serverInfo.disk_gb}GB` : ''}
                   }}
                   className="flex-1 px-4 py-2 bg-surface border border-border text-text-primary rounded-lg hover:bg-background transition-colors"
                 >
-                  取消
+                  {t('common.cancel')}
                 </button>
                 {aiGeneratedCommand && (
                   <>
@@ -2427,14 +2438,14 @@ ${serverInfo.disk_gb ? `磁盘大小：${serverInfo.disk_gb}GB` : ''}
                       className="flex-1 px-4 py-2 bg-surface border border-border text-text-secondary rounded-lg hover:bg-background transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
                     >
                       <RefreshCw className={clsx('w-4 h-4', isAiGenerating && 'animate-spin')} />
-                      重新生成
+                      {t('servers.aiCommand.regenerate')}
                     </button>
                     <button
                       onClick={handleExecuteAiCommand}
                       className="flex-1 px-4 py-2 bg-text-primary text-surface rounded-lg hover:opacity-90 transition-opacity flex items-center justify-center gap-2"
                     >
                       <Terminal className="w-4 h-4" />
-                      确认并执行
+                      {t('servers.aiCommand.confirmAndExecute')}
                     </button>
                   </>
                 )}
@@ -2443,19 +2454,19 @@ ${serverInfo.disk_gb ? `磁盘大小：${serverInfo.disk_gb}GB` : ''}
           </div>
         )}
 
-        {/* AI 命令执行确认弹窗 */}
+        {/* AI command execution confirmation */}
         {showAiCommandConfirm && aiCommandServer && aiGeneratedCommand && (
           <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[60]">
             <div className="bg-surface rounded-xl p-6 w-full max-w-lg mx-4">
-              <h3 className="text-lg font-bold text-text-primary mb-4">确认执行命令</h3>
+              <h3 className="text-lg font-bold text-text-primary mb-4">{t('servers.aiCommand.confirmTitle')}</h3>
               <div className="space-y-3 mb-6">
                 <div className="flex items-center gap-2 text-sm">
                   <Server className="w-4 h-4 text-text-secondary" />
-                  <span className="text-text-secondary">目标服务器：</span>
+                  <span className="text-text-secondary">{t('servers.aiCommand.targetServer')}</span>
                   <span className="text-text-primary font-medium">{aiCommandServer.name} ({aiCommandServer.hostname})</span>
                 </div>
                 <div>
-                  <span className="text-sm text-text-secondary">执行命令：</span>
+                  <span className="text-sm text-text-secondary">{t('servers.aiCommand.commandToExecute')}</span>
                   <div className="mt-1 bg-black/80 rounded-lg p-3">
                     <code className="text-green-400 font-mono text-sm break-all">{aiGeneratedCommand}</code>
                   </div>
@@ -2463,13 +2474,13 @@ ${serverInfo.disk_gb ? `磁盘大小：${serverInfo.disk_gb}GB` : ''}
                 {aiCommandExplanation && (
                   <div className="p-3 bg-yellow-500/10 border border-yellow-500/20 rounded-lg">
                     <p className="text-sm text-yellow-300">
-                      <strong>💡 说明：</strong>{aiCommandExplanation}
+                      <strong>{t('servers.aiCommand.explanationLabel')}</strong>{aiCommandExplanation}
                     </p>
                   </div>
                 )}
                 <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-lg">
                   <p className="text-sm text-red-300 font-medium">
-                    ⚠️ 此操作将在目标服务器上执行命令，请确认命令的安全性！
+                    {t('servers.aiCommand.executeWarning')}
                   </p>
                 </div>
               </div>
@@ -2478,14 +2489,14 @@ ${serverInfo.disk_gb ? `磁盘大小：${serverInfo.disk_gb}GB` : ''}
                   onClick={() => setShowAiCommandConfirm(false)}
                   className="flex-1 px-4 py-2 bg-surface border border-border text-text-primary rounded-lg hover:bg-background transition-colors"
                 >
-                  取消
+                  {t('common.cancel')}
                 </button>
                 <button
                   onClick={confirmExecuteAiCommand}
                   className="flex-1 px-4 py-2 bg-text-primary text-surface rounded-lg hover:opacity-90 transition-opacity flex items-center justify-center gap-2"
                 >
                   <Terminal className="w-4 h-4" />
-                  确认执行
+                  {t('servers.aiCommand.confirmExecute')}
                 </button>
               </div>
             </div>
@@ -2496,30 +2507,30 @@ ${serverInfo.disk_gb ? `磁盘大小：${serverInfo.disk_gb}GB` : ''}
             <div className="bg-gradient-to-br from-slate-800/70 to-slate-900/70 backdrop-blur-xl rounded-xl p-6 w-full max-w-md mx-4 border border-red-500/20" onClick={(e) => e.stopPropagation()}>
               <h3 className="text-lg font-bold text-red-400 mb-4 flex items-center gap-2">
                 <AlertTriangle className="w-5 h-5" />
-                删除服务器
+                {t('servers.delete.title')}
               </h3>
               <p className="text-text-secondary mb-6">
-                确定要删除服务器 <span className="text-text-primary font-medium">{pendingDeleteServer.name}</span> 吗？此操作不可撤销。
+                {t('servers.delete.confirmPrefix')} <span className="text-text-primary font-medium">{pendingDeleteServer.name}</span>{t('servers.delete.confirmSuffix')}
               </p>
               <div className="flex gap-3">
                 <button
                   onClick={() => { setIsDeleteConfirmOpen(false); setPendingDeleteServer(null); }}
                   className="flex-1 px-4 py-2 bg-surface border border-border text-text-primary rounded-lg hover:bg-background transition-colors"
                 >
-                  取消
+                  {t('common.cancel')}
                 </button>
                 <button
                   onClick={() => deleteMutation.mutate(pendingDeleteServer.id)}
                   className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
                 >
-                  确认删除
+                  {t('servers.delete.confirmDelete')}
                 </button>
               </div>
             </div>
           </div>
         )}
 
-        {/* 合规检查选项弹窗 */}
+        {/* Compliance check options modal */}
         {showComplianceOptions && selectedServer && (
           <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[60]" onClick={() => setShowComplianceOptions(false)}>
             <div className="bg-surface rounded-xl p-6 w-full max-w-md mx-4" onClick={(e) => e.stopPropagation()}>
@@ -2529,7 +2540,7 @@ ${serverInfo.disk_gb ? `磁盘大小：${serverInfo.disk_gb}GB` : ''}
                     <ShieldCheck className="w-5 h-5 text-primary" />
                   </div>
                   <div>
-                    <h3 className="text-lg font-bold text-text-primary">合规检查</h3>
+                    <h3 className="text-lg font-bold text-text-primary">{t('servers.compliance.title')}</h3>
                     <p className="text-sm text-text-secondary mt-1">{selectedServer.name} ({selectedServer.hostname})</p>
                   </div>
                 </div>
@@ -2542,20 +2553,20 @@ ${serverInfo.disk_gb ? `磁盘大小：${serverInfo.disk_gb}GB` : ''}
               </div>
 
               <div className="space-y-6">
-                {/* AI 智能分析开关 */}
+                {/* AI analysis switch */}
                 <div className="p-4 bg-background rounded-lg border border-border">
                   <label className="flex items-center justify-between cursor-pointer">
                     <div className="flex flex-col">
                       <div className="flex items-center gap-2">
-                        <span className="text-sm font-semibold text-text-primary">AI 智能分析</span>
+                        <span className="text-sm font-semibold text-text-primary">{t('servers.compliance.aiAnalysis')}</span>
                         {complianceOptions.useAI && (
-                          <span className="text-[10px] px-1.5 py-0.5 bg-primary/10 text-primary rounded-full font-medium">推荐</span>
+                          <span className="text-[10px] px-1.5 py-0.5 bg-primary/10 text-primary rounded-full font-medium">{t('servers.compliance.recommended')}</span>
                         )}
                       </div>
                       <span className="text-xs text-text-tertiary mt-1">
                         {complianceOptions.useAI 
-                          ? '🤖 对检查结果进行智能分析，给出专业建议' 
-                          : '⚡ 仅执行命令，检查速度提升 60%'
+                          ? t('servers.compliance.aiDesc')
+                          : t('servers.compliance.fastDesc')
                         }
                       </span>
                     </div>
@@ -2573,12 +2584,12 @@ ${serverInfo.disk_gb ? `磁盘大小：${serverInfo.disk_gb}GB` : ''}
                   </label>
                 </div>
 
-                {/* 并发数选择 */}
+                {/* Concurrency selection */}
                 <div className="p-4 bg-background rounded-lg border border-border">
                   <div className="flex items-center justify-between mb-3">
                     <div>
-                      <span className="text-sm font-medium text-text-primary">并发执行数</span>
-                      <p className="text-xs text-text-tertiary mt-1">同时执行的检查命令数量</p>
+                      <span className="text-sm font-medium text-text-primary">{t('servers.compliance.concurrency')}</span>
+                      <p className="text-xs text-text-tertiary mt-1">{t('servers.compliance.concurrencyDesc')}</p>
                     </div>
                     <span className="text-lg font-bold text-primary">{complianceOptions.concurrency}</span>
                   </div>
@@ -2599,27 +2610,27 @@ ${serverInfo.disk_gb ? `磁盘大小：${serverInfo.disk_gb}GB` : ''}
                     ))}
                   </div>
                   <div className="flex justify-between mt-2 text-xs text-text-tertiary">
-                    <span>较慢（稳定）</span>
-                    <span>推荐</span>
-                    <span>较快（对服务器压力大）</span>
+                    <span>{t('servers.compliance.speedStable')}</span>
+                    <span>{t('servers.compliance.recommended')}</span>
+                    <span>{t('servers.compliance.speedHeavy')}</span>
                   </div>
                 </div>
 
-                {/* 预计时间提示 */}
+                {/* Estimated duration hint */}
                 <div className="p-3 bg-blue-500/10 border border-blue-500/20 rounded-lg">
                   <p className="text-sm text-blue-300">
-                    ⏱️ 预计执行时间：约 <strong>{complianceOptions.useAI ? 15 + (10 - complianceOptions.concurrency) * 2 : 3 + (10 - complianceOptions.concurrency)}</strong> 秒
+                    {t('servers.compliance.estimatedPrefix')} <strong>{complianceOptions.useAI ? 15 + (10 - complianceOptions.concurrency) * 2 : 3 + (10 - complianceOptions.concurrency)}</strong> {t('servers.compliance.seconds')}
                   </p>
                 </div>
               </div>
 
-              {/* 操作按钮 */}
+              {/* Actions */}
               <div className="flex gap-3 mt-6">
                 <button
                   onClick={() => setShowComplianceOptions(false)}
                   className="flex-1 px-4 py-2 bg-surface border border-border text-text-primary rounded-lg hover:bg-background transition-colors"
                 >
-                  取消
+                  {t('common.cancel')}
                 </button>
                 <button
                   onClick={startComplianceCheck}
@@ -2629,12 +2640,12 @@ ${serverInfo.disk_gb ? `磁盘大小：${serverInfo.disk_gb}GB` : ''}
                   {isRunningCompliance ? (
                     <>
                       <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                      检查中...
+                      {t('servers.compliance.checking')}
                     </>
                   ) : (
                     <>
                       <ShieldCheck className="w-4 h-4" />
-                      开始检查
+                      {t('servers.compliance.start')}
                     </>
                   )}
                 </button>
