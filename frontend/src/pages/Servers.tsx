@@ -14,6 +14,7 @@ import api from '../lib/api';
 import { useToast } from '../contexts/ToastContext';
 import { ImportExport } from '../components/ImportExport';
 import { useEscapeKey } from '../hooks/useEscapeKey';
+import { useLocale } from '../contexts/LocaleContext';
 
 interface Server {
   id: string;
@@ -96,6 +97,7 @@ export default function Servers() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const toast = useToast();
+  const { locale, t } = useLocale();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedServer, setSelectedServer] = useState<Server | null>(null);
   const [formData, setFormData] = useState({
@@ -244,8 +246,8 @@ export default function Servers() {
   )).sort();
 
   const getCredentialTypeLabel = useCallback((credential: AuthCredential) => {
-    return credential.auth_type === 'password' ? '账号密码' : (credential.key_type || 'SSH 私钥');
-  }, []);
+    return credential.auth_type === 'password' ? t('servers.credential.password') : (credential.key_type || t('servers.credential.privateKey'));
+  }, [t]);
 
   const getCredentialSearchLabel = useCallback((credential: AuthCredential) => {
     return `${credential.name} (${getCredentialTypeLabel(credential)})`;
@@ -359,10 +361,10 @@ export default function Servers() {
       queryClient.invalidateQueries({ queryKey: ['servers'] });
       resetForm();
       setIsModalOpen(false);
-      toast.success('服务器已添加');
+      toast.success(t('servers.toast.created'));
     },
     onError: (err: any) => {
-      toast.error(err.response?.data?.message || err.response?.data?.error || '添加服务器失败');
+      toast.error(err.response?.data?.message || err.response?.data?.error || t('servers.toast.createFailed'));
     },
   });
 
@@ -377,10 +379,10 @@ export default function Servers() {
       resetForm();
       setIsModalOpen(false);
       setSelectedServer(null);
-      toast.success('服务器已更新');
+      toast.success(t('servers.toast.updated'));
     },
     onError: (err: any) => {
-      toast.error(err.response?.data?.message || err.response?.data?.error || '更新服务器失败');
+      toast.error(err.response?.data?.message || err.response?.data?.error || t('servers.toast.updateFailed'));
     },
   });
 
@@ -392,10 +394,10 @@ export default function Servers() {
       queryClient.invalidateQueries({ queryKey: ['servers'] });
       setIsDeleteConfirmOpen(false);
       setPendingDeleteServer(null);
-      toast.success('服务器已删除');
+      toast.success(t('servers.toast.deleted'));
     },
     onError: (err: any) => {
-      toast.error(err.response?.data?.message || err.response?.data?.error || '删除服务器失败');
+      toast.error(err.response?.data?.message || err.response?.data?.error || t('servers.toast.deleteFailed'));
     },
   });
 
@@ -622,9 +624,9 @@ export default function Servers() {
     setIsCollecting(true);
     try {
       await collectInfoMutation.mutateAsync(server.id);
-      toast.success(`已更新 ${server.name} 的主机信息`);
+      toast.success(t('servers.toast.collectInfoSuccess', { name: server.name }));
     } catch {
-      toast.error('采集失败');
+      toast.error(t('servers.toast.collectFailed'));
     } finally {
       setIsCollecting(false);
     }
@@ -726,9 +728,9 @@ ${serverInfo.disk_gb ? `磁盘大小：${serverInfo.disk_gb}GB` : ''}
     setIsCollecting(true);
     try {
       const result = await collectAllMutation.mutateAsync();
-      toast.success(`采集完成: ${result.data.success} 成功, ${result.data.failed} 失败`);
+      toast.success(t('servers.toast.collectAllResult', { success: result.data.success, failed: result.data.failed }));
     } catch {
-      toast.error('批量采集失败');
+      toast.error(t('servers.toast.collectAllFailed'));
     } finally {
       setIsCollecting(false);
     }
@@ -738,9 +740,9 @@ ${serverInfo.disk_gb ? `磁盘大小：${serverInfo.disk_gb}GB` : ''}
     setIsCollectingMetrics(true);
     try {
       await collectMetricsMutation.mutateAsync(server.id);
-      toast.success(`已采集 ${server.name} 的性能指标`);
+      toast.success(t('servers.toast.collectMetricsSuccess', { name: server.name }));
     } catch {
-      toast.error('采集失败');
+      toast.error(t('servers.toast.collectFailed'));
     } finally {
       setIsCollectingMetrics(false);
     }
@@ -750,9 +752,9 @@ ${serverInfo.disk_gb ? `磁盘大小：${serverInfo.disk_gb}GB` : ''}
     setIsCollectingMetrics(true);
     try {
       const result = await collectAllMetricsMutation.mutateAsync();
-      toast.success(`指标采集完成: ${result.data.success} 成功, ${result.data.failed} 失败`);
+      toast.success(t('servers.toast.collectMetricsResult', { success: result.data.success, failed: result.data.failed }));
     } catch {
-      toast.error('批量采集失败');
+      toast.error(t('servers.toast.collectAllFailed'));
     } finally {
       setIsCollectingMetrics(false);
     }
@@ -790,15 +792,15 @@ ${serverInfo.disk_gb ? `磁盘大小：${serverInfo.disk_gb}GB` : ''}
       }).filter(Boolean);
 
       if (servers.length === 0) {
-        toast.error('没有有效的服务器数据，请检查 JSON 格式');
+        toast.error(t('servers.import.noValidData'));
         return;
       }
 
       const result = await importServersMutation.mutateAsync({ servers, test_connection: true });
       setImportResult(result.data);
-      toast.success(`导入成功: ${result.data.success} 成功, ${result.data.failed} 失败`);
+      toast.success(t('servers.import.successToast', { success: result.data.success, failed: result.data.failed }));
     } catch (err: any) {
-      toast.error(err.response?.data?.error || '导入失败');
+      toast.error(err.response?.data?.error || t('servers.import.failed'));
     }
   };
 
@@ -850,7 +852,7 @@ ${serverInfo.disk_gb ? `磁盘大小：${serverInfo.disk_gb}GB` : ''}
               )}
             >
               <FolderTree className="w-4 h-4" />
-              分组
+              {t('servers.toolbar.groups')}
             </button>
             <button
               onClick={handleCollectAll}
@@ -858,7 +860,7 @@ ${serverInfo.disk_gb ? `磁盘大小：${serverInfo.disk_gb}GB` : ''}
               className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm bg-surface border border-border text-text-secondary hover:text-text-primary transition-colors disabled:opacity-50"
             >
               <RefreshCw className={clsx('w-4 h-4', isCollecting && 'animate-spin')} />
-              采集所有主机信息
+              {t('servers.toolbar.collectAllInfo')}
             </button>
             <button
               onClick={handleCollectAllMetrics}
@@ -866,21 +868,21 @@ ${serverInfo.disk_gb ? `磁盘大小：${serverInfo.disk_gb}GB` : ''}
               className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm bg-surface border border-border text-text-secondary hover:text-text-primary transition-colors disabled:opacity-50"
             >
               <RefreshCw className={clsx('w-4 h-4', isCollectingMetrics && 'animate-spin')} />
-              采集所有性能指标
+              {t('servers.toolbar.collectAllMetrics')}
             </button>
             <button
               onClick={() => { setIsImportModalOpen(true); setImportResult(null); setImportData(''); }}
               className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm bg-surface border border-border text-text-secondary hover:text-text-primary transition-colors"
             >
               <Upload className="w-4 h-4" />
-              批量导入
+              {t('servers.toolbar.bulkImport')}
             </button>
             <button
               onClick={() => { setEditingGroup(null); setGroupFormData({ name: '', description: '', parent_id: '' }); setIsGroupModalOpen(true); }}
               className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm bg-surface border border-border text-text-secondary hover:text-text-primary transition-colors"
             >
               <FolderPlus className="w-4 h-4" />
-              新建分组
+              {t('servers.toolbar.newGroup')}
             </button>
           </div>
 
@@ -889,18 +891,18 @@ ${serverInfo.disk_gb ? `磁盘大小：${serverInfo.disk_gb}GB` : ''}
             {showGroups && (
               <div className="w-56 flex-shrink-0 bg-surface border border-border rounded-lg p-3">
                 <div className="flex items-center justify-between mb-2">
-                  <h3 className="text-sm font-medium text-text-primary">服务器分组</h3>
+                  <h3 className="text-sm font-medium text-text-primary">{t('servers.groups.title')}</h3>
                   <button
                     onClick={() => setSelectedGroupId(null)}
                     className="text-xs text-text-secondary hover:text-text-primary"
                   >
-                    清除筛选
+                    {t('servers.groups.clearFilter')}
                   </button>
                 </div>
                 {groupsData && groupsData.length > 0 ? (
                   <GroupTree groups={groupsData} />
                 ) : (
-                  <p className="text-xs text-text-secondary py-4 text-center">暂无分组</p>
+                  <p className="text-xs text-text-secondary py-4 text-center">{t('servers.groups.empty')}</p>
                 )}
               </div>
             )}
@@ -919,7 +921,7 @@ ${serverInfo.disk_gb ? `磁盘大小：${serverInfo.disk_gb}GB` : ''}
                         : 'bg-background border border-border text-text-secondary hover:bg-surface'
                     )}
                   >
-                    全部
+                    {t('common.all')}
                   </button>
                   {allTags.map((tag) => (
                     <button
@@ -949,7 +951,13 @@ ${serverInfo.disk_gb ? `磁盘大小：${serverInfo.disk_gb}GB` : ''}
                 ) : filteredServers.length === 0 ? (
                   <div className="col-span-full flex flex-col items-center justify-center py-12 text-text-secondary">
                     <Server className="w-12 h-12 mb-4 opacity-50" />
-                    <p>{selectedTag ? `没有带标签 "${selectedTag}" 的服务器` : selectedGroupId ? '该分组下暂无服务器' : '暂无服务器，请添加第一个服务器'}</p>
+                    <p>
+                      {selectedTag
+                        ? t('servers.empty.byTag', { tag: selectedTag })
+                        : selectedGroupId
+                          ? t('servers.empty.byGroup')
+                          : t('servers.empty.default')}
+                    </p>
                   </div>
                 ) : filteredServers.map((server) => (
                   <div key={server.id} className={clsx(
@@ -998,7 +1006,7 @@ ${serverInfo.disk_gb ? `磁盘大小：${serverInfo.disk_gb}GB` : ''}
                           <button
                             onClick={() => navigate(`/remote-desktop/${server.id}`)}
                             className="p-1 hover:bg-background rounded transition-colors"
-                            title="远程桌面"
+                            title={t('servers.actions.remoteDesktop')}
                           >
                             <MonitorPlay className="w-4 h-4 text-text-secondary" />
                           </button>
@@ -1006,7 +1014,7 @@ ${serverInfo.disk_gb ? `磁盘大小：${serverInfo.disk_gb}GB` : ''}
                         <button
                           onClick={() => handleTestConnection(server)}
                           className="p-1 hover:bg-background rounded transition-colors"
-                          title="测试连接"
+                          title={t('servers.actions.testConnection')}
                         >
                           <Wifi className="w-4 h-4 text-text-secondary" />
                         </button>
@@ -1014,7 +1022,7 @@ ${serverInfo.disk_gb ? `磁盘大小：${serverInfo.disk_gb}GB` : ''}
                           onClick={() => handleCollectInfo(server)}
                           disabled={isCollecting}
                           className="p-1 hover:bg-background rounded transition-colors disabled:opacity-50"
-                          title="采集主机信息"
+                          title={t('servers.actions.collectInfo')}
                         >
                           <RefreshCw className={clsx('w-4 h-4 text-text-secondary', isCollecting && 'animate-spin')} />
                         </button>
@@ -1022,7 +1030,7 @@ ${serverInfo.disk_gb ? `磁盘大小：${serverInfo.disk_gb}GB` : ''}
                           onClick={() => handleCollectMetrics(server)}
                           disabled={isCollectingMetrics}
                           className="p-1 hover:bg-background rounded transition-colors disabled:opacity-50"
-                          title="采集性能指标"
+                          title={t('servers.actions.collectMetrics')}
                         >
                           <Monitor className={clsx('w-4 h-4 text-text-secondary', isCollectingMetrics && 'animate-spin')} />
                         </button>
@@ -1032,14 +1040,14 @@ ${serverInfo.disk_gb ? `磁盘大小：${serverInfo.disk_gb}GB` : ''}
                             setIsDeleteConfirmOpen(true);
                           }}
                           className="p-1 hover:bg-background rounded transition-colors"
-                          title="删除"
+                          title={t('common.delete')}
                         >
                           <Trash2 className="w-4 h-4 text-status-failed" />
                         </button>
                         <button
                           onClick={() => handleEdit(server)}
                           className="p-1 hover:bg-background rounded transition-colors"
-                          title="编辑"
+                          title={t('common.edit')}
                         >
                           <Edit className="w-4 h-4 text-text-secondary" />
                         </button>
@@ -1063,7 +1071,7 @@ ${serverInfo.disk_gb ? `磁盘大小：${serverInfo.disk_gb}GB` : ''}
                             {server.cpu_cores !== undefined && (
                               <div className="flex items-center gap-1.5 text-text-secondary">
                                 <Cpu className="w-3 h-3 flex-shrink-0" />
-                                <span>{server.cpu_cores} 核</span>
+                                <span>{t('servers.cpuCores', { count: server.cpu_cores })}</span>
                               </div>
                             )}
                             {server.memory_gb !== undefined && (
@@ -1113,12 +1121,12 @@ ${serverInfo.disk_gb ? `磁盘大小：${serverInfo.disk_gb}GB` : ''}
                       {server.last_connected ? (
                         <span className="flex items-center gap-1 text-xs text-text-secondary">
                           <CheckCircle2 className="w-3 h-3 text-status-success" />
-                          最后连接: {new Date(server.last_connected).toLocaleDateString()}
+                          {t('servers.lastConnected')}: {new Date(server.last_connected).toLocaleDateString(locale === 'zh-CN' ? 'zh-CN' : 'en-US')}
                         </span>
                       ) : (
                         <span className="flex items-center gap-1 text-xs text-text-secondary">
                           <AlertCircle className="w-3 h-3 text-status-warning" />
-                          未连接过
+                          {t('servers.neverConnected')}
                         </span>
                       )}
                     </div>
@@ -1153,7 +1161,7 @@ ${serverInfo.disk_gb ? `磁盘大小：${serverInfo.disk_gb}GB` : ''}
                         className="flex flex-col items-center justify-center gap-1 px-2 py-2.5 bg-gradient-to-r from-purple-600/20 to-blue-600/20 border border-purple-500/30 rounded-lg text-xs font-medium text-purple-300 whitespace-nowrap hover:from-purple-600/30 hover:to-blue-600/30 transition-colors"
                       >
                         <Sparkles className="w-4 h-4" />
-                        <span>AI 执行</span>
+                        <span>{t('servers.actions.aiExecute')}</span>
                       </button>
                       <button
                         onClick={() => {
@@ -1163,14 +1171,14 @@ ${serverInfo.disk_gb ? `磁盘大小：${serverInfo.disk_gb}GB` : ''}
                         className="flex flex-col items-center justify-center gap-1 px-2 py-2.5 bg-surface border border-border rounded-lg text-xs text-text-primary whitespace-nowrap hover:bg-background transition-colors"
                       >
                         <Terminal className="w-4 h-4" />
-                        <span>执行命令</span>
+                        <span>{t('servers.actions.executeCommand')}</span>
                       </button>
                       <button
                         onClick={() => handleRunCompliance(server)}
                         className="flex flex-col items-center justify-center gap-1 px-2 py-2.5 bg-surface border border-border rounded-lg text-xs text-text-primary whitespace-nowrap hover:bg-background transition-colors"
                       >
                         <ShieldCheck className="w-4 h-4" />
-                        <span>合规检查</span>
+                        <span>{t('servers.actions.complianceCheck')}</span>
                       </button>
                     </div>
                     <div className="grid grid-cols-2 gap-2 mt-2">
@@ -1182,7 +1190,7 @@ ${serverInfo.disk_gb ? `磁盘大小：${serverInfo.disk_gb}GB` : ''}
                         className="flex items-center justify-center gap-1.5 px-3 py-2 bg-surface border border-border rounded-lg text-xs text-text-secondary hover:text-text-primary transition-colors whitespace-nowrap"
                       >
                         <History className="w-3.5 h-3.5" />
-                        <span>命令历史</span>
+                        <span>{t('servers.tabs.commandHistory')}</span>
                       </button>
                       <button
                         onClick={() => {
@@ -1192,7 +1200,7 @@ ${serverInfo.disk_gb ? `磁盘大小：${serverInfo.disk_gb}GB` : ''}
                         className="flex items-center justify-center gap-1.5 px-3 py-2 bg-surface border border-border rounded-lg text-xs text-text-secondary hover:text-text-primary transition-colors whitespace-nowrap"
                       >
                         <Clock className="w-3.5 h-3.5" />
-                        <span>检查历史</span>
+                        <span>{t('servers.tabs.complianceHistory')}</span>
                       </button>
                     </div>
                   </div>
@@ -1516,8 +1524,8 @@ ${serverInfo.disk_gb ? `磁盘大小：${serverInfo.disk_gb}GB` : ''}
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-text-primary mb-2">服务器管理</h1>
-            <p className="text-text-secondary">管理和监控您的服务器</p>
+            <h1 className="text-2xl font-bold text-text-primary mb-2">{t('servers.title')}</h1>
+            <p className="text-text-secondary">{t('servers.subtitle')}</p>
           </div>
           <div className="flex items-center gap-3">
             <ImportExport resourceType="servers" onImportSuccess={() => queryClient.invalidateQueries({ queryKey: ['servers'] })} />
@@ -1530,7 +1538,7 @@ ${serverInfo.disk_gb ? `磁盘大小：${serverInfo.disk_gb}GB` : ''}
               className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors"
             >
               <Plus className="w-4 h-4" />
-              添加服务器
+              {t('servers.add')}
             </button>
           </div>
         </div>
@@ -1539,23 +1547,23 @@ ${serverInfo.disk_gb ? `磁盘大小：${serverInfo.disk_gb}GB` : ''}
         <div className="bg-surface border border-border rounded-lg p-4">
           <div className="flex items-start gap-4">
             <div className="flex-1">
-              <h3 className="text-sm font-medium text-text-primary mb-2">使用说明</h3>
+              <h3 className="text-sm font-medium text-text-primary mb-2">{t('servers.guide.title')}</h3>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 text-xs text-text-secondary">
                 <div className="flex items-center gap-2">
                   <div className="w-3 h-3 rounded bg-gradient-to-b from-yellow-500 to-orange-500 flex-shrink-0" />
-                  <span><strong>Linux 服务器</strong>：左侧黄橙渐变标识，支持 SSH 命令执行</span>
+                  <span><strong>{t('servers.guide.linuxTitle')}</strong>{t('servers.guide.linuxDesc')}</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <div className="w-3 h-3 rounded bg-gradient-to-b from-blue-500 to-cyan-500 flex-shrink-0" />
-                  <span><strong>Windows 服务器</strong>：左侧蓝青渐变标识，支持远程桌面</span>
+                  <span><strong>{t('servers.guide.windowsTitle')}</strong>{t('servers.guide.windowsDesc')}</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <RefreshCw className="w-3 h-3 flex-shrink-0" />
-                  <span><strong>采集信息</strong>：获取服务器 OS、CPU、内存、磁盘等信息</span>
+                  <span><strong>{t('servers.guide.collectTitle')}</strong>{t('servers.guide.collectDesc')}</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <Terminal className="w-3 h-3 flex-shrink-0" />
-                  <span><strong>执行命令</strong>：通过 SSH 远程执行命令，查看执行历史</span>
+                  <span><strong>{t('servers.guide.commandTitle')}</strong>{t('servers.guide.commandDesc')}</span>
                 </div>
               </div>
             </div>
@@ -1576,7 +1584,7 @@ ${serverInfo.disk_gb ? `磁盘大小：${serverInfo.disk_gb}GB` : ''}
                 : 'border-transparent text-text-secondary hover:text-text-primary'
             )}
           >
-            服务器列表
+            {t('servers.tabs.list')}
           </button>
           {selectedServer && (
             <>
@@ -1589,7 +1597,7 @@ ${serverInfo.disk_gb ? `磁盘大小：${serverInfo.disk_gb}GB` : ''}
                     : 'border-transparent text-text-secondary hover:text-text-primary'
                 )}
               >
-                合规检查
+                {t('servers.tabs.compliance')}
               </button>
               <button
                 onClick={() => setActiveTab('command-history')}
@@ -1600,7 +1608,7 @@ ${serverInfo.disk_gb ? `磁盘大小：${serverInfo.disk_gb}GB` : ''}
                     : 'border-transparent text-text-secondary hover:text-text-primary'
                 )}
               >
-                命令历史
+                {t('servers.tabs.commandHistory')}
               </button>
               <button
                 onClick={() => setActiveTab('compliance-history')}
@@ -1611,7 +1619,7 @@ ${serverInfo.disk_gb ? `磁盘大小：${serverInfo.disk_gb}GB` : ''}
                     : 'border-transparent text-text-secondary hover:text-text-primary'
                 )}
               >
-                检查历史
+                {t('servers.tabs.complianceHistory')}
               </button>
             </>
           )}
@@ -1624,7 +1632,7 @@ ${serverInfo.disk_gb ? `磁盘大小：${serverInfo.disk_gb}GB` : ''}
         {selectedServer && (activeTab === 'servers' || activeTab === 'compliance') && commandResult !== null && (
           <div className="bg-surface border border-border rounded-lg p-6">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-text-primary">命令执行结果</h3>
+              <h3 className="text-lg font-semibold text-text-primary">{t('servers.command.resultTitle')}</h3>
               <button
                 onClick={() => setCommandResult(null)}
                 className="p-1 hover:bg-background rounded transition-colors"
@@ -1634,26 +1642,26 @@ ${serverInfo.disk_gb ? `磁盘大小：${serverInfo.disk_gb}GB` : ''}
             </div>
             <div className="space-y-4">
               <div>
-                <p className="text-xs text-text-secondary mb-1">执行的命令:</p>
+                <p className="text-xs text-text-secondary mb-1">{t('servers.command.executedCommand')}:</p>
                 <code className="font-mono text-sm bg-background px-2 py-1 rounded text-text-primary">
                   {commandResult.command}
                 </code>
               </div>
               <div className="flex items-center gap-2">
-                <span className="text-xs text-text-secondary">状态:</span>
+                <span className="text-xs text-text-secondary">{t('common.status')}:</span>
                 <span className={clsx(
                   'px-2 py-1 rounded text-xs font-medium',
                   commandResult.success ? 'bg-status-success/10 text-status-success' : 'bg-status-failed/10 text-status-failed'
                 )}>
-                  {commandResult.success ? '成功' : '失败'}
+                  {commandResult.success ? t('common.success') : t('common.failed')}
                 </span>
                 <span className="text-xs text-text-secondary ml-4">
-                  耗时: {commandResult.duration}ms
+                  {t('servers.command.duration', { duration: commandResult.duration })}
                 </span>
               </div>
               {commandResult.stdout && (
                 <div>
-                  <p className="text-xs text-text-secondary mb-1">输出:</p>
+                  <p className="text-xs text-text-secondary mb-1">{t('common.output')}:</p>
                   <pre className="bg-background p-3 rounded text-xs overflow-x-auto text-text-primary font-mono max-h-60 overflow-y-auto">
                     {commandResult.stdout}
                   </pre>
@@ -1661,7 +1669,7 @@ ${serverInfo.disk_gb ? `磁盘大小：${serverInfo.disk_gb}GB` : ''}
               )}
               {commandResult.stderr && (
                 <div>
-                  <p className="text-xs text-status-warning mb-1">错误:</p>
+                  <p className="text-xs text-status-warning mb-1">{t('common.error')}:</p>
                   <pre className="bg-status-failed/5 p-3 rounded text-xs overflow-x-auto text-status-failed font-mono max-h-60 overflow-y-auto">
                     {commandResult.stderr}
                   </pre>
@@ -1675,17 +1683,17 @@ ${serverInfo.disk_gb ? `磁盘大小：${serverInfo.disk_gb}GB` : ''}
         {selectedServer && (activeTab === 'servers' || activeTab === 'compliance') && (
           <div className="bg-surface border border-border rounded-lg p-6">
             <h3 className="text-lg font-semibold text-text-primary mb-4">
-              在 {selectedServer.name} 上执行命令
+              {t('servers.command.runOnServer', { name: selectedServer.name })}
             </h3>
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-text-secondary mb-2">命令</label>
+                <label className="block text-sm font-medium text-text-secondary mb-2">{t('servers.command.command')}</label>
                 <div className="flex gap-2">
                   <input
                     type="text"
                     value={command}
                     onChange={(e) => setCommand(e.target.value)}
-                    placeholder="输入要执行的命令..."
+                    placeholder={t('servers.command.placeholder')}
                     className="flex-1 px-4 py-2 bg-background border border-border rounded-lg focus:outline-none focus:border-primary text-text-primary"
                     disabled={isExecuting}
                   />
@@ -1697,19 +1705,19 @@ ${serverInfo.disk_gb ? `磁盘大小：${serverInfo.disk_gb}GB` : ''}
                     {isExecuting ? (
                       <>
                         <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                        执行中...
+                        {t('servers.command.executing')}
                       </>
                     ) : (
                       <>
                         <Terminal className="w-4 h-4" />
-                        执行
+                        {t('servers.command.execute')}
                       </>
                     )}
                   </button>
                 </div>
               </div>
               <div className="flex flex-wrap gap-2">
-                <span className="text-xs text-text-secondary">常用命令:</span>
+                <span className="text-xs text-text-secondary">{t('servers.command.commonCommands')}:</span>
                 {['uname -a', 'df -h', 'free -h', 'uptime', 'whoami', 'ps aux'].map((cmd) => (
                   <button
                     key={cmd}
@@ -1729,34 +1737,34 @@ ${serverInfo.disk_gb ? `磁盘大小：${serverInfo.disk_gb}GB` : ''}
           <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
             <div className="bg-surface rounded-xl p-6 w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto">
               <h3 className="text-xl font-bold text-text-primary mb-6">
-                {selectedServer ? '编辑服务器' : '添加服务器'}
+                {selectedServer ? t('servers.modal.editTitle') : t('servers.modal.addTitle')}
               </h3>
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div className="grid gap-4 md:grid-cols-2">
                   <div>
-                    <label className="block text-sm font-medium text-text-secondary mb-2">名称 *</label>
+                    <label className="block text-sm font-medium text-text-secondary mb-2">{t('servers.form.name')} *</label>
                     <input
                       type="text"
                       value={formData.name}
                       onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                      placeholder="例如: 生产服务器"
+                      placeholder={t('servers.form.namePlaceholder')}
                       className="w-full px-4 py-2 bg-background border border-border rounded-lg focus:outline-none focus:border-primary text-text-primary"
                       required
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-text-secondary mb-2">主机名/IP *</label>
+                    <label className="block text-sm font-medium text-text-secondary mb-2">{t('servers.form.hostname')} *</label>
                     <input
                       type="text"
                       value={formData.hostname}
                       onChange={(e) => setFormData({ ...formData, hostname: e.target.value })}
-                      placeholder="例如: 192.168.1.100"
+                      placeholder={t('servers.form.hostnamePlaceholder')}
                       className="w-full px-4 py-2 bg-background border border-border rounded-lg focus:outline-none focus:border-primary text-text-primary"
                       required
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-text-secondary mb-2">端口</label>
+                    <label className="block text-sm font-medium text-text-secondary mb-2">{t('servers.form.port')}</label>
                     <input
                       type="number"
                       value={formData.port}
@@ -1766,7 +1774,7 @@ ${serverInfo.disk_gb ? `磁盘大小：${serverInfo.disk_gb}GB` : ''}
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-text-secondary mb-2">操作系统类型</label>
+                    <label className="block text-sm font-medium text-text-secondary mb-2">{t('servers.form.osType')}</label>
                     <select
                       value={formData.os_type}
                       onChange={(e) => setFormData({ ...formData, os_type: e.target.value as 'linux' | 'windows' })}
@@ -1777,12 +1785,12 @@ ${serverInfo.disk_gb ? `磁盘大小：${serverInfo.disk_gb}GB` : ''}
                     </select>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-text-secondary mb-2">用户名 *</label>
+                    <label className="block text-sm font-medium text-text-secondary mb-2">{t('servers.form.username')} *</label>
                     <input
                       type="text"
                       value={formData.username}
                       onChange={(e) => setFormData({ ...formData, username: e.target.value })}
-                      placeholder="例如: root"
+                      placeholder={t('servers.form.usernamePlaceholder')}
                       className="w-full px-4 py-2 bg-background border border-border rounded-lg focus:outline-none focus:border-primary text-text-primary"
                       required
                     />
@@ -1797,27 +1805,27 @@ ${serverInfo.disk_gb ? `磁盘大小：${serverInfo.disk_gb}GB` : ''}
                     onChange={(e) => setFormData({ ...formData, use_ssh_key: e.target.checked })}
                     className="rounded border-border"
                   />
-                  <label htmlFor="use_ssh_key" className="text-sm text-text-secondary">使用认证凭证</label>
+                  <label htmlFor="use_ssh_key" className="text-sm text-text-secondary">{t('servers.form.useCredential')}</label>
                 </div>
 
                 {!formData.use_ssh_key ? (
                   <div>
-                    <label className="block text-sm font-medium text-text-secondary mb-2">密码</label>
+                    <label className="block text-sm font-medium text-text-secondary mb-2">{t('servers.form.password')}</label>
                     <input
                       type="password"
                       value={formData.password}
                       onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                      placeholder={selectedServer ? '留空以保持不变' : '输入密码'}
+                      placeholder={selectedServer ? t('servers.form.keepUnchanged') : t('servers.form.passwordPlaceholder')}
                       className="w-full px-4 py-2 bg-background border border-border rounded-lg focus:outline-none focus:border-primary text-text-primary"
                     />
                   </div>
                 ) : (
                   <div>
-                    <label className="block text-sm font-medium text-text-secondary mb-2">认证凭证</label>
+                    <label className="block text-sm font-medium text-text-secondary mb-2">{t('servers.form.credential')}</label>
                     <div className="mb-3">
                       <div className="flex items-center gap-2 mb-2">
                         <Key className="w-3.5 h-3.5 text-text-tertiary" />
-                        <span className="text-xs text-text-tertiary">从已有认证凭证中选择</span>
+                        <span className="text-xs text-text-tertiary">{t('servers.form.credentialSelectHelp')}</span>
                       </div>
 
                       <div className="relative">
@@ -1830,13 +1838,13 @@ ${serverInfo.disk_gb ? `磁盘大小：${serverInfo.disk_gb}GB` : ''}
                           onBlur={() => {
                             setTimeout(() => setShowSshKeyDropdown(false), 200);
                           }}
-                          placeholder="搜索凭证名称、类型、用户名或指纹..."
+                          placeholder={t('servers.form.credentialSearchPlaceholder')}
                           className="w-full pl-10 pr-10 py-2 bg-background border border-border rounded-lg focus:outline-none focus:border-primary text-text-primary text-sm"
                         />
                         {selectedCredential && (
                           <button
                             type="button"
-                            title="清除已选凭证"
+                            title={t('servers.form.clearCredential')}
                             onClick={(e) => {
                               e.stopPropagation();
                               setSelectedSshKeyId('');
@@ -1854,7 +1862,7 @@ ${serverInfo.disk_gb ? `磁盘大小：${serverInfo.disk_gb}GB` : ''}
                         <div className="mt-1 max-h-56 overflow-y-auto bg-surface border border-border rounded-lg shadow-lg z-10">
                           {filteredSshKeys.length === 0 ? (
                             <div className="px-4 py-3 text-sm text-text-tertiary text-center">
-                              未找到匹配的认证凭证
+                              {t('servers.form.noCredentialMatch')}
                             </div>
                           ) : (
                             filteredSshKeys.map((credential) => (
@@ -1892,7 +1900,7 @@ ${serverInfo.disk_gb ? `磁盘大小：${serverInfo.disk_gb}GB` : ''}
                                 </div>
                                 {credential.auth_type === 'password' && credential.username && (
                                   <div className="text-xs text-text-tertiary mt-0.5">
-                                    用户名: {credential.username}
+                                    {t('servers.form.username')}: {credential.username}
                                   </div>
                                 )}
                                 {credential.fingerprint && (
@@ -1902,7 +1910,7 @@ ${serverInfo.disk_gb ? `磁盘大小：${serverInfo.disk_gb}GB` : ''}
                                 )}
                                 {credential.usage_count > 0 && (
                                   <div className="text-xs text-status-success mt-0.5">
-                                    已用于 {credential.usage_count} 台服务器
+                                    {t('servers.form.credentialUsage', { count: credential.usage_count })}
                                   </div>
                                 )}
                               </button>
@@ -1915,10 +1923,10 @@ ${serverInfo.disk_gb ? `磁盘大小：${serverInfo.disk_gb}GB` : ''}
                         <div className="mt-2 rounded-lg border border-status-success/30 bg-status-success/5 px-3 py-2">
                           <div className="flex items-center gap-1.5 text-xs text-status-success">
                             <CheckCircle2 className="w-3 h-3" />
-                            <span>已选择认证凭证: {selectedCredential.name} ({getCredentialTypeLabel(selectedCredential)})</span>
+                            <span>{t('servers.form.selectedCredential', { name: selectedCredential.name, type: getCredentialTypeLabel(selectedCredential) })}</span>
                           </div>
                           <p className="mt-1 text-xs text-text-tertiary">
-                            服务器连接时将从凭证中心读取认证信息，不会把密钥或密码复制到服务器表单。
+                            {t('servers.form.credentialRuntimeHelp')}
                           </p>
                         </div>
                       )}
@@ -1929,14 +1937,14 @@ ${serverInfo.disk_gb ? `磁盘大小：${serverInfo.disk_gb}GB` : ''}
                           onClick={() => { resetForm(); setIsModalOpen(false); navigate('/ssh-keys'); }}
                           className="text-xs text-primary hover:underline"
                         >
-                          + 管理认证凭证
+                          {t('servers.form.manageCredentials')}
                         </button>
                       </div>
                     </div>
 
                     {!selectedCredential && (
                       <div>
-                        <label className="block text-xs font-medium text-text-secondary mb-2">或手动粘贴 SSH 私钥</label>
+                        <label className="block text-xs font-medium text-text-secondary mb-2">{t('servers.form.manualPrivateKey')}</label>
                         <textarea
                           value={formData.private_key}
                           onChange={(e) => {
@@ -1944,12 +1952,12 @@ ${serverInfo.disk_gb ? `磁盘大小：${serverInfo.disk_gb}GB` : ''}
                             setSshKeySearchQuery('');
                             setFormData({ ...formData, ssh_key_id: '', private_key: e.target.value });
                           }}
-                          placeholder={selectedServer ? '留空以保持不变' : '粘贴您的 SSH 私钥内容...'}
+                          placeholder={selectedServer ? t('servers.form.keepUnchanged') : t('servers.form.privateKeyPlaceholder')}
                           rows={6}
                           className="w-full px-4 py-2 bg-background border border-border rounded-lg focus:outline-none focus:border-primary text-text-primary font-mono text-sm"
                         />
                         <p className="mt-1 text-xs text-text-tertiary">
-                          粘贴私钥后将按旧方式保存到服务器记录。推荐优先选择上方认证凭证。
+                          {t('servers.form.privateKeyLegacyHelp')}
                         </p>
                       </div>
                     )}
@@ -1957,11 +1965,11 @@ ${serverInfo.disk_gb ? `磁盘大小：${serverInfo.disk_gb}GB` : ''}
                 )}
 
                 <div>
-                  <label className="block text-sm font-medium text-text-secondary mb-2">描述</label>
+                  <label className="block text-sm font-medium text-text-secondary mb-2">{t('servers.form.description')}</label>
                   <textarea
                     value={formData.description}
                     onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                    placeholder="服务器描述..."
+                    placeholder={t('servers.form.descriptionPlaceholder')}
                     rows={3}
                     className="w-full px-4 py-2 bg-background border border-border rounded-lg focus:outline-none focus:border-primary text-text-primary"
                   />
@@ -1969,7 +1977,7 @@ ${serverInfo.disk_gb ? `磁盘大小：${serverInfo.disk_gb}GB` : ''}
 
                 <div className="relative">
                   <label className="block text-sm font-medium text-text-secondary mb-2">
-                    标签
+                    {t('common.tags')}
                   </label>
                   {/* 已选标签展示 */}
                   {parseCurrentTags().length > 0 && (
@@ -2003,7 +2011,7 @@ ${serverInfo.disk_gb ? `磁盘大小：${serverInfo.disk_gb}GB` : ''}
                           // 延迟关闭，让下拉按钮的onClick先触发
                           setTimeout(() => setTagDropdownOpen(false), 200);
                         }}
-                        placeholder="输入标签名称，从下方选择或手动输入（逗号分隔）"
+                        placeholder={t('servers.form.tagsPlaceholder')}
                         className="w-full px-4 py-2 bg-background border border-border rounded-lg focus:outline-none focus:border-primary text-text-primary"
                       />
                       {/* 下拉建议框 */}
@@ -2013,7 +2021,7 @@ ${serverInfo.disk_gb ? `磁盘大小：${serverInfo.disk_gb}GB` : ''}
                           className="absolute z-10 mt-1 w-full bg-surface border border-border rounded-lg shadow-xl max-h-48 overflow-y-auto animate-fade-in"
                         >
                           <div className="px-3 py-2 text-xs text-text-tertiary border-b border-border">
-                            选择已有标签
+                            {t('servers.form.selectExistingTags')}
                           </div>
                           {filteredTagSuggestions().map((tag: string) => (
                             <button
@@ -2030,16 +2038,16 @@ ${serverInfo.disk_gb ? `磁盘大小：${serverInfo.disk_gb}GB` : ''}
                       )}
                     </div>
                   {allTags.length === 0 && (
-                    <p className="mt-1 text-xs text-text-tertiary">添加服务器后，标签将在此处显示为可选项</p>
+                    <p className="mt-1 text-xs text-text-tertiary">{t('servers.form.tagsEmptyHelp')}</p>
                   )}
                 </div>
 
                 {formData.os_type === 'windows' && (
                   <div className="pt-2 border-t border-border">
-                    <h4 className="text-sm font-medium text-text-primary mb-3">VNC 配置（远程桌面）</h4>
+                    <h4 className="text-sm font-medium text-text-primary mb-3">{t('servers.form.vncConfig')}</h4>
                     <div className="grid gap-4 md:grid-cols-2">
                       <div>
-                        <label className="block text-sm font-medium text-text-secondary mb-2">VNC 端口</label>
+                        <label className="block text-sm font-medium text-text-secondary mb-2">{t('servers.form.vncPort')}</label>
                         <input
                           type="number"
                           value={formData.vnc_port}
@@ -2049,12 +2057,12 @@ ${serverInfo.disk_gb ? `磁盘大小：${serverInfo.disk_gb}GB` : ''}
                         />
                       </div>
                       <div>
-                        <label className="block text-sm font-medium text-text-secondary mb-2">VNC 密码</label>
+                        <label className="block text-sm font-medium text-text-secondary mb-2">{t('servers.form.vncPassword')}</label>
                         <input
                           type="password"
                           value={formData.vnc_password}
                           onChange={(e) => setFormData({ ...formData, vnc_password: e.target.value })}
-                          placeholder={selectedServer ? '留空以保持不变' : 'VNC 密码'}
+                          placeholder={selectedServer ? t('servers.form.keepUnchanged') : t('servers.form.vncPassword')}
                           className="w-full px-4 py-2 bg-background border border-border rounded-lg focus:outline-none focus:border-primary text-text-primary"
                         />
                       </div>
@@ -2072,14 +2080,14 @@ ${serverInfo.disk_gb ? `磁盘大小：${serverInfo.disk_gb}GB` : ''}
                     }}
                     className="flex-1 px-4 py-2 bg-surface border border-border text-text-primary rounded-lg hover:bg-background transition-colors"
                   >
-                    取消
+                    {t('common.cancel')}
                   </button>
                   <button
                     type="submit"
                     className="flex-1 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors flex items-center justify-center gap-2"
                   >
                     <CheckCircle2 className="w-4 h-4" />
-                    {selectedServer ? '保存更改' : '添加服务器'}
+                    {selectedServer ? t('servers.form.saveChanges') : t('servers.add')}
                   </button>
                 </div>
               </form>
