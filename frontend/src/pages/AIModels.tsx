@@ -4,6 +4,7 @@ import { Plus, Trash2, Pencil, CheckCircle2, AlertCircle, Loader2, GripVertical,
 import clsx from 'clsx';
 import api from '../lib/api';
 import { useToast } from '../contexts/ToastContext';
+import { useLocale } from '../contexts/LocaleContext';
 
 interface AIModel {
   id: string;
@@ -36,13 +37,13 @@ interface ProviderPreset {
 const PROVIDER_PRESETS: ProviderPreset[] = [
   {
     value: 'volcengine',
-    label: '火山引擎 (Ark)',
+    label: 'Volcengine (Ark)',
     icon: '🔥',
     color: 'blue',
     defaultBase: 'https://ark.cn-beijing.volces.com/api/v3',
     defaultModels: ['doubao-1-5-lite-32k-250115', 'doubao-1-5-pro-32k-250115', 'deepseek-v3-250324'],
     needApiKey: true,
-    description: '支持豆包、DeepSeek 等模型',
+    description: 'Supports Doubao, DeepSeek, and other models',
   },
   {
     value: 'deepseek',
@@ -52,27 +53,27 @@ const PROVIDER_PRESETS: ProviderPreset[] = [
     defaultBase: 'https://api.deepseek.com/v1',
     defaultModels: ['deepseek-chat', 'deepseek-reasoner'],
     needApiKey: true,
-    description: 'DeepSeek 官方 API',
+    description: 'Official DeepSeek API',
   },
   {
     value: 'aliyun',
-    label: '阿里云 (百炼)',
+    label: 'Alibaba Cloud (Bailian)',
     icon: '☁️',
     color: 'orange',
     defaultBase: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
     defaultModels: ['qwen-plus', 'qwen-turbo', 'qwen-max', 'qwen-long'],
     needApiKey: true,
-    description: '通义千问系列模型',
+    description: 'Qwen model family',
   },
   {
     value: 'zhipu',
-    label: '智谱 AI',
+    label: 'Zhipu AI',
     icon: '🧠',
     color: 'purple',
     defaultBase: 'https://open.bigmodel.cn/api/paas/v4',
     defaultModels: ['glm-4-plus', 'glm-4', 'glm-4-flash', 'glm-3-turbo'],
     needApiKey: true,
-    description: 'GLM 系列模型',
+    description: 'GLM model family',
   },
   {
     value: 'openai',
@@ -82,23 +83,24 @@ const PROVIDER_PRESETS: ProviderPreset[] = [
     defaultBase: 'https://api.openai.com/v1',
     defaultModels: ['gpt-4o', 'gpt-4o-mini', 'gpt-3.5-turbo'],
     needApiKey: true,
-    description: 'OpenAI 官方 API',
+    description: 'Official OpenAI API',
   },
   {
     value: 'local',
-    label: '本地 AI (Ollama/LM Studio)',
+    label: 'Local AI (Ollama/LM Studio)',
     icon: '💻',
     color: 'slate',
     defaultBase: 'http://host.docker.internal:11434/v1',
     defaultModels: ['qwen2.5:7b', 'llama3.1:8b', 'codellama:7b'],
     needApiKey: false,
-    description: '本地部署的开源模型',
+    description: 'Locally deployed open-source models',
   },
 ];
 
 export default function AIModels() {
   const queryClient = useQueryClient();
   const toast = useToast();
+  const { locale, t } = useLocale();
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingModel, setEditingModel] = useState<AIModel | null>(null);
   const [draggedModel, setDraggedModel] = useState<string | null>(null);
@@ -174,10 +176,10 @@ export default function AIModels() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['aiModels'] });
-      toast.success('模型删除成功');
+      toast.success(t('aiModels.toast.deleteSuccess'));
     },
     onError: (error: any) => {
-      const message = error?.response?.data?.error || '删除模型失败';
+      const message = error?.response?.data?.error || t('aiModels.toast.deleteFailed');
       toast.error(message);
     }
   });
@@ -235,7 +237,7 @@ export default function AIModels() {
         ...prev,
         [id]: {
           success: false,
-          message: '测试失败'
+          message: t('aiModels.testFailed')
         }
       }));
     }
@@ -274,7 +276,7 @@ export default function AIModels() {
 
   const handleSubmit = () => {
     if (!formData.name || !formData.model_id) {
-      alert('请填写模型名称和模型 ID');
+      alert(t('aiModels.validation.required'));
       return;
     }
 
@@ -336,17 +338,17 @@ export default function AIModels() {
   const getProviderLabel = (type: string) => {
     switch (type) {
       case 'volcengine':
-        return '火山引擎';
+        return 'Volcengine';
       case 'deepseek':
         return 'DeepSeek';
       case 'aliyun':
-        return '阿里云';
+        return 'Alibaba Cloud';
       case 'zhipu':
-        return '智谱 AI';
+        return 'Zhipu AI';
       case 'openai':
         return 'OpenAI';
       case 'local':
-        return '本地 AI';
+        return 'Local AI';
       default:
         return type;
     }
@@ -380,15 +382,15 @@ export default function AIModels() {
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-text-primary mb-2">AI 模型管理</h1>
-            <p className="text-text-secondary">添加并管理所有 AI 模型，支持多平台配置</p>
+            <h1 className="text-2xl font-bold text-text-primary mb-2">{t('aiModels.title')}</h1>
+            <p className="text-text-secondary">{t('aiModels.subtitle')}</p>
           </div>
           <button
             onClick={handleAddModel}
             className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-all flex items-center gap-2"
           >
             <Plus className="w-5 h-5" />
-            添加模型
+            {t('aiModels.add')}
           </button>
         </div>
 
@@ -413,28 +415,28 @@ export default function AIModels() {
                       <div className="flex items-center gap-2 mb-2">
                         <h3 className="font-medium text-text-primary">{model.name}</h3>
                         {model.is_default === 1 && (
-                          <span className="px-2 py-0.5 rounded text-xs bg-primary/20 text-primary">默认</span>
+                          <span className="px-2 py-0.5 rounded text-xs bg-primary/20 text-primary">{t('aiModels.default')}</span>
                         )}
                         {model.enabled === 1 ? (
-                          <span className="px-2 py-0.5 rounded text-xs bg-status-success/10 text-status-success">已启用</span>
+                          <span className="px-2 py-0.5 rounded text-xs bg-status-success/10 text-status-success">{t('status.enabled')}</span>
                         ) : (
-                          <span className="px-2 py-0.5 rounded text-xs bg-status-failed/10 text-status-failed">已禁用</span>
+                          <span className="px-2 py-0.5 rounded text-xs bg-status-failed/10 text-status-failed">{t('status.disabled')}</span>
                         )}
                         <span className={clsx('px-2 py-0.5 rounded text-xs', getProviderColor(model.provider_type))}>
                           {getProviderLabel(model.provider_type)}
                         </span>
                       </div>
                       <div className="text-sm text-text-secondary">
-                        <span>模型 ID: {model.model_id}</span>
+                        <span>{t('aiModels.modelId')}: {model.model_id}</span>
                         {model.tags && model.tags.length > 0 && (
                           <span className="ml-4">
-                            标签: {model.tags.join(', ')}
+                            {t('common.tags')}: {model.tags.join(', ')}
                           </span>
                         )}
                       </div>
                       {model.last_test_time && (
                         <div className="text-xs text-text-tertiary mt-1">
-                          最后测试: {new Date(model.last_test_time).toLocaleString()} - {model.last_test_status === 'success' ? '成功' : '失败'}
+                          {t('aiModels.lastTest')}: {new Date(model.last_test_time).toLocaleString(locale === 'zh-CN' ? 'zh-CN' : 'en-US')} - {model.last_test_status === 'success' ? t('common.success') : t('common.failed')}
                         </div>
                       )}
                     </div>
@@ -443,14 +445,14 @@ export default function AIModels() {
                         onClick={() => testModelMutation.mutate(model.id)}
                         disabled={testingModel === model.id}
                         className="px-3 py-1.5 rounded-lg hover:bg-background transition-colors flex items-center gap-1.5 text-sm"
-                        title="测试连通性"
+                        title={t('aiModels.testConnectivity')}
                       >
                         {testingModel === model.id ? (
                           <Loader2 className="w-4 h-4 animate-spin text-primary" />
                         ) : (
                           <Zap className="w-4 h-4 text-yellow-500" />
                         )}
-                        <span className="text-text-secondary">测试</span>
+                        <span className="text-text-secondary">{t('common.test')}</span>
                       </button>
                       <button
                         onClick={() => toggleModelMutation.mutate({ id: model.id, enabled: model.enabled === 0 })}
@@ -460,40 +462,40 @@ export default function AIModels() {
                             ? 'bg-status-success/10 text-status-success hover:bg-status-success/20' 
                             : 'bg-status-failed/10 text-status-failed hover:bg-status-failed/20'
                         )}
-                        title={model.enabled === 1 ? '禁用' : '启用'}
+                        title={model.enabled === 1 ? t('status.disabled') : t('status.enabled')}
                       >
                         <Power className="w-4 h-4" />
-                        <span>{model.enabled === 1 ? '禁用' : '启用'}</span>
+                        <span>{model.enabled === 1 ? t('status.disabled') : t('status.enabled')}</span>
                       </button>
                       {model.is_default !== 1 && (
                         <button
                           onClick={() => setDefaultModelMutation.mutate(model.id)}
                           className="px-3 py-1.5 rounded-lg hover:bg-background transition-colors flex items-center gap-1.5 text-sm"
-                          title="设为默认"
+                          title={t('aiModels.setDefault')}
                         >
                           <CheckCircle2 className="w-4 h-4 text-primary" />
-                          <span className="text-text-secondary">默认</span>
+                          <span className="text-text-secondary">{t('aiModels.default')}</span>
                         </button>
                       )}
                       <button
                         onClick={() => handleEditModel(model)}
                         className="px-3 py-1.5 rounded-lg hover:bg-background transition-colors flex items-center gap-1.5 text-sm"
-                        title="编辑"
+                        title={t('common.edit')}
                       >
                         <Pencil className="w-4 h-4" />
-                        <span className="text-text-secondary">编辑</span>
+                        <span className="text-text-secondary">{t('common.edit')}</span>
                       </button>
                       <button
                         onClick={() => {
-                          if (confirm('确定要删除此模型吗？')) {
+                          if (confirm(t('aiModels.deleteConfirm'))) {
                             deleteModelMutation.mutate(model.id);
                           }
                         }}
                         className="px-3 py-1.5 rounded-lg hover:bg-status-failed/10 transition-colors flex items-center gap-1.5 text-sm"
-                        title="删除"
+                        title={t('common.delete')}
                       >
                         <Trash2 className="w-4 h-4 text-status-failed" />
-                        <span className="text-status-failed">删除</span>
+                        <span className="text-status-failed">{t('common.delete')}</span>
                       </button>
                     </div>
                   </div>
@@ -516,13 +518,13 @@ export default function AIModels() {
           ) : (
             <div className="text-center py-12">
               <Bot className="w-12 h-12 mx-auto text-text-secondary mb-4" />
-              <p className="text-text-secondary mb-2">暂无 AI 模型配置</p>
-              <p className="text-sm text-text-tertiary mb-4">点击&apos;添加模型&apos;开始配置</p>
+              <p className="text-text-secondary mb-2">{t('aiModels.empty.title')}</p>
+              <p className="text-sm text-text-tertiary mb-4">{t('aiModels.empty.desc')}</p>
               <button
                 onClick={handleAddModel}
                 className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-all"
               >
-                添加第一个模型
+                {t('aiModels.empty.action')}
               </button>
             </div>
           )}
@@ -534,8 +536,8 @@ export default function AIModels() {
             <div className="bg-surface border border-border rounded-xl p-6 w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto">
               {addStep === 'select' ? (
                 <>
-                  <h4 className="font-medium text-text-primary mb-2">选择 AI 平台</h4>
-                  <p className="text-sm text-text-secondary mb-6">选择要添加的 AI 服务提供商</p>
+                  <h4 className="font-medium text-text-primary mb-2">{t('aiModels.selectProvider')}</h4>
+                  <p className="text-sm text-text-secondary mb-6">{t('aiModels.selectProviderDesc')}</p>
                   
                   <div className="space-y-3">
                     {PROVIDER_PRESETS.map((provider) => (
@@ -548,7 +550,7 @@ export default function AIModels() {
                         <div className="flex-1">
                           <p className="font-medium text-text-primary">{provider.label}</p>
                           <p className="text-xs text-text-tertiary mt-1">
-                            {provider.needApiKey ? '需要 API Key' : '无需 API Key'} · 默认模型: {provider.defaultModels.join(', ')}
+                            {provider.needApiKey ? t('aiModels.needApiKey') : t('aiModels.noApiKey')} · {t('aiModels.defaultModels')}: {provider.defaultModels.join(', ')}
                           </p>
                         </div>
                         <ArrowRight className="w-5 h-5 text-text-secondary" />
@@ -564,20 +566,20 @@ export default function AIModels() {
                       }}
                       className="px-4 py-2 bg-surface border border-border text-text-primary rounded-lg hover:bg-background transition-all"
                     >
-                      取消
+                      {t('common.cancel')}
                     </button>
                   </div>
                 </>
               ) : (
                 <>
                   <h4 className="font-medium text-text-primary mb-4">
-                    {editingModel ? '编辑 AI 模型' : '配置 AI 模型'}
+                    {editingModel ? t('aiModels.editTitle') : t('aiModels.configTitle')}
                   </h4>
                   
                   <div className="space-y-4">
                     {/* 平台选择 */}
                     <div className="relative">
-                      <label className="block text-sm font-medium text-text-secondary mb-2">AI 平台 *</label>
+                      <label className="block text-sm font-medium text-text-secondary mb-2">{t('aiModels.provider')} *</label>
                       <button
                         onClick={() => setShowProviderDropdown(!showProviderDropdown)}
                         className="w-full flex items-center justify-between px-4 py-2 bg-background border border-border rounded-lg text-text-primary hover:border-primary/50 transition-all"
@@ -610,10 +612,10 @@ export default function AIModels() {
 
                     {/* 显示名称 */}
                     <div>
-                      <label className="block text-sm font-medium text-text-secondary mb-2">显示名称 *</label>
+                      <label className="block text-sm font-medium text-text-secondary mb-2">{t('aiModels.displayName')} *</label>
                       <input
                         type="text"
-                        placeholder="例如: 豆包-DeepSeek-V4-Pro"
+                        placeholder={t('aiModels.displayNamePlaceholder')}
                         value={formData.name}
                         onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                         className="w-full px-4 py-2 bg-background border border-border rounded-lg text-text-primary focus:outline-none focus:border-primary"
@@ -622,10 +624,10 @@ export default function AIModels() {
 
                     {/* 模型 ID */}
                     <div>
-                      <label className="block text-sm font-medium text-text-secondary mb-2">模型 ID *</label>
+                      <label className="block text-sm font-medium text-text-secondary mb-2">{t('aiModels.modelId')} *</label>
                       <input
                         type="text"
-                        placeholder="例如: deepseek-v4-pro-260425"
+                        placeholder={t('aiModels.modelIdPlaceholder')}
                         value={formData.model_id}
                         onChange={(e) => setFormData({ ...formData, model_id: e.target.value })}
                         className="w-full px-4 py-2 bg-background border border-border rounded-lg text-text-primary focus:outline-none focus:border-primary"
@@ -665,7 +667,7 @@ export default function AIModels() {
 
                     {/* API Base URL */}
                     <div>
-                      <label className="block text-sm font-medium text-text-secondary mb-2">API 调用地址</label>
+                      <label className="block text-sm font-medium text-text-secondary mb-2">{t('aiModels.apiBase')}</label>
                       <input
                         type="text"
                         placeholder={getProviderPreset(formData.provider_type)?.defaultBase}
@@ -674,16 +676,16 @@ export default function AIModels() {
                         className="w-full px-4 py-2 bg-background border border-border rounded-lg text-text-primary focus:outline-none focus:border-primary"
                       />
                       <p className="text-xs text-text-tertiary mt-1">
-                        默认: {getProviderPreset(formData.provider_type)?.defaultBase}
+                        {t('aiModels.defaultApiBase')}: {getProviderPreset(formData.provider_type)?.defaultBase}
                       </p>
                     </div>
 
                     {/* 标签 */}
                     <div>
-                      <label className="block text-sm font-medium text-text-secondary mb-2">标签（逗号分隔，可选）</label>
+                      <label className="block text-sm font-medium text-text-secondary mb-2">{t('aiModels.tagsLabel')}</label>
                       <input
                         type="text"
-                        placeholder="代码生成,高性价比"
+                        placeholder={t('aiModels.tagsPlaceholder')}
                         value={formData.tags}
                         onChange={(e) => setFormData({ ...formData, tags: e.target.value })}
                         className="w-full px-4 py-2 bg-background border border-border rounded-lg text-text-primary focus:outline-none focus:border-primary"
@@ -701,7 +703,7 @@ export default function AIModels() {
                       }}
                       className="px-4 py-2 bg-surface border border-border text-text-primary rounded-lg hover:bg-background transition-all"
                     >
-                      取消
+                      {t('common.cancel')}
                     </button>
                     <button
                       onClick={handleSubmit}
@@ -711,7 +713,7 @@ export default function AIModels() {
                       {(createModelMutation.isPending || updateModelMutation.isPending) && (
                         <Loader2 className="w-4 h-4 animate-spin" />
                       )}
-                      {editingModel ? '保存' : '添加并测试'}
+                      {editingModel ? t('common.save') : t('aiModels.addAndTest')}
                     </button>
                   </div>
                 </>
