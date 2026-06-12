@@ -4,6 +4,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { CheckCircle2, Clock, ShieldAlert, XCircle, RefreshCw, ExternalLink } from 'lucide-react';
 import clsx from 'clsx';
 import api from '../lib/api';
+import { useLocale, type MessageKey } from '../contexts/LocaleContext';
 
 interface ToolApproval {
   id: string;
@@ -27,15 +28,17 @@ interface ToolApproval {
   } | null;
 }
 
-const statusLabels: Record<ToolApproval['status'], string> = {
-  pending: '待审批',
-  approved: '已批准/执行中',
-  rejected: '已拒绝',
-  executed: '已执行',
-  failed: '执行失败'
+const statusLabelKeys: Record<ToolApproval['status'], MessageKey> = {
+  pending: 'toolApprovals.status.pending',
+  approved: 'toolApprovals.status.approved',
+  rejected: 'toolApprovals.status.rejected',
+  executed: 'toolApprovals.status.executed',
+  failed: 'toolApprovals.status.failed'
 };
 
 export default function ToolApprovals() {
+  const { locale, t } = useLocale();
+  const browserLocale = locale === 'zh-CN' ? 'zh-CN' : 'en-US';
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -99,15 +102,15 @@ export default function ToolApprovals() {
       <div className="space-y-6">
         <div className="flex items-center justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold text-text-primary">工具审批</h1>
-            <p className="text-text-secondary">审批 Agent 或外部 Runtime 提交的中高风险工具请求</p>
+            <h1 className="text-2xl font-bold text-text-primary">{t('toolApprovals.title')}</h1>
+            <p className="text-text-secondary">{t('toolApprovals.subtitle')}</p>
           </div>
           <button
             onClick={() => refetch()}
             className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-surface border border-border text-text-secondary hover:text-text-primary transition-colors"
           >
             <RefreshCw className="w-4 h-4" />
-            刷新
+            {t('common.refresh')}
           </button>
         </div>
 
@@ -126,7 +129,7 @@ export default function ToolApprovals() {
                   : 'bg-surface text-text-secondary border-border hover:text-text-primary'
               )}
             >
-              {item ? statusLabels[item as ToolApproval['status']] : '全部'}
+              {item ? t(statusLabelKeys[item as ToolApproval['status']]) : t('common.all')}
             </button>
           ))}
         </div>
@@ -134,11 +137,11 @@ export default function ToolApprovals() {
         <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_420px] gap-6">
           <div className="bg-surface rounded-xl border border-border overflow-hidden">
             {isLoading ? (
-              <div className="p-10 text-center text-text-secondary">加载中...</div>
+              <div className="p-10 text-center text-text-secondary">{t('common.loading')}</div>
             ) : approvals.length === 0 ? (
               <div className="p-10 text-center text-text-secondary">
                 <Clock className="w-10 h-10 mx-auto mb-3 opacity-50" />
-                暂无审批请求
+                {t('toolApprovals.empty')}
               </div>
             ) : (
               <div className="divide-y divide-border">
@@ -158,18 +161,18 @@ export default function ToolApprovals() {
                           <span className="font-semibold text-text-primary truncate">{approval.tool_name}</span>
                         </div>
                         <p className="text-xs text-text-secondary mt-1">
-                          {new Date(approval.requested_at).toLocaleString()} · {approval.source || 'api'}
+                          {new Date(approval.requested_at).toLocaleString(browserLocale)} · {approval.source || 'api'}
                         </p>
                       </div>
-                      <StatusBadge status={approval.status} />
+                      <StatusBadge status={approval.status} t={t} />
                     </div>
 	                    <p className="text-sm text-text-secondary line-clamp-2">
-	                      {approval.reason || '等待人工审批'}
+	                      {approval.reason || t('toolApprovals.pendingReason')}
 	                    </p>
 	                    {extractTaskId(approval) && (
 	                      <div className="mt-3 inline-flex items-center gap-1.5 px-2 py-1 rounded-md bg-primary/10 text-primary text-xs border border-primary/20">
 	                        <ExternalLink className="w-3.5 h-3.5" />
-	                        task {shortId(extractTaskId(approval)!)}
+	                        {t('toolApprovals.taskShort', { id: shortId(extractTaskId(approval)!) })}
 	                      </div>
 	                    )}
 	                  </button>
@@ -181,7 +184,7 @@ export default function ToolApprovals() {
           <div className="bg-surface rounded-xl border border-border p-5 h-fit">
             {!selectedApproval ? (
               <div className="text-center text-text-secondary py-10">
-                选择一条审批请求查看详情
+                {t('toolApprovals.selectPrompt')}
               </div>
             ) : (
               <div className="space-y-4">
@@ -190,16 +193,16 @@ export default function ToolApprovals() {
                     <h2 className="font-bold text-text-primary">{selectedApproval.tool_name}</h2>
                     <p className="text-sm text-text-secondary">{selectedApproval.risk_level}</p>
                   </div>
-                  <StatusBadge status={selectedApproval.status} />
+                  <StatusBadge status={selectedApproval.status} t={t} />
                 </div>
 
-	                <DetailRow label="来源" value={selectedApproval.source || '-'} />
-	                <DetailRow label="请求角色" value={selectedApproval.requester_role || '-'} />
-	                <DetailRow label="Correlation" value={selectedApproval.correlation_id || '-'} />
-	                <DetailRow label="原因" value={selectedApproval.reason || '-'} />
+	                <DetailRow label={t('toolApprovals.detail.source')} value={selectedApproval.source || '-'} />
+	                <DetailRow label={t('toolApprovals.detail.requesterRole')} value={selectedApproval.requester_role || '-'} />
+	                <DetailRow label={t('toolApprovals.detail.correlation')} value={selectedApproval.correlation_id || '-'} />
+	                <DetailRow label={t('toolApprovals.detail.reason')} value={selectedApproval.reason || '-'} />
 	                {selectedTaskId && (
 	                  <div className="rounded-lg border border-primary/20 bg-primary/5 p-3">
-	                    <p className="text-xs text-text-secondary mb-1">关联任务</p>
+	                    <p className="text-xs text-text-secondary mb-1">{t('toolApprovals.relatedTask')}</p>
 	                    <div className="flex items-center justify-between gap-3">
 	                      <code className="text-sm text-text-primary break-all">{selectedTaskId}</code>
 	                      <button
@@ -207,14 +210,14 @@ export default function ToolApprovals() {
 	                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary/10 text-primary border border-primary/20 hover:bg-primary/20 transition-colors whitespace-nowrap"
 	                      >
 	                        <ExternalLink className="w-4 h-4" />
-	                        查看
+	                        {t('common.details')}
 	                      </button>
 	                    </div>
 	                  </div>
 	                )}
 
 	                <div>
-                  <p className="text-xs text-text-secondary mb-2">输入参数</p>
+                  <p className="text-xs text-text-secondary mb-2">{t('toolApprovals.inputParams')}</p>
                   <pre className="max-h-64 overflow-auto rounded-lg bg-background border border-border p-3 text-xs text-text-primary whitespace-pre-wrap">
                     {JSON.stringify(selectedApproval.input, null, 2)}
                   </pre>
@@ -222,7 +225,7 @@ export default function ToolApprovals() {
 
                 {selectedApproval.execution_result && (
                   <div>
-                    <p className="text-xs text-text-secondary mb-2">执行结果</p>
+                    <p className="text-xs text-text-secondary mb-2">{t('toolApprovals.executionResult')}</p>
                     <pre className="max-h-64 overflow-auto rounded-lg bg-background border border-border p-3 text-xs text-text-primary whitespace-pre-wrap">
                       {JSON.stringify(selectedApproval.execution_result, null, 2)}
                     </pre>
@@ -234,7 +237,7 @@ export default function ToolApprovals() {
                     <textarea
                       value={comment}
                       onChange={(event) => setComment(event.target.value)}
-                      placeholder="审批意见..."
+                      placeholder={t('toolApprovals.commentPlaceholder')}
                       className="w-full h-24 px-3 py-2 rounded-lg bg-background border border-border text-text-primary focus:outline-none focus:border-primary resize-none"
                     />
                     <div className="grid grid-cols-2 gap-3">
@@ -244,7 +247,7 @@ export default function ToolApprovals() {
                         className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-red-500/10 text-red-400 border border-red-500/30 hover:bg-red-500/20 disabled:opacity-50 transition-colors"
                       >
                         <XCircle className="w-4 h-4" />
-                        拒绝
+                        {t('toolApprovals.reject')}
                       </button>
                       <button
                         onClick={() => approveMutation.mutate(selectedApproval.id)}
@@ -252,7 +255,7 @@ export default function ToolApprovals() {
                         className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-green-500/10 text-green-400 border border-green-500/30 hover:bg-green-500/20 disabled:opacity-50 transition-colors"
                       >
                         <CheckCircle2 className="w-4 h-4" />
-                        批准并执行
+                        {t('toolApprovals.approveAndExecute')}
                       </button>
                     </div>
                   </div>
@@ -266,7 +269,7 @@ export default function ToolApprovals() {
   );
 }
 
-function StatusBadge({ status }: { status: ToolApproval['status'] }) {
+function StatusBadge({ status, t }: { status: ToolApproval['status']; t: (key: MessageKey, values?: Record<string, string | number>) => string }) {
   return (
     <span className={clsx(
       'px-2.5 py-1 rounded-full text-xs font-semibold border whitespace-nowrap',
@@ -276,7 +279,7 @@ function StatusBadge({ status }: { status: ToolApproval['status'] }) {
       status === 'rejected' && 'bg-slate-500/10 text-slate-400 border-slate-500/30',
       status === 'approved' && 'bg-blue-500/10 text-blue-400 border-blue-500/30'
     )}>
-      {statusLabels[status]}
+      {t(statusLabelKeys[status])}
     </span>
   );
 }

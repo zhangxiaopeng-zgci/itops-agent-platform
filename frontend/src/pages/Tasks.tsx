@@ -4,10 +4,12 @@ import { useSearchParams } from 'react-router-dom';
 import { io, Socket } from 'socket.io-client';
 import { Play, Pause, XCircle, Clock, CheckCircle, XCircle as XIcon, FileText, Activity, List, FileCheck } from 'lucide-react';
 import { formatDistanceToNow, format } from 'date-fns';
+import { enUS, zhCN } from 'date-fns/locale';
 import clsx from 'clsx';
 import api from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
 import MarkdownOutput from '../components/MarkdownOutput';
+import { useLocale, type MessageKey } from '../contexts/LocaleContext';
 
 const wsUrl = window.location.origin;
 
@@ -32,8 +34,27 @@ interface Workflow {
   nodes: any[];
 }
 
+const taskStatusKeys: Record<string, MessageKey> = {
+  pending: 'status.task.pending',
+  running: 'status.task.running',
+  completed: 'status.task.completed',
+  failed: 'status.task.failed',
+  paused: 'status.task.paused',
+  cancelled: 'status.task.cancelled'
+};
+
+const nodeStatusKeys: Record<string, MessageKey> = {
+  completed: 'status.task.completed',
+  running: 'status.task.running',
+  failed: 'status.task.failed',
+  pending: 'tasks.node.pending'
+};
+
 export default function Tasks() {
   const { token } = useAuth();
+  const { locale, t } = useLocale();
+  const dateLocale = locale === 'zh-CN' ? zhCN : enUS;
+  const browserLocale = locale === 'zh-CN' ? 'zh-CN' : 'en-US';
   const [searchParams, setSearchParams] = useSearchParams();
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [executingNodeId, setExecutingNodeId] = useState<string | null>(null);
@@ -46,7 +67,7 @@ export default function Tasks() {
     queryFn: async () => {
       const res = await api.get('/api/tasks');
       const taskData = res.data.data as Task[];
-      // 解析每个任务的 execution_order、node_results 和 logs 字段
+      // Parse serialized execution fields returned by the backend.
       return taskData.map(task => {
         const parsedTask = { ...task };
         if (task.execution_order && typeof task.execution_order === 'string') {
@@ -57,7 +78,7 @@ export default function Tasks() {
           }
         }
         
-        // 解析 node_results
+        // Parse node results.
         if (task.node_results && typeof task.node_results === 'string') {
           try {
             parsedTask.node_results = JSON.parse(task.node_results);
@@ -66,7 +87,7 @@ export default function Tasks() {
           }
         }
         
-        // 解析 logs（如果是字符串的话）
+        // Parse logs when they are returned as a JSON string.
         if (task.logs && typeof task.logs === 'string') {
           try {
             parsedTask.logs = JSON.parse(task.logs);
@@ -151,7 +172,7 @@ export default function Tasks() {
           ...prev,
           {
             type: 'success',
-            content: `节点执行完成: ${taskData.status}`,
+            content: t('tasks.log.nodeCompleted', { status: t(taskStatusKeys[taskData.status] || 'common.unknown') }),
             timestamp: new Date(),
           },
         ]);
@@ -199,25 +220,25 @@ export default function Tasks() {
     };
   }, [selectedTask, refetchTasks, token]);
 
-  // 用于同步 selectedTask 到 ref，避免 useEffect 依赖
+  // Keep selectedTask in a ref to avoid expanding effect dependencies.
   const selectedTaskRef = useRef<Task | null>(selectedTask);
   useEffect(() => {
     selectedTaskRef.current = selectedTask;
   }, [selectedTask]);
 
-  // 当任务列表更新时，自动更新当前选中的任务
+  // Refresh the selected task when the task list changes.
   useEffect(() => {
     const currentSelectedTask = selectedTaskRef.current;
     if (currentSelectedTask && tasks) {
       const updatedTask = tasks.find(t => t.id === currentSelectedTask.id);
       if (updatedTask) {
-        // 检查是否真的有变化，避免重复更新
+        // Avoid redundant updates when no visible execution data changed.
         const hasChanged = 
           updatedTask.status !== currentSelectedTask.status || 
           JSON.stringify(updatedTask.node_results) !== JSON.stringify(currentSelectedTask.node_results);
         
         if (hasChanged) {
-          // 直接解析并设置更新后的任务
+          // Parse the updated task before storing it.
           const parsedTask = { ...updatedTask };
           if (updatedTask.execution_order && typeof updatedTask.execution_order === 'string') {
             try {
@@ -227,7 +248,7 @@ export default function Tasks() {
             }
           }
           
-          // 解析 node_results
+          // Parse node results.
           if (updatedTask.node_results && typeof updatedTask.node_results === 'string') {
             try {
               parsedTask.node_results = JSON.parse(updatedTask.node_results);
@@ -236,7 +257,7 @@ export default function Tasks() {
             }
           }
           
-          // 解析历史日志，只在任务完成时才更新，避免覆盖实时日志
+          // Parse historical logs. Only apply them after the task finishes to avoid overwriting live logs.
           let parsedLogs: any[] = [];
           if (updatedTask.logs && Array.isArray(updatedTask.logs)) {
             parsedLogs = updatedTask.logs.map((log: any) => ({
@@ -253,12 +274,12 @@ export default function Tasks() {
                 }));
               }
             } catch {
-              // 解析失败，使用空数组
+              // Fall back to an empty log list when parsing fails.
             }
           }
           
           setSelectedTask(parsedTask);
-          // 只在任务完成时才更新日志，否则会覆盖实时日志
+          // Only replace logs after completion; live logs are append-only while running.
           if (updatedTask.status === 'completed' || updatedTask.status === 'failed') {
             setTaskLogs(parsedLogs);
           }
@@ -280,10 +301,10 @@ export default function Tasks() {
   }, [searchParams, tasks, selectedTask?.id]);
 
   const handleSelectTask = (task: Task, updateUrl = true) => {
-    // 解析 execution_order、node_results、logs 字段
+    // Parse serialized execution fields.
     const parsedTask = { ...task };
     
-    // 解析 execution_order
+    // Parse execution order.
     if (task.execution_order && typeof task.execution_order === 'string') {
       try {
         parsedTask.execution_order = JSON.parse(task.execution_order);
@@ -292,7 +313,7 @@ export default function Tasks() {
       }
     }
     
-    // 解析 node_results
+    // Parse node results.
     if (task.node_results && typeof task.node_results === 'string') {
       try {
         parsedTask.node_results = JSON.parse(task.node_results);
@@ -301,7 +322,7 @@ export default function Tasks() {
       }
     }
     
-    // 解析历史日志，将 ISO 字符串转换为 Date 对象
+    // Parse historical logs and convert ISO timestamps to Date objects.
     let parsedLogs: any[] = [];
     if (task.logs && Array.isArray(task.logs)) {
       parsedLogs = task.logs.map((log: any) => ({
@@ -318,7 +339,7 @@ export default function Tasks() {
           }));
         }
       } catch {
-        // 解析失败，使用空数组
+        // Fall back to an empty log list when parsing fails.
       }
     }
     
@@ -376,8 +397,8 @@ export default function Tasks() {
       <div className="p-6 h-full flex gap-6">
         <div className="w-1/3 h-full flex flex-col">
           <div className="mb-6">
-            <h1 className="text-2xl font-bold text-text-primary mb-2">任务执行</h1>
-            <p className="text-text-secondary">查看和管理任务执行进度</p>
+            <h1 className="text-2xl font-bold text-text-primary mb-2">{t('tasks.title')}</h1>
+            <p className="text-text-secondary">{t('tasks.subtitle')}</p>
           </div>
 
           <div className="flex-1 overflow-y-auto space-y-3 scrollbar-thin">
@@ -405,12 +426,12 @@ export default function Tasks() {
                       task.status === 'cancelled' && 'bg-status-pending/10 text-status-pending'
                     )}
                   >
-                    {task.status}
+                    {t(taskStatusKeys[task.status] || 'common.unknown')}
                   </span>
                 </div>
                 <div className="flex items-center gap-2 text-xs text-text-secondary">
                   <Clock className="w-3 h-3" />
-                  {formatDistanceToNow(new Date(task.created_at), { addSuffix: true })}
+                  {formatDistanceToNow(new Date(task.created_at), { addSuffix: true, locale: dateLocale })}
                 </div>
               </div>
             ))}
@@ -425,7 +446,7 @@ export default function Tasks() {
                   <div>
                     <h2 className="text-xl font-bold text-text-primary">{selectedTask.name}</h2>
                     <p className="text-sm text-text-secondary">
-                      工作流: {getTaskWorkflow(selectedTask.workflow_id)?.name || '未知'}
+                      {t('tasks.workflowLabel', { name: getTaskWorkflow(selectedTask.workflow_id)?.name || t('common.unknown') })}
                     </p>
                   </div>
                   <div className="flex gap-2">
@@ -463,7 +484,7 @@ export default function Tasks() {
                     const nodeMap = new Map(nodes.map((node) => [node.id, node]));
                     const executionOrder = selectedTask.execution_order;
                     
-                    // 按照执行顺序排序节点
+                    // Sort nodes by execution order when available.
                     let orderedNodes;
                     if (executionOrder && executionOrder.length > 0) {
                       orderedNodes = executionOrder
@@ -512,7 +533,7 @@ export default function Tasks() {
               </div>
 
               <div className="flex-1 overflow-hidden flex flex-col">
-                {/* 标签页导航 */}
+                {/* Tab navigation */}
                 <div className="flex border-b border-border px-6 pt-4">
                   <button
                     onClick={() => setActiveTab('logs')}
@@ -525,7 +546,7 @@ export default function Tasks() {
                   >
                     <div className="flex items-center gap-2">
                       <List className="w-4 h-4" />
-                      执行日志
+                      {t('tasks.tabs.logs')}
                     </div>
                   </button>
                   <button
@@ -539,7 +560,7 @@ export default function Tasks() {
                   >
                     <div className="flex items-center gap-2">
                       <FileText className="w-4 h-4" />
-                      节点结果
+                      {t('tasks.tabs.nodes')}
                     </div>
                   </button>
                   <button
@@ -553,19 +574,19 @@ export default function Tasks() {
                   >
                     <div className="flex items-center gap-2">
                       <FileCheck className="w-4 h-4" />
-                      相关报告
+                      {t('tasks.tabs.relatedReports')}
                     </div>
                   </button>
                 </div>
 
-                {/* 标签页内容 */}
+                {/* Tab content */}
                 <div className="flex-1 overflow-y-auto p-6">
                   {activeTab === 'logs' && (
                     <div className="space-y-2">
                       {taskLogs.length === 0 ? (
                         <div className="text-center py-12 text-text-secondary">
                           <Activity className="w-12 h-12 mx-auto mb-3 opacity-50" />
-                          <p>暂无执行日志</p>
+                          <p>{t('tasks.empty.logs')}</p>
                         </div>
                       ) : (
                         taskLogs.map((log, index) => (
@@ -585,10 +606,10 @@ export default function Tasks() {
                                 {format(new Date(log.timestamp), 'HH:mm:ss')}
                               </span>
                               {log.type === 'thinking' && (
-                                <span className="text-xs text-blue-500">分析中</span>
+                                <span className="text-xs text-blue-500">{t('tasks.log.thinking')}</span>
                               )}
                               {log.type === 'output' && (
-                                <span className="text-xs text-green-500">输出</span>
+                                <span className="text-xs text-green-500">{t('common.output')}</span>
                               )}
                             </div>
                             {log.type === 'output' ? (
@@ -625,7 +646,7 @@ export default function Tasks() {
                           return (
                             <div className="text-center py-12 text-text-secondary">
                               <FileText className="w-12 h-12 mx-auto mb-3 opacity-50" />
-                              <p>暂无节点执行结果</p>
+                              <p>{t('tasks.empty.nodes')}</p>
                             </div>
                           );
                         }
@@ -646,7 +667,7 @@ export default function Tasks() {
                                 status === 'pending' && 'border-border bg-background/50'
                               )}
                             >
-                              {/* 节点头部 */}
+                              {/* Node header */}
                               <div className="flex items-center justify-between p-4 border-b border-border">
                                 <div className="flex items-center gap-3">
                                   <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-surface">
@@ -654,7 +675,7 @@ export default function Tasks() {
                                   </div>
                                   <div>
                                     <h4 className="font-medium text-text-primary flex items-center gap-2">
-                                      {node.data?.label || '未知节点'}
+                                      {node.data?.label || t('tasks.node.unknown')}
                                       {status === 'completed' && (
                                         <CheckCircle className="w-4 h-4 text-status-success" />
                                       )}
@@ -666,7 +687,7 @@ export default function Tasks() {
                                       )}
                                     </h4>
                                     <p className="text-sm text-text-secondary">
-                                      步骤 {index + 1} / {orderedNodes.length}
+                                      {t('tasks.node.step', { current: index + 1, total: orderedNodes.length })}
                                     </p>
                                   </div>
                                 </div>
@@ -679,19 +700,16 @@ export default function Tasks() {
                                     status === 'pending' && 'bg-status-pending/10 text-status-pending'
                                   )}
                                 >
-                                  {status === 'completed' && '已完成'}
-                                  {status === 'running' && '执行中'}
-                                  {status === 'failed' && '失败'}
-                                  {status === 'pending' && '等待执行'}
+                                  {t(nodeStatusKeys[status] || 'common.unknown')}
                                 </span>
                               </div>
 
-                              {/* 节点结果 */}
+                              {/* Node result */}
                               {result && (
                                 <div className="p-4">
                                   {result.output && (
                                     <div className="mb-3">
-                                      <h5 className="text-sm font-medium text-text-secondary mb-2">输出结果</h5>
+                                      <h5 className="text-sm font-medium text-text-secondary mb-2">{t('tasks.node.outputResult')}</h5>
                                       <div className="bg-surface rounded-lg p-3 border border-border">
                                         <MarkdownOutput content={result.output} />
                                       </div>
@@ -699,7 +717,7 @@ export default function Tasks() {
                                   )}
                                   {result.error && (
                                     <div>
-                                      <h5 className="text-sm font-medium text-status-failed mb-2">错误信息</h5>
+                                      <h5 className="text-sm font-medium text-status-failed mb-2">{t('tasks.node.errorInfo')}</h5>
                                       <div className="bg-status-failed/5 rounded-lg p-3 border border-status-failed/20">
                                         <p className="text-sm text-status-failed">{result.error}</p>
                                       </div>
@@ -708,7 +726,7 @@ export default function Tasks() {
                                   {result.metadata && result.metadata.executionTime && (
                                     <div className="mt-3 pt-3 border-t border-border">
                                       <p className="text-xs text-text-secondary">
-                                        执行时间: {new Date(result.metadata.executionTime).toLocaleString()}
+                                        {t('tasks.node.executionTime', { time: new Date(result.metadata.executionTime).toLocaleString(browserLocale) })}
                                       </p>
                                     </div>
                                   )}
@@ -724,7 +742,7 @@ export default function Tasks() {
                   {activeTab === 'related_reports' && (
                     <div className="space-y-4">
                       {(() => {
-                        // 首先通过 report_id 查找精确匹配的报告
+                        // Prefer exact report_id matches.
                         let relatedReports: any[] = [];
                         
                         if (selectedTask.report_id) {
@@ -736,7 +754,7 @@ export default function Tasks() {
                           }
                         }
                         
-                        // 如果没有精确匹配，再用旧的模糊匹配方式
+                        // Fall back to legacy fuzzy matching when no exact report is linked.
                         if (relatedReports.length === 0) {
                           relatedReports = reports?.filter((report: any) => 
                             report.name?.includes(selectedTask.name) || 
@@ -749,7 +767,7 @@ export default function Tasks() {
                           return (
                             <div className="text-center py-12 text-text-secondary">
                               <FileCheck className="w-12 h-12 mx-auto mb-3 opacity-50" />
-                              <p className="mb-4">暂无相关报告</p>
+                              <p className="mb-4">{t('tasks.empty.relatedReports')}</p>
                             </div>
                           );
                         }
@@ -767,10 +785,10 @@ export default function Tasks() {
                                   <h4 className="font-medium text-text-primary">{report.name}</h4>
                                 </div>
                                 <p className="text-sm text-text-secondary">
-                                  创建时间: {new Date(report.created_at).toLocaleString()}
+                                  {t('tasks.report.createdAt', { time: new Date(report.created_at).toLocaleString(browserLocale) })}
                                 </p>
                                 <p className="text-xs text-text-secondary mt-1">
-                                  {report.format?.toUpperCase() || 'MARKDOWN'} 格式
+                                  {t('tasks.report.format', { format: report.format?.toUpperCase() || 'MARKDOWN' })}
                                 </p>
                               </div>
                               <button
@@ -795,14 +813,14 @@ export default function Tasks() {
             <div className="flex-1 flex items-center justify-center">
               <div className="text-center">
                 <Play className="w-16 h-16 text-text-secondary mx-auto mb-4 opacity-50" />
-                <p className="text-text-secondary">选择一个任务查看执行详情</p>
+                <p className="text-text-secondary">{t('tasks.empty.selectTask')}</p>
               </div>
             </div>
           )}
         </div>
       </div>
       
-      {/* 报告详情模态框 */}
+      {/* Report detail modal */}
       {showReportDetail && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-surface border border-border rounded-lg w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col">
@@ -829,7 +847,7 @@ export default function Tasks() {
                 className="px-4 py-2 bg-surface hover:bg-background text-text-primary rounded-lg flex items-center gap-2"
               >
                 <FileText className="w-4 h-4" />
-                下载 Markdown
+                {t('tasks.report.downloadMarkdown')}
               </button>
             </div>
           </div>
