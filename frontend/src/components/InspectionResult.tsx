@@ -1,5 +1,6 @@
 import { X, CheckCircle2, AlertCircle, AlertTriangle, Loader2, Clock } from 'lucide-react';
 import { useEscapeKey } from '../hooks/useEscapeKey';
+import { useLocale, type MessageKey } from '../contexts/LocaleContext';
 
 interface InspectionResultProps {
   result: {
@@ -26,26 +27,26 @@ interface InspectionResultProps {
   onClose: () => void;
 }
 
-const inspectionTypeLabels = {
-  standard: '标准巡检',
-  custom: '自定义巡检',
-  full: '全面巡检'
+const inspectionTypeLabelKeys: Record<InspectionResultProps['result']['inspectionType'], MessageKey> = {
+  standard: 'networkDevices.inspect.standard',
+  custom: 'networkDevices.inspect.custom',
+  full: 'networkDevices.inspect.full'
 };
 
-const typeNames: Record<string, string> = {
-  cpu: 'CPU 使用率',
-  memory: '内存使用率',
-  interface: '接口状态',
-  version: '系统版本',
-  routes: '路由表',
-  log: '系统日志',
-  environment: '环境状态',
-  power: '电源状态',
-  fan: '风扇状态',
-  stp: 'STP 状态',
-  vlan: 'VLAN 信息',
-  arp: 'ARP 表',
-  mac: 'MAC 地址表'
+const typeNameKeys: Record<string, MessageKey> = {
+  cpu: 'networkDevices.inspect.item.cpuUsage',
+  memory: 'networkDevices.inspect.item.memoryUsage',
+  interface: 'networkDevices.inspect.item.interfaceStatus',
+  version: 'networkDevices.result.item.systemVersion',
+  routes: 'networkDevices.inspect.item.routingTable',
+  log: 'networkDevices.inspect.item.systemLogs',
+  environment: 'networkDevices.inspect.item.environmentStatus',
+  power: 'networkDevices.result.item.powerStatus',
+  fan: 'networkDevices.result.item.fanStatus',
+  stp: 'networkDevices.result.item.stpStatus',
+  vlan: 'networkDevices.result.item.vlanInfo',
+  arp: 'networkDevices.result.item.arpTable',
+  mac: 'networkDevices.result.item.macTable'
 };
 
 function getStatusIcon(status: string) {
@@ -62,22 +63,22 @@ function getStatusIcon(status: string) {
   }
 }
 
-function getStatusBadge(status: string) {
+function getStatusBadge(status: string, t: (key: MessageKey, values?: Record<string, string | number>) => string) {
   const styles: Record<string, string> = {
     normal: 'bg-green-500/10 text-green-400 border border-green-500/20',
     warning: 'bg-yellow-500/10 text-yellow-400 border border-yellow-500/20',
     critical: 'bg-red-500/10 text-red-400 border border-red-500/20',
     error: 'bg-red-500/10 text-red-400 border border-red-500/20'
   };
-  const labels: Record<string, string> = {
-    normal: '正常',
-    warning: '警告',
-    critical: '严重',
-    error: '错误'
+  const labelKeys: Record<string, MessageKey> = {
+    normal: 'networkDevices.result.status.normal',
+    warning: 'networkDevices.result.status.warning',
+    critical: 'networkDevices.result.status.critical',
+    error: 'common.error'
   };
   return (
     <span className={`px-2 py-0.5 text-xs font-medium rounded ${styles[status] || 'bg-surface text-text-secondary border border-border'}`}>
-      {labels[status] || status}
+      {labelKeys[status] ? t(labelKeys[status]) : status}
     </span>
   );
 }
@@ -92,6 +93,7 @@ function formatDuration(ms: number) {
 }
 
 export default function InspectionResult({ result, deviceName, onClose }: InspectionResultProps) {
+  const { locale, t } = useLocale();
   useEscapeKey({ onEscape: onClose });
 
   const normalCount = result.results.filter(r => r.status === 'normal').length;
@@ -107,10 +109,10 @@ export default function InspectionResult({ result, deviceName, onClose }: Inspec
         <div className="flex items-center justify-between px-6 py-4 border-b border-border">
           <div>
             <h3 className="text-base font-medium text-text-primary">
-              巡检报告 - {deviceName}
+              {t('networkDevices.result.title', { name: deviceName })}
             </h3>
             <p className="text-xs text-text-secondary mt-0.5">
-              {inspectionTypeLabels[result.inspectionType]} · {formatDuration(result.durationMs)} · {result.commandsExecuted} 个命令
+              {t(inspectionTypeLabelKeys[result.inspectionType])} · {formatDuration(result.durationMs)} · {t('networkDevices.result.commandCount', { count: result.commandsExecuted })}
             </p>
           </div>
           <button onClick={onClose} className="text-text-secondary hover:text-text-primary transition-colors">
@@ -136,17 +138,17 @@ export default function InspectionResult({ result, deviceName, onClose }: Inspec
                     {result.summary}
                   </h4>
                   <div className="flex items-center gap-4 mt-2 text-xs">
-                    <span className="text-green-400">✓ {normalCount} 正常</span>
-                    {warningCount > 0 && <span className="text-yellow-400">⚠ {warningCount} 警告</span>}
-                    {criticalCount > 0 && <span className="text-red-400"> {criticalCount} 严重</span>}
-                    {errorCount > 0 && <span className="text-red-400">✕ {errorCount} 错误</span>}
+                    <span className="text-green-400">✓ {t('networkDevices.result.normalCount', { count: normalCount })}</span>
+                    {warningCount > 0 && <span className="text-yellow-400">⚠ {t('networkDevices.result.warningCount', { count: warningCount })}</span>}
+                    {criticalCount > 0 && <span className="text-red-400">{t('networkDevices.result.criticalCount', { count: criticalCount })}</span>}
+                    {errorCount > 0 && <span className="text-red-400">✕ {t('networkDevices.result.errorCount', { count: errorCount })}</span>}
                   </div>
                 </div>
               </div>
             </div>
 
             <div className="border-t border-border pt-4">
-              <h4 className="text-sm font-medium text-text-primary mb-3">详细结果</h4>
+              <h4 className="text-sm font-medium text-text-primary mb-3">{t('networkDevices.result.details')}</h4>
               <div className="space-y-2">
                 {result.results.map((item, index) => (
                   <div key={index} className="flex items-center justify-between p-3 bg-background rounded-md hover:bg-background/80 transition-colors">
@@ -154,7 +156,7 @@ export default function InspectionResult({ result, deviceName, onClose }: Inspec
                       {getStatusIcon(item.status)}
                       <div>
                         <p className="text-sm font-medium text-text-primary">
-                          {typeNames[item.type] || item.type}
+                          {typeNameKeys[item.type] ? t(typeNameKeys[item.type]) : item.type}
                         </p>
                         <p className="text-xs text-text-secondary truncate max-w-[300px]">
                           {item.details}
@@ -167,7 +169,7 @@ export default function InspectionResult({ result, deviceName, onClose }: Inspec
                           {item.value}{item.unit || ''}
                         </span>
                       )}
-                      {getStatusBadge(item.status)}
+                      {getStatusBadge(item.status, t)}
                     </div>
                   </div>
                 ))}
@@ -179,7 +181,7 @@ export default function InspectionResult({ result, deviceName, onClose }: Inspec
                 <div className="flex items-center gap-2 p-3 bg-red-500/10 border border-red-500/20 rounded-md">
                   <AlertTriangle className="w-4 h-4 text-red-500" />
                   <p className="text-sm text-red-300">
-                    {result.commandsFailed} 个命令执行失败，请检查设备连接和权限
+                    {t('networkDevices.result.commandsFailedWarning', { count: result.commandsFailed })}
                   </p>
                 </div>
               </div>
@@ -190,14 +192,14 @@ export default function InspectionResult({ result, deviceName, onClose }: Inspec
         <div className="flex items-center justify-between px-6 py-4 bg-background/50 border-t border-border">
           <div className="flex items-center gap-2 text-xs text-text-secondary">
             <Clock className="w-3 h-3" />
-            <span>{new Date(result.results[0]?.timestamp).toLocaleString('zh-CN')}</span>
+            <span>{new Date(result.results[0]?.timestamp).toLocaleString(locale === 'zh-CN' ? 'zh-CN' : 'en-US')}</span>
           </div>
           <div className="flex items-center gap-2">
             <button
               onClick={onClose}
               className="px-4 py-2 text-sm text-text-secondary hover:text-text-primary transition-colors rounded-md"
             >
-              关闭
+              {t('common.close')}
             </button>
           </div>
         </div>
