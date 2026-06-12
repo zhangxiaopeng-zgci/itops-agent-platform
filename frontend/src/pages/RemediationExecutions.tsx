@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '../lib/api';
+import { useLocale, type MessageKey } from '../contexts/LocaleContext';
 import { 
   CheckCircle, 
   XCircle, 
@@ -20,12 +21,14 @@ import {
 
 export default function RemediationExecutions() {
   const queryClient = useQueryClient();
+  const { locale, t } = useLocale();
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [page, setPage] = useState(1);
   const [selectedExecutionId, setSelectedExecutionId] = useState<string | null>(null);
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [expandedLogs, setExpandedLogs] = useState<Record<string, boolean>>({});
   const limit = 20;
+  const browserLocale = locale === 'zh-CN' ? 'zh-CN' : 'en-US';
 
   const { data, isLoading } = useQuery({
     queryKey: ['remediation-executions', statusFilter, page],
@@ -106,20 +109,20 @@ export default function RemediationExecutions() {
   };
 
   const getStatusText = (status: string) => {
-    const map: Record<string, string> = {
-      'pending': '待处理',
-      'checking': '检查中',
-      'waiting_approval': '待审批',
-      'approved': '已批准',
-      'rejected': '已拒绝',
-      'running': '执行中',
-      'verifying': '验证中',
-      'success': '成功',
-      'failed': '失败',
-      'rolled_back': '已回滚',
-      'skipped': '已跳过'
+    const map: Record<string, MessageKey> = {
+      pending: 'status.task.pending',
+      checking: 'remediation.status.checking',
+      waiting_approval: 'remediation.status.pendingApproval',
+      approved: 'remediation.status.approved',
+      rejected: 'remediation.status.rejected',
+      running: 'status.task.running',
+      verifying: 'remediation.status.verifying',
+      success: 'common.success',
+      failed: 'common.failed',
+      rolled_back: 'remediation.status.rolledBack',
+      skipped: 'remediation.status.skipped'
     };
-    return map[status] || status;
+    return map[status] ? t(map[status]) : status;
   };
 
   const getStatusColor = (status: string) => {
@@ -138,7 +141,7 @@ export default function RemediationExecutions() {
   const formatTime = (timeStr: string) => {
     if (!timeStr) return '-';
     const date = new Date(timeStr);
-    return date.toLocaleString('zh-CN', { 
+    return date.toLocaleString(browserLocale, {
       month: '2-digit', 
       day: '2-digit', 
       hour: '2-digit', 
@@ -157,8 +160,8 @@ export default function RemediationExecutions() {
     <div className="flex-1 flex flex-col overflow-hidden">
       <div className="flex-1 overflow-auto p-6">
         <div className="mb-6">
-          <h2 className="text-2xl font-bold text-white mb-1">修复执行记录</h2>
-          <p className="text-slate-400 text-sm">查看所有自动修复策略的执行历史和结果</p>
+          <h2 className="text-2xl font-bold text-white mb-1">{t('remediationExecutions.title')}</h2>
+          <p className="text-slate-400 text-sm">{t('remediationExecutions.subtitle')}</p>
         </div>
 
         <div className="flex items-center gap-4 mb-6">
@@ -169,35 +172,35 @@ export default function RemediationExecutions() {
               onChange={(e) => setStatusFilter(e.target.value)}
               className="px-3 py-2 bg-slate-800/50 border border-slate-700 rounded-lg text-white focus:outline-none focus:border-blue-500"
             >
-              <option value="all">全部状态</option>
-              <option value="success">成功</option>
-              <option value="failed">失败</option>
-              <option value="rolled_back">已回滚</option>
-              <option value="waiting_approval">待审批</option>
-              <option value="running">执行中</option>
-              <option value="skipped">已跳过</option>
+              <option value="all">{t('remediation.common.allStatus')}</option>
+              <option value="success">{getStatusText('success')}</option>
+              <option value="failed">{getStatusText('failed')}</option>
+              <option value="rolled_back">{getStatusText('rolled_back')}</option>
+              <option value="waiting_approval">{getStatusText('waiting_approval')}</option>
+              <option value="running">{getStatusText('running')}</option>
+              <option value="skipped">{getStatusText('skipped')}</option>
             </select>
           </div>
         </div>
 
         {isLoading ? (
-          <div className="text-center py-12 text-slate-400">加载中...</div>
+          <div className="text-center py-12 text-slate-400">{t('common.loading')}</div>
         ) : !data?.executions?.length ? (
           <div className="text-center py-12">
             <Clock className="w-16 h-16 text-slate-600 mx-auto mb-4" />
-            <p className="text-slate-400">暂无执行记录</p>
+            <p className="text-slate-400">{t('remediationExecutions.empty')}</p>
           </div>
         ) : (
           <div className="bg-slate-800/30 border border-slate-700/50 rounded-xl overflow-hidden">
             <table className="w-full">
               <thead>
                 <tr className="border-b border-slate-700/50">
-                  <th className="text-left py-3 px-4 text-sm font-medium text-slate-400">时间</th>
-                  <th className="text-left py-3 px-4 text-sm font-medium text-slate-400">策略</th>
-                  <th className="text-left py-3 px-4 text-sm font-medium text-slate-400">状态</th>
-                  <th className="text-left py-3 px-4 text-sm font-medium text-slate-400">耗时</th>
-                  <th className="text-left py-3 px-4 text-sm font-medium text-slate-400">验证</th>
-                  <th className="text-right py-3 px-4 text-sm font-medium text-slate-400">操作</th>
+                  <th className="text-left py-3 px-4 text-sm font-medium text-slate-400">{t('remediationExecutions.table.time')}</th>
+                  <th className="text-left py-3 px-4 text-sm font-medium text-slate-400">{t('remediationExecutions.table.policy')}</th>
+                  <th className="text-left py-3 px-4 text-sm font-medium text-slate-400">{t('remediationExecutions.table.status')}</th>
+                  <th className="text-left py-3 px-4 text-sm font-medium text-slate-400">{t('remediationExecutions.table.duration')}</th>
+                  <th className="text-left py-3 px-4 text-sm font-medium text-slate-400">{t('remediationExecutions.table.verification')}</th>
+                  <th className="text-right py-3 px-4 text-sm font-medium text-slate-400">{t('remediation.common.actions')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -207,8 +210,8 @@ export default function RemediationExecutions() {
                       <div className="text-sm text-white">{formatTime(execution.created_at)}</div>
                     </td>
                     <td className="py-3 px-4">
-                      <div className="text-sm text-slate-300">策略 ID: {execution.policy_id?.slice(0, 8)}...</div>
-                      <div className="text-xs text-slate-500">告警 ID: {execution.alert_id?.slice(0, 8)}...</div>
+                      <div className="text-sm text-slate-300">{t('remediationExecutions.policyId', { id: execution.policy_id?.slice(0, 8) || '-' })}</div>
+                      <div className="text-xs text-slate-500">{t('remediationExecutions.alertId', { id: execution.alert_id?.slice(0, 8) || '-' })}</div>
                     </td>
                     <td className="py-3 px-4">
                       <div className="flex items-center gap-2">
@@ -233,7 +236,7 @@ export default function RemediationExecutions() {
                           </span>
                         </div>
                       ) : (
-                        <span className="text-xs text-slate-500">未验证</span>
+                        <span className="text-xs text-slate-500">{t('remediationExecutions.unverified')}</span>
                       )}
                     </td>
                     <td className="py-3 px-4 text-right">
@@ -244,13 +247,13 @@ export default function RemediationExecutions() {
                               onClick={() => approveMutation.mutate({ id: execution.id, action: 'approve' })}
                               className="px-2 py-1 text-xs bg-green-600/20 text-green-400 rounded hover:bg-green-600/30 transition-colors"
                             >
-                              批准
+                              {t('remediation.common.approve')}
                             </button>
                             <button
                               onClick={() => approveMutation.mutate({ id: execution.id, action: 'reject' })}
                               className="px-2 py-1 text-xs bg-red-600/20 text-red-400 rounded hover:bg-red-600/30 transition-colors"
                             >
-                              拒绝
+                              {t('remediation.common.reject')}
                             </button>
                           </>
                         )}
@@ -258,14 +261,14 @@ export default function RemediationExecutions() {
                           <button
                             onClick={() => retryMutation.mutate(execution.id)}
                             className="p-1.5 text-slate-400 hover:text-blue-400 transition-colors"
-                            title="重试"
+                            title={t('remediation.common.retry')}
                           >
                             <RefreshCw className="w-4 h-4" />
                           </button>
                         )}
                         <button
                           className="p-1.5 text-slate-400 hover:text-white transition-colors"
-                          title="查看详情"
+                          title={t('remediation.common.viewDetails')}
                           onClick={() => handleViewDetail(execution.id)}
                         >
                           <Eye className="w-4 h-4" />
@@ -281,21 +284,21 @@ export default function RemediationExecutions() {
 
         {data && data.total > limit && (
           <div className="flex items-center justify-between mt-4">
-            <div className="text-sm text-slate-400">共 {data.total} 条记录</div>
+            <div className="text-sm text-slate-400">{t('remediation.common.totalRecords', { count: data.total })}</div>
             <div className="flex items-center gap-2">
               <button
                 onClick={() => setPage(p => Math.max(1, p - 1))}
                 disabled={page === 1}
                 className="px-3 py-1.5 bg-slate-800/50 border border-slate-700 rounded-lg text-white disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-700/50 transition-colors"
               >
-                上一页
+                {t('remediation.common.prevPage')}
               </button>
               <span className="text-slate-400 text-sm">{page}</span>
               <button
                 onClick={() => setPage(p => p + 1)}
                 className="px-3 py-1.5 bg-slate-800/50 border border-slate-700 rounded-lg text-white hover:bg-slate-700/50 transition-colors"
               >
-                下一页
+                {t('remediation.common.nextPage')}
               </button>
             </div>
           </div>
@@ -312,7 +315,7 @@ export default function RemediationExecutions() {
             onClick={e => e.stopPropagation()}
           >
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-700/50">
-              <h3 className="text-lg font-semibold text-white">执行详情</h3>
+              <h3 className="text-lg font-semibold text-white">{t('remediationExecutions.detail.title')}</h3>
               <button
                 onClick={handleCloseModal}
                 className="p-1.5 text-slate-400 hover:text-white transition-colors rounded-lg hover:bg-slate-700/50"
@@ -325,15 +328,15 @@ export default function RemediationExecutions() {
               <div className="space-y-4">
                 <h4 className="text-sm font-medium text-slate-300 flex items-center gap-2">
                   <FileText className="w-4 h-4" />
-                  基本信息
+                  {t('remediationExecutions.detail.basicInfo')}
                 </h4>
                 <div className="grid grid-cols-2 gap-4 bg-slate-900/50 rounded-lg p-4">
                   <div>
-                    <div className="text-xs text-slate-500 mb-1">策略名称</div>
+                    <div className="text-xs text-slate-500 mb-1">{t('remediationExecutions.detail.policyName')}</div>
                     <div className="text-sm text-white">{executionDetail.policy_name || executionDetail.policy_id?.slice(0, 8) || '-'}</div>
                   </div>
                   <div>
-                    <div className="text-xs text-slate-500 mb-1">执行状态</div>
+                    <div className="text-xs text-slate-500 mb-1">{t('remediationExecutions.detail.executionStatus')}</div>
                     <div className="flex items-center gap-2">
                       {getStatusIcon(executionDetail.status)}
                       <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${getStatusColor(executionDetail.status)}`}>
@@ -342,16 +345,16 @@ export default function RemediationExecutions() {
                     </div>
                   </div>
                   <div>
-                    <div className="text-xs text-slate-500 mb-1">执行时间</div>
+                    <div className="text-xs text-slate-500 mb-1">{t('remediationExecutions.detail.executionTime')}</div>
                     <div className="text-sm text-white">{formatTime(executionDetail.created_at)}</div>
                   </div>
                   <div>
-                    <div className="text-xs text-slate-500 mb-1">耗时</div>
+                    <div className="text-xs text-slate-500 mb-1">{t('remediationExecutions.detail.duration')}</div>
                     <div className="text-sm text-white">{formatDuration(executionDetail.execution_duration_ms)}</div>
                   </div>
                   {executionDetail.status_reason && (
                     <div className="col-span-2">
-                      <div className="text-xs text-slate-500 mb-1">状态原因</div>
+                      <div className="text-xs text-slate-500 mb-1">{t('remediationExecutions.detail.statusReason')}</div>
                       <div className="text-sm text-slate-300">{executionDetail.status_reason}</div>
                     </div>
                   )}
@@ -362,7 +365,7 @@ export default function RemediationExecutions() {
                 <div className="space-y-4">
                   <h4 className="text-sm font-medium text-slate-300 flex items-center gap-2">
                     <CheckSquare className="w-4 h-4" />
-                    执行结果
+                    {t('remediationExecutions.detail.executionResult')}
                   </h4>
                   <div className="bg-slate-900/50 rounded-lg p-4">
                     <pre className="text-xs text-slate-300 font-mono whitespace-pre-wrap overflow-x-auto max-h-48 overflow-y-auto">
@@ -378,18 +381,18 @@ export default function RemediationExecutions() {
                 <div className="space-y-4">
                   <h4 className="text-sm font-medium text-slate-300 flex items-center gap-2">
                     <CheckSquare className="w-4 h-4" />
-                    验证结果
+                    {t('remediationExecutions.detail.verificationResult')}
                   </h4>
                   <div className="bg-slate-900/50 rounded-lg p-4">
                     <div className="flex items-center gap-2 mb-3">
                       {getStatusIcon(executionDetail.verification_status)}
                       <span className="text-sm text-white">
-                        验证 {getStatusText(executionDetail.verification_status)}
+                        {t('remediationExecutions.detail.verificationStatus', { status: getStatusText(executionDetail.verification_status) })}
                       </span>
                     </div>
                     {executionDetail.verification_completed_at && (
                       <div className="text-xs text-slate-500 mb-2">
-                        验证完成时间: {formatTime(executionDetail.verification_completed_at)}
+                        {t('remediationExecutions.detail.verificationCompletedAt', { time: formatTime(executionDetail.verification_completed_at) })}
                       </div>
                     )}
                     {executionDetail.verification_result && (
@@ -407,16 +410,16 @@ export default function RemediationExecutions() {
                 <div className="space-y-4">
                   <h4 className="text-sm font-medium text-slate-300 flex items-center gap-2">
                     <ArrowLeftRight className="w-4 h-4" />
-                    回滚信息
+                    {t('remediationExecutions.detail.rollbackInfo')}
                   </h4>
                   <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-4">
                     <div className="flex items-center gap-2 mb-3">
                       <AlertCircle className="w-4 h-4 text-yellow-400" />
-                      <span className="text-sm text-yellow-300">已触发回滚</span>
+                      <span className="text-sm text-yellow-300">{t('remediationExecutions.detail.rollbackTriggered')}</span>
                     </div>
                     {executionDetail.rollback_completed_at && (
                       <div className="text-xs text-slate-400 mb-2">
-                        回滚完成时间: {formatTime(executionDetail.rollback_completed_at)}
+                        {t('remediationExecutions.detail.rollbackCompletedAt', { time: formatTime(executionDetail.rollback_completed_at) })}
                       </div>
                     )}
                     {executionDetail.rollback_result && (
@@ -434,12 +437,12 @@ export default function RemediationExecutions() {
                 <div className="space-y-4">
                   <h4 className="text-sm font-medium text-slate-300 flex items-center gap-2">
                     <FileText className="w-4 h-4" />
-                    审批信息
+                    {t('remediationExecutions.detail.approvalInfo')}
                   </h4>
                   <div className="bg-slate-900/50 rounded-lg p-4">
                     {executionDetail.approved_at && (
                       <div className="text-xs text-slate-500 mb-2">
-                        审批时间: {formatTime(executionDetail.approved_at)}
+                        {t('remediationExecutions.detail.approvedAt', { time: formatTime(executionDetail.approved_at) })}
                       </div>
                     )}
                     <div className="text-sm text-slate-300">{executionDetail.approval_comment}</div>
@@ -450,14 +453,14 @@ export default function RemediationExecutions() {
               <div className="space-y-3">
                 <h4 className="text-sm font-medium text-slate-300 flex items-center gap-2">
                   <FileText className="w-4 h-4" />
-                  完整日志
+                  {t('remediationExecutions.detail.fullLogs')}
                 </h4>
                 <div className="bg-slate-900/50 rounded-lg divide-y divide-slate-700/30">
                   {[
-                    { key: 'execution', label: '执行日志', content: executionDetail.execution_result },
-                    { key: 'verification', label: '验证日志', content: executionDetail.verification_result },
-                    { key: 'rollback', label: '回滚日志', content: executionDetail.rollback_result },
-                    { key: 'status_reason', label: '状态说明', content: executionDetail.status_reason }
+                    { key: 'execution', label: t('remediationExecutions.log.execution'), content: executionDetail.execution_result },
+                    { key: 'verification', label: t('remediationExecutions.log.verification'), content: executionDetail.verification_result },
+                    { key: 'rollback', label: t('remediationExecutions.log.rollback'), content: executionDetail.rollback_result },
+                    { key: 'status_reason', label: t('remediationExecutions.log.statusReason'), content: executionDetail.status_reason }
                   ].filter(item => item.content).map(item => (
                     <div key={item.key} className="py-2">
                       <button
@@ -487,7 +490,7 @@ export default function RemediationExecutions() {
                 onClick={handleCloseModal}
                 className="px-4 py-2 bg-slate-700/50 text-slate-300 rounded-lg hover:bg-slate-700 transition-colors text-sm"
               >
-                关闭
+                {t('common.close')}
               </button>
             </div>
           </div>

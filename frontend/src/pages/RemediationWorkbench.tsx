@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '../lib/api';
+import { useLocale, type MessageKey } from '../contexts/LocaleContext';
 import { 
   CheckCircle, 
   XCircle, 
@@ -15,10 +16,12 @@ import {
 
 export default function RemediationWorkbench() {
   const queryClient = useQueryClient();
+  const { locale, t } = useLocale();
   const [page, setPage] = useState(1);
   const [selectedAuditId, setSelectedAuditId] = useState<string | null>(null);
   const [showDetailModal, setShowDetailModal] = useState(false);
   const limit = 20;
+  const browserLocale = locale === 'zh-CN' ? 'zh-CN' : 'en-US';
 
   const { data, isLoading } = useQuery({
     queryKey: ['remediation-audits', page],
@@ -108,15 +111,15 @@ export default function RemediationWorkbench() {
   };
 
   const getStatusText = (status: string) => {
-    const map: Record<string, string> = {
-      'pending': '待审批',
-      'approved': '已批准',
-      'rejected': '已拒绝',
-      'executing': '执行中',
-      'success': '成功',
-      'failed': '失败'
+    const map: Record<string, MessageKey> = {
+      pending: 'remediation.status.pendingApproval',
+      approved: 'remediation.status.approved',
+      rejected: 'remediation.status.rejected',
+      executing: 'remediation.status.executing',
+      success: 'common.success',
+      failed: 'common.failed'
     };
-    return map[status] || status;
+    return map[status] ? t(map[status]) : status;
   };
 
   const getStatusColor = (status: string) => {
@@ -141,18 +144,18 @@ export default function RemediationWorkbench() {
   };
 
   const getRiskLevelText = (level: string) => {
-    const map: Record<string, string> = {
-      'low': '低',
-      'medium': '中',
-      'high': '高'
+    const map: Record<string, MessageKey> = {
+      low: 'status.severity.low',
+      medium: 'status.severity.medium',
+      high: 'status.severity.high'
     };
-    return map[level] || level;
+    return map[level] ? t(map[level]) : level;
   };
 
   const formatTime = (timeStr: string) => {
     if (!timeStr) return '-';
     const date = new Date(timeStr);
-    return date.toLocaleString('zh-CN', { 
+    return date.toLocaleString(browserLocale, {
       month: '2-digit', 
       day: '2-digit', 
       hour: '2-digit', 
@@ -168,15 +171,15 @@ export default function RemediationWorkbench() {
       <div className="flex-1 overflow-auto p-6">
         <div className="flex items-center justify-between mb-6">
           <div>
-            <h2 className="text-2xl font-bold text-white mb-1">自愈工作台</h2>
-            <p className="text-slate-400 text-sm">管理自愈策略的审批和执行</p>
+            <h2 className="text-2xl font-bold text-white mb-1">{t('remediationWorkbench.title')}</h2>
+            <p className="text-slate-400 text-sm">{t('remediationWorkbench.subtitle')}</p>
           </div>
           <button
             onClick={() => queryClient.invalidateQueries({ queryKey: ['remediation-audits'] })}
             className="flex items-center gap-2 px-3 py-2 bg-slate-800/50 border border-slate-700 rounded-lg text-white hover:bg-slate-700/50 transition-colors"
           >
             <RefreshCw className="w-4 h-4" />
-            刷新
+            {t('common.refresh')}
           </button>
         </div>
 
@@ -184,8 +187,8 @@ export default function RemediationWorkbench() {
           <div className="mb-8">
             <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
               <Clock className="w-5 h-5 text-blue-400" />
-              待审批项
-              <span className="ml-auto text-sm font-normal text-slate-400">{pendingAudits.length} 项</span>
+              {t('remediationWorkbench.pending.title')}
+              <span className="ml-auto text-sm font-normal text-slate-400">{t('remediationWorkbench.pending.count', { count: pendingAudits.length })}</span>
             </h3>
             <div className="grid gap-4">
               {pendingAudits.map((audit: any) => (
@@ -194,13 +197,13 @@ export default function RemediationWorkbench() {
                     <div className="flex-1">
                       <div className="flex items-center gap-3 mb-2">
                         <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${getRiskLevelColor(audit.risk_level)}`}>
-                          {getRiskLevelText(audit.risk_level)}风险
+                          {t('remediationWorkbench.riskLabel', { risk: getRiskLevelText(audit.risk_level) })}
                         </span>
                         <span className="text-sm text-slate-300">{audit.rca_title || audit.rca_id?.slice(0, 8)}</span>
                       </div>
                       <div className="text-xs text-slate-500">
-                        策略: {audit.policy_name || audit.policy_id?.slice(0, 8)} | 
-                        创建时间: {formatTime(audit.created_at)}
+                        {t('remediationWorkbench.policyLabel', { value: audit.policy_name || audit.policy_id?.slice(0, 8) || '-' })} |
+                        {t('remediationWorkbench.createdAt', { time: formatTime(audit.created_at) })}
                       </div>
                     </div>
                     <div className="flex items-center gap-2 ml-4">
@@ -209,21 +212,21 @@ export default function RemediationWorkbench() {
                         className="flex items-center gap-1 px-3 py-1.5 text-sm bg-green-600/20 text-green-400 rounded-lg hover:bg-green-600/30 transition-colors"
                       >
                         <CheckCircle className="w-4 h-4" />
-                        批准
+                        {t('remediation.common.approve')}
                       </button>
                       <button
                         onClick={() => rejectMutation.mutate({ id: audit.id })}
                         className="flex items-center gap-1 px-3 py-1.5 text-sm bg-red-600/20 text-red-400 rounded-lg hover:bg-red-600/30 transition-colors"
                       >
                         <XCircle className="w-4 h-4" />
-                        拒绝
+                        {t('remediation.common.reject')}
                       </button>
                       <button
                         onClick={() => executeMutation.mutate(audit.id)}
                         className="flex items-center gap-1 px-3 py-1.5 text-sm bg-blue-600/20 text-blue-400 rounded-lg hover:bg-blue-600/30 transition-colors"
                       >
                         <Play className="w-4 h-4" />
-                        执行
+                        {t('remediation.common.execute')}
                       </button>
                     </div>
                   </div>
@@ -236,27 +239,27 @@ export default function RemediationWorkbench() {
         <div>
           <h3 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
             <Eye className="w-5 h-5 text-slate-400" />
-            最近执行记录
+            {t('remediationWorkbench.recent.title')}
           </h3>
 
           {isLoading ? (
-            <div className="text-center py-12 text-slate-400">加载中...</div>
+            <div className="text-center py-12 text-slate-400">{t('common.loading')}</div>
           ) : !data?.audits?.length ? (
             <div className="text-center py-12">
               <Clock className="w-16 h-16 text-slate-600 mx-auto mb-4" />
-              <p className="text-slate-400">暂无记录</p>
+              <p className="text-slate-400">{t('remediationWorkbench.empty')}</p>
             </div>
           ) : (
             <div className="bg-slate-800/30 border border-slate-700/50 rounded-xl overflow-hidden">
               <table className="w-full">
                 <thead>
                   <tr className="border-b border-slate-700/50">
-                    <th className="text-left py-3 px-4 text-sm font-medium text-slate-400">创建时间</th>
-                    <th className="text-left py-3 px-4 text-sm font-medium text-slate-400">根因分析</th>
-                    <th className="text-left py-3 px-4 text-sm font-medium text-slate-400">策略</th>
-                    <th className="text-left py-3 px-4 text-sm font-medium text-slate-400">风险等级</th>
-                    <th className="text-left py-3 px-4 text-sm font-medium text-slate-400">状态</th>
-                    <th className="text-right py-3 px-4 text-sm font-medium text-slate-400">操作</th>
+                    <th className="text-left py-3 px-4 text-sm font-medium text-slate-400">{t('remediationWorkbench.table.createdAt')}</th>
+                    <th className="text-left py-3 px-4 text-sm font-medium text-slate-400">{t('remediationWorkbench.table.rootCause')}</th>
+                    <th className="text-left py-3 px-4 text-sm font-medium text-slate-400">{t('remediationWorkbench.table.policy')}</th>
+                    <th className="text-left py-3 px-4 text-sm font-medium text-slate-400">{t('remediationWorkbench.table.riskLevel')}</th>
+                    <th className="text-left py-3 px-4 text-sm font-medium text-slate-400">{t('common.status')}</th>
+                    <th className="text-right py-3 px-4 text-sm font-medium text-slate-400">{t('remediation.common.actions')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -285,20 +288,20 @@ export default function RemediationWorkbench() {
                           <button
                             onClick={() => handleViewDetail(audit.id)}
                             className="p-1.5 text-slate-400 hover:text-white transition-colors"
-                            title="查看详情"
+                            title={t('remediation.common.viewDetails')}
                           >
                             <Eye className="w-4 h-4" />
                           </button>
                           {(audit.status === 'success' || audit.status === 'failed') && !audit.is_rollback && (
                             <button
                               onClick={() => {
-                                if (window.confirm(`确认要回滚此自愈操作吗？`)) {
+                                if (window.confirm(t('remediationWorkbench.confirmRollback'))) {
                                   rollbackMutation.mutate(audit.id);
                                 }
                               }}
                               disabled={rollbackMutation.isPending}
                               className="p-1.5 text-yellow-400 hover:text-yellow-300 transition-colors disabled:opacity-50"
-                              title="回滚"
+                              title={t('remediation.common.rollback')}
                             >
                               <RotateCcw className="w-4 h-4" />
                             </button>
@@ -308,7 +311,7 @@ export default function RemediationWorkbench() {
                               onClick={() => verifyMutation.mutate(audit.id)}
                               disabled={verifyMutation.isPending}
                               className="p-1.5 text-purple-400 hover:text-purple-300 transition-colors disabled:opacity-50"
-                              title="验证效果"
+                              title={t('remediation.common.verify')}
                             >
                               <Shield className="w-4 h-4" />
                             </button>
@@ -324,21 +327,21 @@ export default function RemediationWorkbench() {
 
           {data && data.total > limit && (
             <div className="flex items-center justify-between mt-4">
-              <div className="text-sm text-slate-400">共 {data.total} 条记录</div>
+              <div className="text-sm text-slate-400">{t('remediation.common.totalRecords', { count: data.total })}</div>
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => setPage(p => Math.max(1, p - 1))}
                   disabled={page === 1}
                   className="px-3 py-1.5 bg-slate-800/50 border border-slate-700 rounded-lg text-white disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-700/50 transition-colors"
                 >
-                  上一页
+                  {t('remediation.common.prevPage')}
                 </button>
                 <span className="text-slate-400 text-sm">{page}</span>
                 <button
                   onClick={() => setPage(p => p + 1)}
                   className="px-3 py-1.5 bg-slate-800/50 border border-slate-700 rounded-lg text-white hover:bg-slate-700/50 transition-colors"
                 >
-                  下一页
+                  {t('remediation.common.nextPage')}
                 </button>
               </div>
             </div>
@@ -356,7 +359,7 @@ export default function RemediationWorkbench() {
             onClick={e => e.stopPropagation()}
           >
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-700/50">
-              <h3 className="text-lg font-semibold text-white">审计详情</h3>
+              <h3 className="text-lg font-semibold text-white">{t('remediationWorkbench.detail.title')}</h3>
               <button
                 onClick={handleCloseModal}
                 className="p-1.5 text-slate-400 hover:text-white transition-colors rounded-lg hover:bg-slate-700/50"
@@ -368,21 +371,21 @@ export default function RemediationWorkbench() {
             <div className="flex-1 overflow-auto p-6 space-y-6">
               <div className="grid grid-cols-2 gap-4 bg-slate-900/50 rounded-lg p-4">
                 <div>
-                  <div className="text-xs text-slate-500 mb-1">根因分析</div>
+                  <div className="text-xs text-slate-500 mb-1">{t('remediationWorkbench.detail.rootCause')}</div>
                   <div className="text-sm text-white">{auditDetail.rca_title || auditDetail.rca_id?.slice(0, 8)}</div>
                 </div>
                 <div>
-                  <div className="text-xs text-slate-500 mb-1">策略</div>
+                  <div className="text-xs text-slate-500 mb-1">{t('remediationWorkbench.detail.policy')}</div>
                   <div className="text-sm text-white">{auditDetail.policy_name || auditDetail.policy_id?.slice(0, 8)}</div>
                 </div>
                 <div>
-                  <div className="text-xs text-slate-500 mb-1">风险等级</div>
+                  <div className="text-xs text-slate-500 mb-1">{t('remediationWorkbench.detail.riskLevel')}</div>
                   <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${getRiskLevelColor(auditDetail.risk_level)}`}>
                     {getRiskLevelText(auditDetail.risk_level)}
                   </span>
                 </div>
                 <div>
-                  <div className="text-xs text-slate-500 mb-1">状态</div>
+                  <div className="text-xs text-slate-500 mb-1">{t('remediationWorkbench.detail.status')}</div>
                   <div className="flex items-center gap-2">
                     {getStatusIcon(auditDetail.status)}
                     <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${getStatusColor(auditDetail.status)}`}>
@@ -391,12 +394,12 @@ export default function RemediationWorkbench() {
                   </div>
                 </div>
                 <div>
-                  <div className="text-xs text-slate-500 mb-1">创建时间</div>
+                  <div className="text-xs text-slate-500 mb-1">{t('remediationWorkbench.detail.createdAt')}</div>
                   <div className="text-sm text-white">{formatTime(auditDetail.created_at)}</div>
                 </div>
                 {auditDetail.approved_at && (
                   <div>
-                    <div className="text-xs text-slate-500 mb-1">审批时间</div>
+                    <div className="text-xs text-slate-500 mb-1">{t('remediationWorkbench.detail.approvedAt')}</div>
                     <div className="text-sm text-white">{formatTime(auditDetail.approved_at)}</div>
                   </div>
                 )}
@@ -404,7 +407,7 @@ export default function RemediationWorkbench() {
 
               {auditDetail.recommendations && (
                 <div>
-                  <div className="text-xs text-slate-500 mb-2">建议措施</div>
+                  <div className="text-xs text-slate-500 mb-2">{t('remediationWorkbench.detail.recommendations')}</div>
                   <div className="bg-slate-900/50 rounded-lg p-4 text-sm text-slate-300 whitespace-pre-wrap">
                     {typeof auditDetail.recommendations === 'string'
                       ? auditDetail.recommendations
@@ -415,7 +418,7 @@ export default function RemediationWorkbench() {
 
               {auditDetail.execution_log && (
                 <div>
-                  <div className="text-xs text-slate-500 mb-2">执行日志</div>
+                  <div className="text-xs text-slate-500 mb-2">{t('remediationWorkbench.detail.executionLog')}</div>
                   <pre className="bg-slate-900/50 rounded-lg p-4 text-xs text-slate-300 font-mono whitespace-pre-wrap overflow-x-auto max-h-48 overflow-y-auto">
                     {typeof auditDetail.execution_log === 'string'
                       ? auditDetail.execution_log
@@ -430,7 +433,7 @@ export default function RemediationWorkbench() {
                 {(auditDetail.status === 'success' || auditDetail.status === 'failed') && !auditDetail.is_rollback && (
                   <button
                     onClick={() => {
-                      if (window.confirm('确认要回滚此自愈操作吗？')) {
+                      if (window.confirm(t('remediationWorkbench.confirmRollback'))) {
                         rollbackMutation.mutate(auditDetail.id);
                       }
                     }}
@@ -438,7 +441,7 @@ export default function RemediationWorkbench() {
                     className="flex items-center gap-2 px-4 py-2 bg-yellow-600/20 text-yellow-400 rounded-lg hover:bg-yellow-600/30 transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <RotateCcw className="w-4 h-4" />
-                    {rollbackMutation.isPending ? '回滚中...' : '回滚'}
+                    {rollbackMutation.isPending ? t('remediationWorkbench.rollbacking') : t('remediation.common.rollback')}
                   </button>
                 )}
                 {(auditDetail.status === 'success' || auditDetail.status === 'completed') && (
@@ -450,7 +453,7 @@ export default function RemediationWorkbench() {
                     className="flex items-center gap-2 px-4 py-2 bg-purple-600/20 text-purple-400 rounded-lg hover:bg-purple-600/30 transition-colors text-sm disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <Shield className="w-4 h-4" />
-                    {verifyMutation.isPending ? '验证中...' : '验证效果'}
+                    {verifyMutation.isPending ? t('remediationWorkbench.verifying') : t('remediation.common.verify')}
                   </button>
                 )}
               </div>
@@ -458,7 +461,7 @@ export default function RemediationWorkbench() {
                 onClick={handleCloseModal}
                 className="px-4 py-2 bg-slate-700/50 text-slate-300 rounded-lg hover:bg-slate-700 transition-colors text-sm"
               >
-                关闭
+                {t('common.close')}
               </button>
             </div>
           </div>

@@ -13,8 +13,10 @@ import {
   XCircle,
   Filter
 } from 'lucide-react';
+import { useLocale, type MessageKey } from '../contexts/LocaleContext';
 
 export default function RemediationPolicies() {
+  const { t } = useLocale();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [searchTerm, setSearchTerm] = useState('');
@@ -65,12 +67,12 @@ export default function RemediationPolicies() {
   };
 
   const getExecutionModeText = (mode: string) => {
-    const map: Record<string, string> = {
-      'auto': '自动执行',
-      'approval': '审批后执行',
-      'suggestion': '仅建议'
+    const map: Record<string, MessageKey> = {
+      'auto': 'remediationPolicies.mode.auto',
+      'approval': 'remediationPolicies.mode.approval',
+      'suggestion': 'remediationPolicies.mode.suggestion'
     };
-    return map[mode] || mode;
+    return map[mode] ? t(map[mode]) : mode;
   };
 
   const getExecutionModeColor = (mode: string) => {
@@ -87,15 +89,15 @@ export default function RemediationPolicies() {
       <div className="flex-1 overflow-auto p-6">
         <div className="flex items-center justify-between mb-6">
           <div>
-            <h2 className="text-2xl font-bold text-white mb-1">自动修复策略</h2>
-            <p className="text-slate-400 text-sm">配置告警自动修复规则和策略</p>
+            <h2 className="text-2xl font-bold text-white mb-1">{t('remediationPolicies.title')}</h2>
+            <p className="text-slate-400 text-sm">{t('remediationPolicies.subtitle')}</p>
           </div>
           <button
             onClick={() => navigate('/remediation-policies/new')}
             className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-all duration-200 shadow-lg shadow-blue-600/30"
           >
             <Plus className="w-4 h-4" />
-            新建策略
+            {t('remediationPolicies.new')}
           </button>
         </div>
 
@@ -104,7 +106,7 @@ export default function RemediationPolicies() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
             <input
               type="text"
-              placeholder="搜索策略..."
+              placeholder={t('remediationPolicies.searchPlaceholder')}
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="w-full pl-10 pr-4 py-2 bg-slate-800/50 border border-slate-700 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"
@@ -117,24 +119,24 @@ export default function RemediationPolicies() {
               onChange={(e) => setEnabledFilter(e.target.value)}
               className="px-3 py-2 bg-slate-800/50 border border-slate-700 rounded-lg text-white focus:outline-none focus:border-blue-500"
             >
-              <option value="all">全部状态</option>
-              <option value="enabled">已启用</option>
-              <option value="disabled">已禁用</option>
+              <option value="all">{t('remediation.common.allStatus')}</option>
+              <option value="enabled">{t('status.enabled')}</option>
+              <option value="disabled">{t('status.disabled')}</option>
             </select>
           </div>
         </div>
 
         {isLoading ? (
-          <div className="text-center py-12 text-slate-400">加载中...</div>
+          <div className="text-center py-12 text-slate-400">{t('common.loading')}</div>
         ) : policies.length === 0 ? (
           <div className="text-center py-12">
             <Settings className="w-16 h-16 text-slate-600 mx-auto mb-4" />
-            <p className="text-slate-400 mb-4">暂无修复策略</p>
+            <p className="text-slate-400 mb-4">{t('remediationPolicies.empty')}</p>
             <button
               onClick={() => navigate('/remediation-policies/new')}
               className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-all"
             >
-              创建第一个策略
+              {t('remediationPolicies.createFirst')}
             </button>
           </div>
         ) : (
@@ -142,12 +144,12 @@ export default function RemediationPolicies() {
             <table className="w-full">
               <thead>
                 <tr className="border-b border-slate-700/50">
-                  <th className="text-left py-3 px-4 text-sm font-medium text-slate-400">策略名称</th>
-                  <th className="text-left py-3 px-4 text-sm font-medium text-slate-400">触发条件</th>
-                  <th className="text-left py-3 px-4 text-sm font-medium text-slate-400">执行模式</th>
-                  <th className="text-left py-3 px-4 text-sm font-medium text-slate-400">频率限制</th>
-                  <th className="text-left py-3 px-4 text-sm font-medium text-slate-400">状态</th>
-                  <th className="text-right py-3 px-4 text-sm font-medium text-slate-400">操作</th>
+                  <th className="text-left py-3 px-4 text-sm font-medium text-slate-400">{t('remediationPolicies.table.name')}</th>
+                  <th className="text-left py-3 px-4 text-sm font-medium text-slate-400">{t('remediationPolicies.table.trigger')}</th>
+                  <th className="text-left py-3 px-4 text-sm font-medium text-slate-400">{t('remediationPolicies.table.mode')}</th>
+                  <th className="text-left py-3 px-4 text-sm font-medium text-slate-400">{t('remediationPolicies.table.rateLimit')}</th>
+                  <th className="text-left py-3 px-4 text-sm font-medium text-slate-400">{t('common.status')}</th>
+                  <th className="text-right py-3 px-4 text-sm font-medium text-slate-400">{t('remediation.common.actions')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -179,8 +181,8 @@ export default function RemediationPolicies() {
                       </span>
                     </td>
                     <td className="py-3 px-4 text-sm text-slate-300">
-                      {policy.max_executions_per_hour}次/小时
-                      <div className="text-xs text-slate-500 mt-0.5">冷却: {policy.cooldown_seconds}秒</div>
+                      {t('remediationPolicies.rate.perHour', { count: policy.max_executions_per_hour })}
+                      <div className="text-xs text-slate-500 mt-0.5">{t('remediationPolicies.rate.cooldown', { seconds: policy.cooldown_seconds })}</div>
                     </td>
                     <td className="py-3 px-4">
                       <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${
@@ -188,7 +190,7 @@ export default function RemediationPolicies() {
                           ? 'bg-green-500/10 text-green-400 border border-green-500/20' 
                           : 'bg-slate-500/10 text-slate-400 border border-slate-500/20'
                       }`}>
-                        {policy.enabled ? '启用' : '禁用'}
+                        {policy.enabled ? t('status.enabled') : t('status.disabled')}
                       </span>
                     </td>
                     <td className="py-3 px-4 text-right">
@@ -196,25 +198,25 @@ export default function RemediationPolicies() {
                         <button
                           onClick={() => toggleMutation.mutate(policy.id)}
                           className="p-1.5 text-slate-400 hover:text-white transition-colors"
-                          title={policy.enabled ? '禁用' : '启用'}
+                          title={policy.enabled ? t('status.disabled') : t('status.enabled')}
                         >
                           {policy.enabled ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
                         </button>
                         <button
                           onClick={() => navigate(`/remediation-policies/${policy.id}`)}
                           className="p-1.5 text-slate-400 hover:text-blue-400 transition-colors"
-                          title="编辑"
+                          title={t('common.edit')}
                         >
                           <Settings className="w-4 h-4" />
                         </button>
                         <button
                           onClick={() => {
-                            if (confirm('确定要删除此策略吗？')) {
+                            if (confirm(t('remediationPolicies.confirmDelete'))) {
                               deleteMutation.mutate(policy.id);
                             }
                           }}
                           className="p-1.5 text-slate-400 hover:text-red-400 transition-colors"
-                          title="删除"
+                          title={t('common.delete')}
                         >
                           <XCircle className="w-4 h-4" />
                         </button>
@@ -230,7 +232,7 @@ export default function RemediationPolicies() {
         {data && data.total > limit && (
           <div className="flex items-center justify-between mt-4">
             <div className="text-sm text-slate-400">
-              共 {data.total} 条策略
+              {t('remediationPolicies.total', { count: data.total })}
             </div>
             <div className="flex items-center gap-2">
               <button
@@ -238,7 +240,7 @@ export default function RemediationPolicies() {
                 disabled={page === 1}
                 className="px-3 py-1.5 bg-slate-800/50 border border-slate-700 rounded-lg text-white disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-700/50 transition-colors"
               >
-                上一页
+                {t('remediation.common.prevPage')}
               </button>
               <span className="text-slate-400 text-sm">
                 {page} / {Math.ceil(data.total / limit)}
@@ -248,7 +250,7 @@ export default function RemediationPolicies() {
                 disabled={page >= Math.ceil(data.total / limit)}
                 className="px-3 py-1.5 bg-slate-800/50 border border-slate-700 rounded-lg text-white disabled:opacity-50 disabled:cursor-not-allowed hover:bg-slate-700/50 transition-colors"
               >
-                下一页
+                {t('remediation.common.nextPage')}
               </button>
             </div>
           </div>
