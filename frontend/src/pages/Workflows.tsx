@@ -7,8 +7,10 @@ import {
   ArrowRight, Sparkles, CheckCircle
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
+import { enUS, zhCN } from 'date-fns/locale';
 import { useNavigate } from 'react-router-dom';
 import api from '../lib/api';
+import { useLocale } from '../contexts/LocaleContext';
 
 interface Workflow {
   id: string;
@@ -30,6 +32,8 @@ interface Server {
 export default function Workflows() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const { locale, t } = useLocale();
+  const dateLocale = locale === 'zh-CN' ? zhCN : enUS;
   const [executingWorkflow, setExecutingWorkflow] = useState<string | null>(null);
   const [selectedWorkflowForServer, setSelectedWorkflowForServer] = useState<Workflow | null>(null);
   const [showServerSelectModal, setShowServerSelectModal] = useState(false);
@@ -39,11 +43,11 @@ export default function Workflows() {
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
 
   const getWorkflowStyle = (workflow: Workflow) => {
-    const serverNames = ['服务器', '巡检', '合规'];
-    const securityNames = ['安全', '漏洞'];
-    const dataNames = ['数据', '备份', '恢复'];
-    const networkNames = ['网络', 'DNS'];
-    const systemNames = ['系统', '性能', '监控'];
+    const serverNames = ['\u670d\u52a1\u5668', '\u5de1\u68c0', '\u5408\u89c4', 'server', 'inspect', 'compliance'];
+    const securityNames = ['\u5b89\u5168', '\u6f0f\u6d1e', 'security', 'vulnerability'];
+    const dataNames = ['\u6570\u636e', '\u5907\u4efd', '\u6062\u590d', 'data', 'backup', 'restore'];
+    const networkNames = ['\u7f51\u7edc', 'DNS', 'network'];
+    const systemNames = ['\u7cfb\u7edf', '\u6027\u80fd', '\u76d1\u63a7', 'system', 'performance', 'monitor'];
     
     const name = workflow.name.toLowerCase();
     
@@ -100,7 +104,7 @@ export default function Workflows() {
     mutationFn: async (workflow: Workflow) => {
       const newWorkflow = {
         ...workflow,
-        name: `${workflow.name} (副本)`,
+        name: t('workflows.copyName', { name: workflow.name }),
         is_template: 0,
       };
       delete (newWorkflow as any).id;
@@ -118,7 +122,7 @@ export default function Workflows() {
       const res = await api.post('/api/tasks', {
         workflow_id: workflowId,
         name: 'Task',
-        input: '开始执行工作流',
+        input: t('workflows.executionInput'),
         context
       });
       return res.data.data;
@@ -131,12 +135,15 @@ export default function Workflows() {
 
   const isServerRelatedWorkflow = (workflow: Workflow) => {
     const serverAgentNames = [
-      '服务器命令执行', 
-      '自动巡检', 
-      '合规检查',
-      '系统巡检',
-      '变更执行',
-      '服务器'
+      '\u670d\u52a1\u5668\u547d\u4ee4\u6267\u884c',
+      '\u81ea\u52a8\u5de1\u68c0',
+      '\u5408\u89c4\u68c0\u67e5',
+      '\u7cfb\u7edf\u5de1\u68c0',
+      '\u53d8\u66f4\u6267\u884c',
+      '\u670d\u52a1\u5668',
+      'server',
+      'inspect',
+      'compliance'
     ];
     return workflow.nodes?.some((node: any) => 
       serverAgentNames.some(name => node.data?.label?.includes(name))
@@ -155,10 +162,10 @@ export default function Workflows() {
   const handleExecute = (workflow: Workflow) => {
     if (isServerRelatedWorkflow(workflow) && servers && servers.length > 0) {
       setSelectedWorkflowForServer(workflow);
-      setSelectedServers([]); // 重置选择
+      setSelectedServers([]);
       setShowServerSelectModal(true);
     } else {
-      if (confirm(`确定要执行工作流 "${workflow.name}" 吗？`)) {
+      if (confirm(t('workflows.confirm.execute', { name: workflow.name }))) {
         setExecutingWorkflow(workflow.id);
         executeMutation.mutate({ workflowId: workflow.id }, {
           onSettled: () => setExecutingWorkflow(null),
@@ -208,7 +215,7 @@ export default function Workflows() {
   };
 
   const handleDuplicate = (workflow: Workflow) => {
-    if (confirm(`确定要复制工作流 "${workflow.name}" 吗？`)) {
+    if (confirm(t('workflows.confirm.duplicate', { name: workflow.name }))) {
       duplicateMutation.mutate(workflow);
     }
   };
@@ -222,15 +229,15 @@ export default function Workflows() {
       <div className="space-y-6">
         <div className="flex items-center justify-between flex-wrap gap-4">
           <div>
-            <h1 className="text-2xl font-bold text-text-primary mb-2">工作流管理</h1>
-            <p className="text-text-secondary">管理和执行运维自动化工作流</p>
+            <h1 className="text-2xl font-bold text-text-primary mb-2">{t('workflows.title')}</h1>
+            <p className="text-text-secondary">{t('workflows.subtitle')}</p>
           </div>
           <button
             onClick={() => navigate('/workflows/new')}
             className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors"
           >
             <Plus className="w-4 h-4" />
-            新建工作流
+            {t('workflows.new')}
           </button>
         </div>
 
@@ -242,7 +249,7 @@ export default function Workflows() {
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-secondary" />
                 <input
                   type="text"
-                  placeholder="搜索工作流..."
+                  placeholder={t('workflows.searchPlaceholder')}
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="w-full pl-10 pr-4 py-2 rounded-lg bg-background border border-border focus:border-primary focus:outline-none"
@@ -256,9 +263,9 @@ export default function Workflows() {
                 onChange={(e) => setFilterTemplate(e.target.value as any)}
                 className="px-3 py-2 rounded-lg bg-background border border-border focus:border-primary focus:outline-none"
               >
-                <option value="all">全部</option>
-                <option value="template">仅模板</option>
-                <option value="custom">仅自定义</option>
+                <option value="all">{t('common.all')}</option>
+                <option value="template">{t('workflows.filter.templatesOnly')}</option>
+                <option value="custom">{t('workflows.filter.customOnly')}</option>
               </select>
             </div>
           </div>
@@ -273,7 +280,7 @@ export default function Workflows() {
               </div>
             </div>
             <div className="text-3xl font-bold text-text-primary mb-1">{workflows?.length || 0}</div>
-            <div className="text-sm text-text-secondary">总工作流</div>
+            <div className="text-sm text-text-secondary">{t('workflows.stats.total')}</div>
           </div>
           <div className="bg-surface rounded-xl p-5 border border-border hover:border-purple-500/30 transition-all">
             <div className="flex items-center justify-between mb-3">
@@ -284,7 +291,7 @@ export default function Workflows() {
             <div className="text-3xl font-bold text-purple-500 mb-1">
               {workflows?.filter(w => w.is_template === 1).length || 0}
             </div>
-            <div className="text-sm text-text-secondary">模板</div>
+            <div className="text-sm text-text-secondary">{t('workflows.stats.templates')}</div>
           </div>
           <div className="bg-surface rounded-xl p-5 border border-border hover:border-blue-500/30 transition-all">
             <div className="flex items-center justify-between mb-3">
@@ -295,7 +302,7 @@ export default function Workflows() {
             <div className="text-3xl font-bold text-blue-500 mb-1">
               {workflows?.filter(w => w.is_template === 0).length || 0}
             </div>
-            <div className="text-sm text-text-secondary">自定义</div>
+            <div className="text-sm text-text-secondary">{t('workflows.stats.custom')}</div>
           </div>
           <div className="bg-surface rounded-xl p-5 border border-border hover:border-green-500/30 transition-all">
             <div className="flex items-center justify-between mb-3">
@@ -306,7 +313,7 @@ export default function Workflows() {
             <div className="text-3xl font-bold text-green-500 mb-1">
               {workflows?.reduce((acc, w) => acc + (w.nodes?.length || 0), 0) || 0}
             </div>
-            <div className="text-sm text-text-secondary">总节点</div>
+            <div className="text-sm text-text-secondary">{t('workflows.stats.nodes')}</div>
           </div>
         </div>
 
@@ -314,28 +321,28 @@ export default function Workflows() {
         {showServerSelectModal && selectedWorkflowForServer && (
           <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
             <div className="bg-surface rounded-xl p-6 w-full max-w-lg mx-4">
-              <h3 className="text-xl font-bold text-text-primary mb-2">选择服务器</h3>
+              <h3 className="text-xl font-bold text-text-primary mb-2">{t('workflows.serverModal.title')}</h3>
               <p className="text-text-secondary mb-4">
-                请选择要在哪些服务器上执行工作流 &quot;{selectedWorkflowForServer.name}&quot;
+                {t('workflows.serverModal.desc', { name: selectedWorkflowForServer.name })}
               </p>
               
               {/* Selection Controls */}
               <div className="flex items-center justify-between mb-4 p-3 bg-background rounded-lg border border-border">
                 <span className="text-sm text-text-secondary">
-                  已选择: <span className="font-medium text-primary">{selectedServers.length}</span> / {servers?.length || 0}
+                  {t('workflows.serverModal.selected', { selected: selectedServers.length, total: servers?.length || 0 })}
                 </span>
                 <div className="flex gap-2">
                   <button
                     onClick={selectAllServers}
                     className="text-sm px-3 py-1 bg-primary/10 text-primary rounded hover:bg-primary/20 transition-colors"
                   >
-                    全选
+                    {t('workflows.serverModal.selectAll')}
                   </button>
                   <button
                     onClick={clearServerSelection}
                     className="text-sm px-3 py-1 bg-surface border border-border text-text-secondary rounded hover:bg-background transition-colors"
                   >
-                    清空
+                    {t('workflows.serverModal.clear')}
                   </button>
                 </div>
               </div>
@@ -379,14 +386,14 @@ export default function Workflows() {
                   }}
                   className="flex-1 px-4 py-2 bg-surface border border-border text-text-primary rounded-lg hover:bg-background transition-colors"
                 >
-                  取消
+                  {t('common.cancel')}
                 </button>
                 <button
                   onClick={handleSelectServersAndExecute}
                   disabled={selectedServers.length === 0 || !!executingWorkflow}
                   className="flex-1 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {executingWorkflow ? '执行中...' : `执行 (${selectedServers.length}台)`}
+                  {executingWorkflow ? t('workflows.executing') : t('workflows.executeSelected', { count: selectedServers.length })}
                 </button>
               </div>
             </div>
@@ -401,24 +408,24 @@ export default function Workflows() {
                 <div className="p-3 bg-red-500/10 rounded-full">
                   <XCircle className="w-6 h-6 text-red-500" />
                 </div>
-                <h3 className="text-xl font-bold text-text-primary">确认删除</h3>
+                <h3 className="text-xl font-bold text-text-primary">{t('workflows.delete.title')}</h3>
               </div>
               <p className="text-text-secondary mb-6">
-                确定要删除这个工作流吗？此操作不可撤销。
+                {t('workflows.delete.desc')}
               </p>
               <div className="flex gap-3">
                 <button
                   onClick={() => setDeleteConfirmId(null)}
                   className="flex-1 px-4 py-2 bg-surface border border-border text-text-primary rounded-lg hover:bg-background transition-colors"
                 >
-                  取消
+                  {t('common.cancel')}
                 </button>
                 <button
                   onClick={() => handleDelete(deleteConfirmId)}
                   disabled={deleteMutation.isPending}
                   className="flex-1 px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors disabled:opacity-50"
                 >
-                  {deleteMutation.isPending ? '删除中...' : '删除'}
+                  {deleteMutation.isPending ? t('workflows.delete.deleting') : t('common.delete')}
                 </button>
               </div>
             </div>
@@ -432,16 +439,16 @@ export default function Workflows() {
         ) : filteredWorkflows?.length === 0 ? (
           <div className="text-center py-16 bg-surface rounded-xl border border-border">
             <GitBranch className="w-16 h-16 text-text-secondary mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-text-primary mb-2">暂无工作流</h3>
+            <h3 className="text-lg font-medium text-text-primary mb-2">{t('workflows.empty.title')}</h3>
             <p className="text-text-secondary mb-6">
-              {searchQuery || filterTemplate !== 'all' ? '没有找到匹配的工作流' : '开始创建您的第一个工作流'}
+              {searchQuery || filterTemplate !== 'all' ? t('workflows.empty.noMatch') : t('workflows.empty.desc')}
             </p>
             <button
               onClick={() => navigate('/workflows/new')}
               className="inline-flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors"
             >
               <Plus className="w-4 h-4" />
-              新建工作流
+              {t('workflows.new')}
             </button>
           </div>
         ) : (
@@ -469,14 +476,14 @@ export default function Workflows() {
                             {workflow.is_template === 1 && (
                               <span className="flex items-center gap-1 px-2 py-0.5 bg-gradient-to-r from-primary/20 to-purple-500/20 text-primary text-xs rounded-full border border-primary/20">
                                 <Sparkles className="w-3 h-3" />
-                                模板
+                                {t('workflows.templateBadge')}
                               </span>
                             )}
                           </div>
                           <div className="flex items-center gap-2">
                             <Clock className="w-3 h-3 text-text-secondary" />
                             <span className="text-xs text-text-secondary">
-                              {formatDistanceToNow(new Date(workflow.created_at), { addSuffix: true })}
+                              {formatDistanceToNow(new Date(workflow.created_at), { addSuffix: true, locale: dateLocale })}
                             </span>
                           </div>
                         </div>
@@ -487,14 +494,14 @@ export default function Workflows() {
                             <button
                               onClick={() => handleDuplicate(workflow)}
                               className="p-2 text-blue-500 hover:bg-blue-500/10 rounded-lg transition-colors"
-                              title="复制"
+                              title={t('workflows.actions.duplicate')}
                             >
                               <Copy className="w-4 h-4" />
                             </button>
                             <button
                               onClick={() => setDeleteConfirmId(workflow.id)}
                               className="p-2 text-red-500 hover:bg-red-500/10 rounded-lg transition-colors"
-                              title="删除"
+                              title={t('common.delete')}
                             >
                               <Trash2 className="w-4 h-4" />
                             </button>
@@ -504,22 +511,22 @@ export default function Workflows() {
                     </div>
 
                     <p className="text-sm text-text-secondary mb-4 line-clamp-2 min-h-[40px]">
-                      {workflow.description || '暂无描述'}
+                      {workflow.description || t('workflows.noDescription')}
                     </p>
 
                     <div className="bg-gradient-to-br from-background/80 to-background/40 rounded-xl p-5 mb-4 border border-border/60">
                       <div className="flex items-center justify-between mb-4">
                         <span className="text-sm font-semibold text-text-primary flex items-center gap-2">
                           <GitBranch className="w-4 h-4 text-primary" />
-                          执行流程
+                          {t('workflows.flow.title')}
                         </span>
                         <div className="flex items-center gap-2">
                           <span className="inline-flex items-center gap-1 px-2 py-1 bg-primary/10 text-primary rounded-md text-xs font-medium">
-                            {workflow.nodes?.length || 0} 节点
+                            {t('workflows.flow.nodeCount', { count: workflow.nodes?.length || 0 })}
                           </span>
                           <span className="text-xs text-text-tertiary">|</span>
                           <span className="inline-flex items-center gap-1 px-2 py-1 bg-purple-500/10 text-purple-500 rounded-md text-xs font-medium">
-                            {workflow.edges?.length || 0} 连接
+                            {t('workflows.flow.edgeCount', { count: workflow.edges?.length || 0 })}
                           </span>
                         </div>
                       </div>
@@ -531,18 +538,18 @@ export default function Workflows() {
                               const nodeMap = new Map((workflow.nodes || []).map(node => [node.id, node]));
                               const edgeMap = new Map<string, string[]>();
                               
-                              // 构建连接关系
+                              // Build edge adjacency.
                               (workflow.edges || []).forEach(edge => {
                                 const targets = edgeMap.get(edge.source) || [];
                                 targets.push(edge.target);
                                 edgeMap.set(edge.source, targets);
                               });
                               
-                              // 找到起始节点（没有入边的节点）
+                              // Find start nodes without incoming edges.
                               const targetIds = new Set((workflow.edges || []).map(e => e.target));
                               const startNodes = (workflow.nodes || []).filter(n => !targetIds.has(n.id));
                               
-                              // 如果只有一个起始节点，尝试构建一个简化的线性流程
+                              // If there is one start node, render a simplified linear flow.
                               if (startNodes.length === 1) {
                                 const orderedNodes: any[] = [];
                                 let currentId: string | null = startNodes[0].id;
@@ -563,7 +570,7 @@ export default function Workflows() {
                                         <span className="text-xs font-bold text-primary">{index + 1}</span>
                                       </div>
                                       <span className="text-sm font-medium text-text-primary truncate max-w-28">
-                                        {node.data?.label || '节点'}
+                                        {node.data?.label || t('workflows.flow.defaultNode')}
                                       </span>
                                     </div>
                                     {index < orderedNodes.length - 1 && (
@@ -577,12 +584,12 @@ export default function Workflows() {
                                 ));
                               }
                               
-                              // 否则显示前几个节点
+                              // Otherwise show the first few nodes.
                               return (workflow.nodes || []).slice(0, 4).map((node, index) => (
                                 <div key={node.id} className="flex items-center shrink-0">
                                   <div className="px-4 py-2.5 bg-gradient-to-r from-surface to-background rounded-lg border-2 border-border/70 hover:border-primary/40 transition-all shadow-sm flex items-center gap-2">
                                     <span className="text-sm font-medium text-text-primary truncate max-w-24">
-                                      {node.data?.label || '节点'}
+                                      {node.data?.label || t('workflows.flow.defaultNode')}
                                     </span>
                                   </div>
                                   {index < Math.min((workflow.nodes || []).length, 4) - 1 && (
@@ -595,13 +602,13 @@ export default function Workflows() {
                             {workflow.nodes && workflow.nodes.length > 4 && (
                               <div className="shrink-0 ml-1 px-3 py-2 bg-gradient-to-r from-primary/5 to-purple-500/5 text-primary rounded-lg border border-primary/20 flex items-center gap-1.5">
                                 <span className="text-sm font-medium">+{workflow.nodes.length - 4}</span>
-                                <span className="text-xs text-text-secondary">更多</span>
+                                <span className="text-xs text-text-secondary">{t('workflows.flow.more')}</span>
                               </div>
                             )}
                           </div>
                         ) : (
                           <div className="flex items-center justify-center h-16 text-text-tertiary text-sm italic border-2 border-dashed border-border/50 rounded-lg">
-                            暂无节点，点击编辑添加
+                            {t('workflows.flow.noNodes')}
                           </div>
                         )}
                       </div>
@@ -614,14 +621,14 @@ export default function Workflows() {
                         className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-primary text-white rounded-xl hover:bg-primary/90 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-md shadow-primary/25"
                       >
                         <Play className="w-4 h-4" />
-                        {executingWorkflow === workflow.id ? '执行中...' : '立即执行'}
+                        {executingWorkflow === workflow.id ? t('workflows.executing') : t('workflows.actions.execute')}
                       </button>
                       <button
                         onClick={() => navigate(`/workflows/${workflow.id}`)}
                         className="flex items-center justify-center gap-2 px-4 py-2.5 bg-background border border-border text-text-primary rounded-xl hover:bg-background/80 hover:border-primary/30 transition-all"
                       >
                         <Edit className="w-4 h-4" />
-                        编辑
+                        {t('common.edit')}
                       </button>
                     </div>
                   </div>

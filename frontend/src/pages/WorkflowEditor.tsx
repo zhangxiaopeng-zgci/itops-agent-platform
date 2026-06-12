@@ -27,6 +27,7 @@ import {
 } from 'lucide-react';
 import api from '../lib/api';
 import { useToast } from '../contexts/ToastContext';
+import { useLocale } from '../contexts/LocaleContext';
 
 interface Agent {
   id: string;
@@ -52,6 +53,7 @@ interface WorkflowData {
 import { Handle, Position } from '@xyflow/react';
 
 const AgentNode = ({ data, selected }: { data: any; selected: boolean }) => {
+  const { t } = useLocale();
   return (
     <div
       className={`
@@ -68,22 +70,22 @@ const AgentNode = ({ data, selected }: { data: any; selected: boolean }) => {
       {data.description && (
         <div className="text-xs text-text-secondary mb-2 line-clamp-2">{data.description}</div>
       )}
-      {/* 输入输出显示 */}
+      {/* Input/output mapping */}
       <div className="space-y-1 mb-2">
         {data.inputKey && (
           <div className="text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded border border-blue-200">
-            ← 输入: {data.inputKey}
+            {t('workflowEditor.node.inputChip', { key: data.inputKey })}
           </div>
         )}
         {data.outputKey && (
           <div className="text-xs text-green-600 bg-green-50 px-2 py-1 rounded border border-green-200">
-          → 输出: {data.outputKey}
+            {t('workflowEditor.node.outputChip', { key: data.outputKey })}
           </div>
         )}
       </div>
       {data.prompt && (
         <div className="text-xs text-text-secondary bg-background px-2 py-1 rounded border border-border">
-          已配置Prompt
+          {t('workflowEditor.node.promptConfigured')}
         </div>
       )}
       <Handle type="source" position={Position.Right} className="w-3 h-3 bg-primary" />
@@ -100,6 +102,7 @@ function WorkflowEditorContent() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const toast = useToast();
+  const { t } = useLocale();
   const reactFlowWrapper = useRef<HTMLDivElement>(null);
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
@@ -177,11 +180,11 @@ function WorkflowEditorContent() {
     const errors: string[] = [];
     
     if (!name.trim()) {
-      errors.push('请输入工作流名称');
+      errors.push(t('workflowEditor.validation.nameRequired'));
     }
     
     if (nodes.length === 0) {
-      errors.push('请至少添加一个节点');
+      errors.push(t('workflowEditor.validation.nodeRequired'));
     }
     
     // Check for orphan nodes (except single node)
@@ -194,19 +197,19 @@ function WorkflowEditorContent() {
       
       const orphanNodes = nodes.filter(n => !connectedNodes.has(n.id));
       if (orphanNodes.length > 0) {
-        errors.push(`发现 ${orphanNodes.length} 个孤立节点，请连接或删除`);
+        errors.push(t('workflowEditor.validation.orphanNodes', { count: orphanNodes.length }));
       }
     }
     
     // Check for cycles (simplified)
     setValidationErrors(errors);
     return errors.length === 0;
-  }, [name, nodes, edges]);
+  }, [name, nodes, edges, t]);
 
   const saveMutation = useMutation({
     mutationFn: async (data: WorkflowData) => {
       if (!validateWorkflow()) {
-        throw new Error('工作流验证失败');
+        throw new Error(t('workflowEditor.validation.failed'));
       }
       
       if (id && id !== 'new') {
@@ -218,10 +221,10 @@ function WorkflowEditorContent() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['workflows'] });
       navigate('/workflows');
-      toast.success('保存成功！');
+      toast.success(t('workflowEditor.toast.saveSuccess'));
     },
     onError: (error: any) => {
-      toast.error(error.message || '保存失败，请重试');
+      toast.error(error.message || t('workflowEditor.toast.saveFailed'));
     },
   });
 
@@ -325,7 +328,7 @@ function WorkflowEditorContent() {
 
   const handleSave = useCallback(() => {
     if (!validateWorkflow()) {
-      toast.error('工作流验证失败:\n' + validationErrors.join('\n'));
+      toast.error(`${t('workflowEditor.validation.failed')}:\n${validationErrors.join('\n')}`);
       return;
     }
 
@@ -340,7 +343,7 @@ function WorkflowEditorContent() {
 
   const handleExecute = useCallback(() => {
     if (!id || id === 'new') {
-      toast.warning('请先保存工作流再执行');
+      toast.warning(t('workflowEditor.toast.saveBeforeExecute'));
       return;
     }
     navigate(`/tasks?workflowId=${id}`);
@@ -374,30 +377,30 @@ function WorkflowEditorContent() {
       try {
         const data = JSON.parse(e.target?.result as string);
         if (data.nodes && data.edges) {
-          setName(data.name || '导入的工作流');
+          setName(data.name || t('workflowEditor.import.defaultName'));
           setDescription(data.description || '');
           setIsTemplate(data.is_template === 1);
           setNodes(data.nodes);
           setEdges(data.edges);
-          toast.success('导入成功！');
+          toast.success(t('workflowEditor.toast.importSuccess'));
         } else {
-          toast.error('无效的工作流文件');
+          toast.error(t('workflowEditor.toast.invalidFile'));
         }
       } catch {
-        toast.error('导入失败：无效的JSON格式');
+        toast.error(t('workflowEditor.toast.invalidJson'));
       }
     };
     reader.readAsText(file);
     event.target.value = '';
-  }, [setNodes, setEdges, toast]);
+  }, [setNodes, setEdges, toast, t]);
 
   const handleClear = useCallback(() => {
-    if (confirm('确定要清空画布吗？此操作不可撤销。')) {
+    if (confirm(t('workflowEditor.confirm.clearCanvas'))) {
       setNodes([]);
       setEdges([]);
       setSelectedNode(null);
     }
-  }, [setNodes, setEdges]);
+  }, [setNodes, setEdges, t]);
 
   const proOptions = { hideAttribution: true };
 
@@ -411,11 +414,11 @@ function WorkflowEditorContent() {
               className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-background transition-colors"
             >
               <ArrowLeft className="w-4 h-4" />
-              返回
+              {t('common.back')}
             </button>
             <div>
               <h1 className="text-xl font-bold">
-                {id === 'new' ? '新建工作流' : '编辑工作流'}
+                {id === 'new' ? t('workflowEditor.newTitle') : t('workflowEditor.editTitle')}
               </h1>
             </div>
           </div>
@@ -425,7 +428,7 @@ function WorkflowEditorContent() {
               onClick={handleUndo}
               disabled={historyIndex <= 0}
               className="p-2 rounded-lg hover:bg-background disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              title="撤销"
+              title={t('workflowEditor.actions.undo')}
             >
               <Undo className="w-4 h-4" />
             </button>
@@ -433,7 +436,7 @@ function WorkflowEditorContent() {
               onClick={handleRedo}
               disabled={historyIndex >= history.length - 1}
               className="p-2 rounded-lg hover:bg-background disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              title="重做"
+              title={t('workflowEditor.actions.redo')}
             >
               <Redo className="w-4 h-4" />
             </button>
@@ -451,18 +454,18 @@ function WorkflowEditorContent() {
             <button
               onClick={() => fileInputRef.current?.click()}
               className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-background transition-colors"
-              title="导入工作流"
+              title={t('workflowEditor.actions.importWorkflow')}
             >
               <Upload className="w-4 h-4" />
-              <span className="hidden sm:inline">导入</span>
+              <span className="hidden sm:inline">{t('workflowEditor.actions.import')}</span>
             </button>
             <button
               onClick={handleExport}
               className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-background transition-colors"
-              title="导出工作流"
+              title={t('workflowEditor.actions.exportWorkflow')}
             >
               <Download className="w-4 h-4" />
-              <span className="hidden sm:inline">导出</span>
+              <span className="hidden sm:inline">{t('workflowEditor.actions.export')}</span>
             </button>
             
             <div className="w-px h-6 bg-border mx-2" />
@@ -473,7 +476,7 @@ function WorkflowEditorContent() {
                 className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
               >
                 <Play className="w-4 h-4" />
-                立即执行
+                {t('workflows.actions.execute')}
               </button>
             )}
             <button
@@ -482,28 +485,28 @@ function WorkflowEditorContent() {
               className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50"
             >
               <Save className="w-4 h-4" />
-              {saveMutation.isPending ? '保存中...' : '保存'}
+              {saveMutation.isPending ? t('common.saving') : t('common.save')}
             </button>
           </div>
         </div>
         <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
           <div>
-            <label className="block text-sm font-medium text-text-secondary mb-2">工作流名称</label>
+            <label className="block text-sm font-medium text-text-secondary mb-2">{t('workflowEditor.form.name')}</label>
             <input
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="例如：服务器CPU告警自动排查"
+              placeholder={t('workflowEditor.form.namePlaceholder')}
               className="w-full px-3 py-2 rounded-lg bg-background border border-border focus:border-primary focus:outline-none"
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-text-secondary mb-2">工作流描述</label>
+            <label className="block text-sm font-medium text-text-secondary mb-2">{t('workflowEditor.form.description')}</label>
             <input
               type="text"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="描述这个工作流的用途"
+              placeholder={t('workflowEditor.form.descriptionPlaceholder')}
               className="w-full px-3 py-2 rounded-lg bg-background border border-border focus:border-primary focus:outline-none"
             />
           </div>
@@ -515,7 +518,7 @@ function WorkflowEditorContent() {
                 onChange={(e) => setIsTemplate(e.target.checked)}
                 className="w-4 h-4 rounded border-border text-primary focus:ring-primary"
               />
-              <span className="text-sm text-text-secondary">设为模板</span>
+              <span className="text-sm text-text-secondary">{t('workflowEditor.form.setTemplate')}</span>
             </label>
           </div>
         </div>
@@ -525,7 +528,7 @@ function WorkflowEditorContent() {
           <div className="mt-4 p-3 bg-red-500/10 border border-red-500/30 rounded-lg">
             <div className="flex items-center gap-2 text-red-500 mb-2">
               <AlertCircle className="w-4 h-4" />
-              <span className="font-medium">发现问题</span>
+              <span className="font-medium">{t('workflowEditor.validation.issues')}</span>
             </div>
             <ul className="text-sm text-red-500 space-y-1">
               {validationErrors.map((err, i) => (
@@ -541,7 +544,7 @@ function WorkflowEditorContent() {
           <div className="p-4 border-b border-border">
             <h3 className="font-semibold flex items-center gap-2">
               <Layers className="w-4 h-4" />
-              可用Agent
+              {t('workflowEditor.agents.title')}
             </h3>
           </div>
           
@@ -577,7 +580,7 @@ function WorkflowEditorContent() {
               ))}
               {(agents || []).filter(a => a.enabled === 1).length === 0 && (
                 <div className="text-center py-8 text-text-secondary">
-                  <p>暂无可用Agent</p>
+                  <p>{t('workflowEditor.agents.empty')}</p>
                 </div>
               )}
             </div>
@@ -588,20 +591,20 @@ function WorkflowEditorContent() {
               <div className="flex items-center justify-between mb-4">
                 <h3 className="font-semibold flex items-center gap-2">
                   <Settings className="w-4 h-4" />
-                  节点配置
+                  {t('workflowEditor.config.title')}
                 </h3>
                 <div className="flex gap-1">
                   <button
                     onClick={duplicateSelectedNode}
                     className="p-1 text-blue-500 hover:bg-blue-500/10 rounded transition-colors"
-                    title="复制节点"
+                    title={t('workflowEditor.config.duplicateNode')}
                   >
                     <Copy className="w-4 h-4" />
                   </button>
                   <button
                     onClick={deleteSelectedNode}
                     className="p-1 text-red-500 hover:bg-red-500/10 rounded transition-colors"
-                    title="删除节点"
+                    title={t('workflowEditor.config.deleteNode')}
                   >
                     <Trash2 className="w-4 h-4" />
                   </button>
@@ -609,7 +612,7 @@ function WorkflowEditorContent() {
               </div>
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm text-text-secondary mb-2">显示名称</label>
+                  <label className="block text-sm text-text-secondary mb-2">{t('workflowEditor.config.displayName')}</label>
                   <input
                     type="text"
                     value={(selectedNode.data?.label as string) || ''}
@@ -628,7 +631,7 @@ function WorkflowEditorContent() {
                 </div>
                 
                 <div>
-                  <label className="block text-sm text-text-secondary mb-2">节点描述</label>
+                  <label className="block text-sm text-text-secondary mb-2">{t('workflowEditor.config.nodeDescription')}</label>
                   <textarea
                     value={(selectedNode.data?.description as string) || ''}
                     onChange={(e) => {
@@ -641,21 +644,21 @@ function WorkflowEditorContent() {
                       );
                       setSelectedNode((prev) => prev ? { ...prev, data: { ...prev.data, description: e.target.value } } : null);
                     }}
-                    placeholder="描述这个节点的作用"
+                    placeholder={t('workflowEditor.config.nodeDescriptionPlaceholder')}
                     rows={2}
                     className="w-full px-3 py-2 rounded bg-background border border-border focus:border-primary focus:outline-none resize-none"
                   />
                 </div>
 
-                {/* 输入输出配置 */}
+                {/* Input/output config */}
                 <div className="pt-3 border-t border-border">
-                  <h4 className="text-sm font-semibold text-text-primary mb-3">数据流转配置</h4>
+                  <h4 className="text-sm font-semibold text-text-primary mb-3">{t('workflowEditor.config.dataFlow')}</h4>
                   
                   <div className="space-y-3">
                     <div>
                       <label className="block text-sm text-text-secondary mb-1 flex items-center gap-1">
                         <span className="text-blue-500">←</span>
-                        输入键名
+                        {t('workflowEditor.config.inputKey')}
                       </label>
                       <input
                         type="text"
@@ -670,16 +673,16 @@ function WorkflowEditorContent() {
                           );
                           setSelectedNode((prev) => prev ? { ...prev, data: { ...prev.data, inputKey: e.target.value } } : null);
                         }}
-                        placeholder="例如: input, message"
+                        placeholder={t('workflowEditor.config.inputKeyPlaceholder')}
                         className="w-full px-3 py-2 rounded bg-background border border-border focus:border-primary focus:outline-none text-sm"
                       />
-                      <p className="text-xs text-text-secondary mt-1">从上一节点接收的数据键</p>
+                      <p className="text-xs text-text-secondary mt-1">{t('workflowEditor.config.inputKeyHelp')}</p>
                     </div>
                     
                     <div>
                       <label className="block text-sm text-text-secondary mb-1 flex items-center gap-1">
                         <span className="text-green-500">→</span>
-                        输出键名
+                        {t('workflowEditor.config.outputKey')}
                       </label>
                       <input
                         type="text"
@@ -694,16 +697,16 @@ function WorkflowEditorContent() {
                           );
                           setSelectedNode((prev) => prev ? { ...prev, data: { ...prev.data, outputKey: e.target.value } } : null);
                         }}
-                        placeholder="例如: result, output"
+                        placeholder={t('workflowEditor.config.outputKeyPlaceholder')}
                         className="w-full px-3 py-2 rounded bg-background border border-border focus:border-primary focus:outline-none text-sm"
                       />
-                      <p className="text-xs text-text-secondary mt-1">传递给下一节点的数据键</p>
+                      <p className="text-xs text-text-secondary mt-1">{t('workflowEditor.config.outputKeyHelp')}</p>
                     </div>
                   </div>
                 </div>
                 
                 <div className="pt-3 border-t border-border">
-                  <label className="block text-sm text-text-secondary mb-2">自定义Prompt</label>
+                  <label className="block text-sm text-text-secondary mb-2">{t('workflowEditor.config.customPrompt')}</label>
                   <textarea
                     value={(selectedNode.data?.prompt as string) || ''}
                     onChange={(e) => {
@@ -716,7 +719,7 @@ function WorkflowEditorContent() {
                       );
                       setSelectedNode((prev) => prev ? { ...prev, data: { ...prev.data, prompt: e.target.value } } : null);
                     }}
-                    placeholder="覆盖Agent的系统提示词（可选）"
+                    placeholder={t('workflowEditor.config.customPromptPlaceholder')}
                     rows={4}
                     className="w-full px-3 py-2 rounded bg-background border border-border focus:border-primary focus:outline-none resize-none font-mono text-sm"
                   />
@@ -726,7 +729,7 @@ function WorkflowEditorContent() {
                   <div className="text-xs text-text-secondary space-y-1">
                     <p>• ID: {String(selectedNode.id)}</p>
                     <p>• Agent ID: {String(selectedNode.data?.agentId || '-')}</p>
-                    <p>• 位置: ({Math.round(selectedNode.position.x)}, {Math.round(selectedNode.position.y)})</p>
+                    <p>{t('workflowEditor.config.position', { x: Math.round(selectedNode.position.x), y: Math.round(selectedNode.position.y) })}</p>
                   </div>
                 </div>
               </div>
@@ -763,15 +766,15 @@ function WorkflowEditorContent() {
                 <div className="bg-surface/95 backdrop-blur-sm px-4 py-2 rounded-lg border border-border shadow-lg">
                   <div className="flex items-center gap-4 text-sm">
                     <span className="text-text-secondary">
-                      从左侧拖拽Agent到画布创建节点
+                      {t('workflowEditor.canvas.hint')}
                     </span>
                     <span className="text-text-secondary">•</span>
                     <span className="text-text-secondary">
-                      {nodes.length} 个节点
+                      {t('workflowEditor.canvas.nodeCount', { count: nodes.length })}
                     </span>
                     <span className="text-text-secondary">•</span>
                     <span className="text-text-secondary">
-                      {edges.length} 条连接
+                      {t('workflowEditor.canvas.edgeCount', { count: edges.length })}
                     </span>
                   </div>
                 </div>
@@ -783,7 +786,7 @@ function WorkflowEditorContent() {
                     className="flex items-center gap-1 px-2 py-1 text-sm text-red-500 hover:bg-red-500/10 rounded transition-colors"
                   >
                     <Trash2 className="w-3 h-3" />
-                    清空画布
+                    {t('workflowEditor.canvas.clear')}
                   </button>
                 </div>
               </Panel>
