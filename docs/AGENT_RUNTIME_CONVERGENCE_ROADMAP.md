@@ -1,5 +1,7 @@
 # AIOps Agent 收口演进路线
 
+> 产品化主线补充：参考“数字员工团队”理念，后续需要把 Hermes Worker、Channel、Skill、MCP、Workflow、Policy、Trace、Evolution Proposal 和 Release Overlay 组织成“数字运维团队”产品模型。详细计划见 [AIOps Agent 数字运维团队产品化路线](./AIOPS_AGENT_DIGITAL_OPS_TEAM_ROADMAP.md)。
+
 ## 背景
 
 当前系统已经完成 Hermes Runtime、三 Worker、Channel、Skill、MCP Registry、Proposal、Evaluation、Release Version 和持续进化任务的基线能力。

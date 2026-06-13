@@ -26,6 +26,7 @@ ITOps Agent Platform 所有技术文档集合。
 - [QAnything 集成](./QANYTHING_INTEGRATION.md) — QAnything 知识库集成
 - [工作流指南](./WORKFLOW_GUIDE.md) — 工作流编排使用指南
 - [自动修复设计](./AUTO_REMEDIATION_DESIGN.md) — 告警自动修复功能设计说明
+- [AIOps Agent 数字运维团队路线](./AIOPS_AGENT_DIGITAL_OPS_TEAM_ROADMAP.md) — 从单 Agent 工具升级为 Leader-Worker 数字运维团队的产品化计划
 
 ### 👩‍💻 开发文档
 
