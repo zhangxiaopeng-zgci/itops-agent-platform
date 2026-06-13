@@ -225,6 +225,21 @@ flowchart TB
 - 每个 Agent 的 Channel、Worker、Skill、MCP、Policy、Release 都可追溯。
 - 页面和文档不再把 Hermes 作为隐藏 Runtime，而是作为可管理能力。
 
+实施切片：
+
+- P1a：产品文案收敛，把平台描述升级为“数字运维团队平台”。
+- P1b：在 Hermes 控制台顶部增加派生 Team Overview，不新增数据库表。
+- P1c：用现有 Channel / Agent Binding / Worker / Skill / MCP / Release 数据展示团队能力覆盖。
+- P1d：明确 Team 当前是只读产品模型，P2 再升级为 `agent_teams` 和 `agent_team_runs` 一等对象。
+
+P1 需要避免：
+
+- 不改现有执行器。
+- 不新增 Team Run 状态机。
+- 不改变 Hermes Runtime Router。
+- 不开放新的 MCP tool execution。
+- 不让自我进化自动影响生产。
+
 ### P2：Agent Team 与 Leader-Worker 编排
 
 目标：

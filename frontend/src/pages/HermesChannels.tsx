@@ -1,11 +1,11 @@
 import { type ChangeEvent, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Activity, BookOpenCheck, Cable, CheckCircle2, Clock, Download, GitBranch, PlugZap, RefreshCw, Save, ShieldCheck, Upload, Wrench, XCircle } from 'lucide-react';
+import { Activity, BookOpenCheck, Bot, Cable, CheckCircle2, Clock, Download, GitBranch, PlugZap, RefreshCw, Save, ShieldCheck, Upload, UsersRound, Wrench, XCircle } from 'lucide-react';
 import clsx from 'clsx';
 import api from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
 import { useToast } from '../contexts/ToastContext';
-import { useLocale } from '../contexts/LocaleContext';
+import { useLocale, type MessageKey } from '../contexts/LocaleContext';
 
 interface HermesChannelTool {
   id: string;
@@ -218,6 +218,21 @@ interface McpServerFormState {
   transport: string;
   url: string;
   command: string;
+}
+
+interface DigitalOpsTeam {
+  id: string;
+  titleKey: MessageKey;
+  descKey: MessageKey;
+  icon: typeof Bot;
+  channelTypes: string[];
+  workerRoles: string[];
+  channelNames: string[];
+  agentNames: string[];
+  skills: number;
+  mcpServers: number;
+  tools: number;
+  ready: boolean;
 }
 
 const panelClass = 'bg-surface/95 rounded-xl border border-border shadow-sm';
@@ -482,6 +497,8 @@ export default function HermesChannels() {
           </div>
         </div>
 
+        {overview && <DigitalOpsTeamOverview overview={overview} />}
+
         {overview && <ControlPlaneOverview overview={overview} />}
 
         <WorkerStatusPanel workers={workers || []} />
@@ -555,6 +572,77 @@ export default function HermesChannels() {
               onTestMcp={(serverId) => testMcpMutation.mutate(serverId)}
             />
           )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DigitalOpsTeamOverview({ overview }: { overview: HermesControlPlaneOverview }) {
+  const { t } = useLocale();
+  const teams = useMemo(() => buildDigitalOpsTeams(overview), [overview]);
+  const enabledSkills = overview.capabilityInventory.reduce((sum, item) => sum + item.enabledSkills, 0);
+  const enabledMcpServers = overview.capabilityInventory.reduce((sum, item) => sum + item.enabledMcpServers, 0);
+  const activeReleases = overview.evolutionState.activeReleaseCount;
+
+  return (
+    <div className={`${panelClass} p-5`}>
+      <div className="flex flex-col xl:flex-row xl:items-start xl:justify-between gap-5">
+        <div className="max-w-3xl">
+          <div className="inline-flex items-center gap-2 rounded-lg bg-primary/10 border border-primary/20 px-3 py-1.5 text-xs font-semibold text-primary">
+            <UsersRound className="w-4 h-4" />
+            {t('hermesChannels.team.badge')}
+          </div>
+          <h2 className="mt-3 text-xl font-semibold text-text-primary">{t('hermesChannels.team.title')}</h2>
+          <p className="mt-2 text-sm text-text-secondary leading-6">{t('hermesChannels.team.subtitle')}</p>
+        </div>
+
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 xl:min-w-[520px]">
+          <OverviewMetric label={t('hermesChannels.team.metric.teams')} value={String(teams.length)} />
+          <OverviewMetric label={t('hermesChannels.team.metric.agents')} value={String(overview.agentBindings.length)} />
+          <OverviewMetric label={t('hermesChannels.team.metric.skills')} value={String(enabledSkills)} />
+          <OverviewMetric label={t('hermesChannels.team.metric.mcp')} value={String(enabledMcpServers)} />
+          <OverviewMetric label={t('hermesChannels.team.metric.channels')} value={String(overview.channels.length)} />
+          <OverviewMetric label={t('hermesChannels.team.metric.workers')} value={`${overview.workers.filter((worker) => worker.healthy).length}/${overview.workers.length}`} />
+          <OverviewMetric label={t('hermesChannels.team.metric.releases')} value={String(activeReleases)} />
+          <OverviewMetric label={t('hermesChannels.team.metric.mode')} value={t('hermesChannels.team.mode.controlled')} />
+        </div>
+      </div>
+
+      <div className="mt-5 grid grid-cols-1 xl:grid-cols-3 gap-3">
+        {teams.map((team) => (
+          <div key={team.id} className="rounded-lg bg-background border border-border p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <team.icon className="w-4 h-4 text-primary shrink-0" />
+                  <h3 className="font-semibold text-text-primary truncate">{t(team.titleKey)}</h3>
+                </div>
+                <p className="mt-2 text-xs text-text-tertiary leading-5">{t(team.descKey)}</p>
+              </div>
+              <TeamReadinessBadge ready={team.ready} />
+            </div>
+
+            <div className="mt-4 space-y-2 text-xs">
+              <TopologyRow label={t('hermesChannels.team.leader')} value={t('hermesChannels.team.leaderValue')} />
+              <TopologyRow label={t('hermesChannels.team.workers')} value={team.workerRoles.join(', ')} />
+              <TopologyRow label={t('hermesChannels.team.channels')} value={team.channelNames.length > 0 ? team.channelNames.join(', ') : t('hermesChannels.team.noChannels')} />
+              <TopologyRow label={t('hermesChannels.team.agents')} value={team.agentNames.length > 0 ? team.agentNames.join(', ') : t('hermesChannels.overview.noAgentBinding')} />
+            </div>
+
+            <div className="mt-4 grid grid-cols-3 gap-2">
+              <MetricChip label={t('hermesChannels.overview.skills')} value={String(team.skills)} />
+              <MetricChip label={t('hermesChannels.overview.mcp')} value={String(team.mcpServers)} />
+              <MetricChip label={t('hermesChannels.overview.tools')} value={String(team.tools)} />
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-4 rounded-lg bg-background border border-border p-3">
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-2 text-xs text-text-tertiary">
+          <div>{t('hermesChannels.team.note')}</div>
+          <div>{t('hermesChannels.team.next')}</div>
         </div>
       </div>
     </div>
@@ -748,6 +836,21 @@ function RiskBadge({ severity }: { severity: 'info' | 'warning' | 'critical' }) 
   );
 }
 
+function TeamReadinessBadge({ ready }: { ready: boolean }) {
+  const { t } = useLocale();
+  return (
+    <span className={clsx(
+      'inline-flex items-center gap-1.5 px-2 py-1 rounded-md border text-xs whitespace-nowrap',
+      ready
+        ? 'bg-green-500/10 border-green-500/25 text-green-300'
+        : 'bg-amber-500/10 border-amber-500/25 text-amber-300'
+    )}>
+      {ready ? <CheckCircle2 className="w-3.5 h-3.5" /> : <Clock className="w-3.5 h-3.5" />}
+      {ready ? t('hermesChannels.team.ready') : t('hermesChannels.team.pending')}
+    </span>
+  );
+}
+
 function riskText(
   item: HermesControlPlaneOverview['riskSummary']['items'][number],
   t: ReturnType<typeof useLocale>['t']
@@ -800,6 +903,60 @@ function riskActionText(action: string, t: ReturnType<typeof useLocale>['t']) {
 
 function sumRecord(record: Record<string, number>) {
   return Object.values(record).reduce((sum, value) => sum + Number(value || 0), 0);
+}
+
+function buildDigitalOpsTeams(overview: HermesControlPlaneOverview): DigitalOpsTeam[] {
+  const specs: Array<{
+    id: string;
+    titleKey: MessageKey;
+    descKey: MessageKey;
+    icon: typeof Bot;
+    channelTypes: string[];
+    workerRoles: string[];
+  }> = [
+    {
+      id: 'alert-remediation',
+      titleKey: 'hermesChannels.team.alertRemediation.title',
+      descKey: 'hermesChannels.team.alertRemediation.desc',
+      icon: ShieldCheck,
+      channelTypes: ['diagnose', 'remediate', 'review'],
+      workerRoles: ['diagnose', 'remediate', 'evolve']
+    },
+    {
+      id: 'inspection-review',
+      titleKey: 'hermesChannels.team.inspectionReview.title',
+      descKey: 'hermesChannels.team.inspectionReview.desc',
+      icon: Activity,
+      channelTypes: ['diagnose', 'review'],
+      workerRoles: ['diagnose', 'evolve']
+    },
+    {
+      id: 'change-risk',
+      titleKey: 'hermesChannels.team.changeRisk.title',
+      descKey: 'hermesChannels.team.changeRisk.desc',
+      icon: GitBranch,
+      channelTypes: ['remediate', 'review'],
+      workerRoles: ['remediate', 'evolve']
+    }
+  ];
+
+  return specs.map((spec) => {
+    const inventory = overview.capabilityInventory.filter((item) => spec.channelTypes.includes(item.channelType));
+    const channels = overview.channels.filter((channel) => spec.channelTypes.includes(channel.type));
+    const agents = overview.agentBindings.filter((agent) => agent.channel_type && spec.channelTypes.includes(agent.channel_type));
+    const workers = overview.workers.filter((worker) => spec.workerRoles.includes(worker.role));
+    return {
+      ...spec,
+      channelNames: channels.map((channel) => channel.name),
+      agentNames: agents.map((agent) => agent.name),
+      skills: inventory.reduce((sum, item) => sum + item.enabledSkills, 0),
+      mcpServers: inventory.reduce((sum, item) => sum + item.enabledMcpServers, 0),
+      tools: inventory.reduce((sum, item) => sum + item.enabledTools, 0),
+      ready: spec.channelTypes.every((type) => channels.some((channel) => channel.type === type && channel.enabled === 1))
+        && spec.workerRoles.every((role) => workers.some((worker) => worker.role === role && worker.healthy))
+        && agents.length > 0
+    };
+  });
 }
 
 function formatDateTime(value: string | null | undefined) {
