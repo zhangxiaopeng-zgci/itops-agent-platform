@@ -10,6 +10,17 @@ interface SkillBundleItem {
   content: string;
   required_tools: string[];
   risk_notes: string | null;
+  applicable_scenarios?: string[];
+  input_context?: string[];
+  evidence_requirements?: string[];
+  recommended_tools?: string[];
+  recommended_mcp_servers?: string[];
+  risk_level?: string;
+  approval_policy?: string;
+  verification_method?: string | null;
+  rollback_guidance?: string | null;
+  output_contract?: string[];
+  version_status?: string;
   enabled: number;
 }
 
@@ -113,9 +124,12 @@ export function importHermesCapabilityBundle(rawBundle: unknown): HermesCapabili
   const transaction = db.transaction(() => {
     const upsertSkill = db.prepare(`
       INSERT INTO skills (
-        id, name, description, category, version, content, required_tools, risk_notes, enabled, updated_at
+        id, name, description, category, version, content, required_tools, risk_notes,
+        applicable_scenarios, input_context, evidence_requirements, recommended_tools,
+        recommended_mcp_servers, risk_level, approval_policy, verification_method,
+        rollback_guidance, output_contract, version_status, enabled, updated_at
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
       ON CONFLICT(id) DO UPDATE SET
         name = excluded.name,
         description = excluded.description,
@@ -124,6 +138,17 @@ export function importHermesCapabilityBundle(rawBundle: unknown): HermesCapabili
         content = excluded.content,
         required_tools = excluded.required_tools,
         risk_notes = excluded.risk_notes,
+        applicable_scenarios = excluded.applicable_scenarios,
+        input_context = excluded.input_context,
+        evidence_requirements = excluded.evidence_requirements,
+        recommended_tools = excluded.recommended_tools,
+        recommended_mcp_servers = excluded.recommended_mcp_servers,
+        risk_level = excluded.risk_level,
+        approval_policy = excluded.approval_policy,
+        verification_method = excluded.verification_method,
+        rollback_guidance = excluded.rollback_guidance,
+        output_contract = excluded.output_contract,
+        version_status = excluded.version_status,
         enabled = excluded.enabled,
         updated_at = CURRENT_TIMESTAMP
     `);
@@ -174,6 +199,17 @@ export function importHermesCapabilityBundle(rawBundle: unknown): HermesCapabili
         skill.content,
         JSON.stringify(skill.required_tools || []),
         skill.risk_notes,
+        JSON.stringify(skill.applicable_scenarios || []),
+        JSON.stringify(skill.input_context || []),
+        JSON.stringify(skill.evidence_requirements || []),
+        JSON.stringify(skill.recommended_tools || []),
+        JSON.stringify(skill.recommended_mcp_servers || []),
+        skill.risk_level || 'medium',
+        skill.approval_policy || 'inherit',
+        skill.verification_method || null,
+        skill.rollback_guidance || null,
+        JSON.stringify(skill.output_contract || []),
+        skill.version_status || 'draft',
         normalizeEnabled(skill.enabled)
       );
       result.imported.skills++;
@@ -241,7 +277,10 @@ export function importHermesCapabilityBundle(rawBundle: unknown): HermesCapabili
 
 function listSkillsForBundle(): SkillBundleItem[] {
   return (db.prepare(`
-    SELECT id, name, description, category, version, content, required_tools, risk_notes, enabled
+    SELECT id, name, description, category, version, content, required_tools, risk_notes,
+           applicable_scenarios, input_context, evidence_requirements, recommended_tools,
+           recommended_mcp_servers, risk_level, approval_policy, verification_method,
+           rollback_guidance, output_contract, version_status, enabled
     FROM skills
     ORDER BY category ASC, name ASC
   `).all() as Array<Record<string, unknown>>).map(row => ({
@@ -253,6 +292,17 @@ function listSkillsForBundle(): SkillBundleItem[] {
     content: String(row.content || ''),
     required_tools: parseStringArray(row.required_tools),
     risk_notes: nullableString(row.risk_notes),
+    applicable_scenarios: parseStringArray(row.applicable_scenarios),
+    input_context: parseStringArray(row.input_context),
+    evidence_requirements: parseStringArray(row.evidence_requirements),
+    recommended_tools: parseStringArray(row.recommended_tools),
+    recommended_mcp_servers: parseStringArray(row.recommended_mcp_servers),
+    risk_level: String(row.risk_level || 'medium'),
+    approval_policy: String(row.approval_policy || 'inherit'),
+    verification_method: nullableString(row.verification_method),
+    rollback_guidance: nullableString(row.rollback_guidance),
+    output_contract: parseStringArray(row.output_contract),
+    version_status: String(row.version_status || 'draft'),
     enabled: Number(row.enabled ?? 1)
   }));
 }

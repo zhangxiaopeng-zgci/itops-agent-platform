@@ -22,6 +22,17 @@ interface HermesChannelSkill {
   version: string;
   required_tools: string[];
   risk_notes?: string | null;
+  applicable_scenarios?: string[];
+  input_context?: string[];
+  evidence_requirements?: string[];
+  recommended_tools?: string[];
+  recommended_mcp_servers?: string[];
+  risk_level?: string;
+  approval_policy?: string;
+  verification_method?: string | null;
+  rollback_guidance?: string | null;
+  output_contract?: string[];
+  version_status?: string;
   enabled: number;
   skill_id: string;
   binding_enabled: number;
@@ -75,6 +86,17 @@ interface SkillPack {
   version: string;
   required_tools: string[];
   risk_notes?: string | null;
+  applicable_scenarios?: string[];
+  input_context?: string[];
+  evidence_requirements?: string[];
+  recommended_tools?: string[];
+  recommended_mcp_servers?: string[];
+  risk_level?: string;
+  approval_policy?: string;
+  verification_method?: string | null;
+  rollback_guidance?: string | null;
+  output_contract?: string[];
+  version_status?: string;
   enabled: number;
 }
 
@@ -1490,10 +1512,32 @@ function ChannelDetails({
                   {skill.version}
                 </span>
               </div>
-              <div className="mt-3 flex items-center justify-between gap-2 text-xs text-text-tertiary">
-                <span className="truncate">{skill.category}</span>
-                <span className="whitespace-nowrap">{t('hermesChannels.requiredTools', { count: skill.required_tools.length })}</span>
+              <div className="mt-3 flex flex-wrap gap-1.5 text-[11px] text-text-secondary">
+                <SemanticChip value={skill.category} />
+                <SemanticChip value={t('hermesChannels.skillRisk', { level: skill.risk_level || 'medium' })} tone={skill.risk_level === 'high' ? 'warning' : 'normal'} />
+                <SemanticChip value={t('hermesChannels.skillApproval', { policy: skill.approval_policy || 'inherit' })} />
+                <SemanticChip value={skill.version_status || 'draft'} />
               </div>
+              <div className="mt-3 grid grid-cols-2 gap-2 text-[11px] text-text-tertiary">
+                <SkillMetric label={t('hermesChannels.skillScenarios')} value={String(skill.applicable_scenarios?.length || 0)} />
+                <SkillMetric label={t('hermesChannels.skillEvidence')} value={String(skill.evidence_requirements?.length || 0)} />
+                <SkillMetric label={t('hermesChannels.skillRecommendedTools')} value={String((skill.recommended_tools || skill.required_tools || []).length)} />
+                <SkillMetric label={t('hermesChannels.skillMcp')} value={String(skill.recommended_mcp_servers?.length || 0)} />
+              </div>
+              {(skill.verification_method || skill.rollback_guidance) && (
+                <div className="mt-3 space-y-1 text-[11px] leading-5 text-text-tertiary">
+                  {skill.verification_method && (
+                    <div className="line-clamp-2">
+                      <span className="font-medium text-text-secondary">{t('hermesChannels.skillVerification')}:</span> {skill.verification_method}
+                    </div>
+                  )}
+                  {skill.rollback_guidance && (
+                    <div className="line-clamp-2">
+                      <span className="font-medium text-text-secondary">{t('hermesChannels.skillRollback')}:</span> {skill.rollback_guidance}
+                    </div>
+                  )}
+                </div>
+              )}
             </button>
           ))}
         </div>
@@ -1613,6 +1657,28 @@ function InfoTile({ label, value }: { label: string; value: string }) {
     <div className="rounded-lg bg-background border border-border p-3">
       <div className="text-xs text-text-tertiary">{label}</div>
       <div className="text-sm font-semibold text-text-primary mt-1 truncate">{value}</div>
+    </div>
+  );
+}
+
+function SemanticChip({ value, tone = 'normal' }: { value: string; tone?: 'normal' | 'warning' }) {
+  return (
+    <span className={clsx(
+      'px-2 py-1 rounded-md border whitespace-nowrap',
+      tone === 'warning'
+        ? 'bg-amber-500/10 border-amber-500/25 text-amber-600 dark:text-amber-300'
+        : 'bg-surface border-border text-text-secondary'
+    )}>
+      {value}
+    </span>
+  );
+}
+
+function SkillMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-md bg-surface border border-border px-2 py-1.5">
+      <div className="truncate">{label}</div>
+      <div className="mt-0.5 font-semibold text-text-primary">{value}</div>
     </div>
   );
 }

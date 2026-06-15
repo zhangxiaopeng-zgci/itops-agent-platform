@@ -548,13 +548,35 @@ function buildSkillPrompt(skills: SkillRuntimeContext[]): string {
     const requiredTools = skill.requiredTools.length > 0
       ? `Required or preferred tools: ${skill.requiredTools.join(', ')}.`
       : 'No specific required tools.';
+    const recommendedTools = skill.recommendedTools.length > 0
+      ? `Recommended tools: ${skill.recommendedTools.join(', ')}.`
+      : '';
+    const recommendedMcpServers = skill.recommendedMcpServers.length > 0
+      ? `Recommended MCP servers/connectors: ${skill.recommendedMcpServers.join(', ')}.`
+      : '';
+    const scenarios = formatSkillList('Applicable scenarios', skill.applicableScenarios);
+    const inputContext = formatSkillList('Expected input context', skill.inputContext);
+    const evidenceRequirements = formatSkillList('Evidence requirements', skill.evidenceRequirements);
+    const outputContract = formatSkillList('Output contract', skill.outputContract);
     const riskNotes = skill.riskNotes ? `Risk notes: ${skill.riskNotes}` : '';
+    const riskPolicy = `Risk level: ${skill.riskLevel || 'medium'}; approval policy: ${skill.approvalPolicy || 'inherit'}; version status: ${skill.versionStatus || 'draft'}.`;
+    const verification = skill.verificationMethod ? `Verification method: ${skill.verificationMethod}` : '';
+    const rollback = skill.rollbackGuidance ? `Rollback guidance: ${skill.rollbackGuidance}` : '';
 
     return [
       `Skill Pack ${index + 1}: ${skill.name} (${skill.version}, ${skill.category})`,
       skill.content,
+      scenarios,
+      inputContext,
+      evidenceRequirements,
       requiredTools,
-      riskNotes
+      recommendedTools,
+      recommendedMcpServers,
+      riskPolicy,
+      riskNotes,
+      verification,
+      rollback,
+      outputContract
     ].filter(Boolean).join('\n');
   });
 
@@ -563,6 +585,10 @@ function buildSkillPrompt(skills: SkillRuntimeContext[]): string {
     ...skillBlocks,
     'Follow these Skill Packs as channel-scoped operating guidance. They do not override tool policy, role permissions, approvals, or safety constraints.'
   ].join('\n\n');
+}
+
+function formatSkillList(label: string, values: string[]): string {
+  return values.length > 0 ? `${label}: ${values.join(', ')}.` : '';
 }
 
 function getHermesTools(listAvailableTools: () => ToolDescriptor[], allowedTools?: string[]): ChatTool[] {

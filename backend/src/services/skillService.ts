@@ -10,6 +10,17 @@ export interface SkillRecord {
   content: string;
   required_tools: string[];
   risk_notes: string | null;
+  applicable_scenarios: string[];
+  input_context: string[];
+  evidence_requirements: string[];
+  recommended_tools: string[];
+  recommended_mcp_servers: string[];
+  risk_level: string;
+  approval_policy: string;
+  verification_method: string | null;
+  rollback_guidance: string | null;
+  output_contract: string[];
+  version_status: string;
   enabled: number;
   created_by: string | null;
   created_at: string;
@@ -33,6 +44,17 @@ export interface SkillInput {
   content?: string;
   required_tools?: string[];
   risk_notes?: string | null;
+  applicable_scenarios?: string[];
+  input_context?: string[];
+  evidence_requirements?: string[];
+  recommended_tools?: string[];
+  recommended_mcp_servers?: string[];
+  risk_level?: string;
+  approval_policy?: string;
+  verification_method?: string | null;
+  rollback_guidance?: string | null;
+  output_contract?: string[];
+  version_status?: string;
   enabled?: boolean | number;
 }
 
@@ -44,6 +66,17 @@ export interface SkillRuntimeContext {
   content: string;
   requiredTools: string[];
   riskNotes?: string | null;
+  applicableScenarios: string[];
+  inputContext: string[];
+  evidenceRequirements: string[];
+  recommendedTools: string[];
+  recommendedMcpServers: string[];
+  riskLevel: string;
+  approvalPolicy: string;
+  verificationMethod?: string | null;
+  rollbackGuidance?: string | null;
+  outputContract: string[];
+  versionStatus: string;
 }
 
 export function listSkills(onlyEnabled = false): SkillRecord[] {
@@ -76,9 +109,12 @@ export function createSkill(input: SkillInput, createdBy?: string | null): Skill
   db.prepare(`
     INSERT INTO skills (
       id, name, description, category, version, content, required_tools,
-      risk_notes, enabled, created_by, created_at, updated_at
+      risk_notes, applicable_scenarios, input_context, evidence_requirements,
+      recommended_tools, recommended_mcp_servers, risk_level, approval_policy,
+      verification_method, rollback_guidance, output_contract, version_status,
+      enabled, created_by, created_at, updated_at
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
   `).run(
     id,
     normalized.name,
@@ -88,6 +124,17 @@ export function createSkill(input: SkillInput, createdBy?: string | null): Skill
     normalized.content,
     JSON.stringify(normalized.required_tools || []),
     normalized.risk_notes,
+    JSON.stringify(normalized.applicable_scenarios || []),
+    JSON.stringify(normalized.input_context || []),
+    JSON.stringify(normalized.evidence_requirements || []),
+    JSON.stringify(normalized.recommended_tools || []),
+    JSON.stringify(normalized.recommended_mcp_servers || []),
+    normalized.risk_level,
+    normalized.approval_policy,
+    normalized.verification_method,
+    normalized.rollback_guidance,
+    JSON.stringify(normalized.output_contract || []),
+    normalized.version_status,
     normalized.enabled,
     createdBy || null
   );
@@ -110,6 +157,17 @@ export function updateSkill(id: string, input: SkillInput): SkillRecord {
     content: normalized.content ?? current.content,
     required_tools: normalized.required_tools ?? current.required_tools,
     risk_notes: normalized.risk_notes !== undefined ? normalized.risk_notes : current.risk_notes,
+    applicable_scenarios: normalized.applicable_scenarios ?? current.applicable_scenarios,
+    input_context: normalized.input_context ?? current.input_context,
+    evidence_requirements: normalized.evidence_requirements ?? current.evidence_requirements,
+    recommended_tools: normalized.recommended_tools ?? current.recommended_tools,
+    recommended_mcp_servers: normalized.recommended_mcp_servers ?? current.recommended_mcp_servers,
+    risk_level: normalized.risk_level ?? current.risk_level,
+    approval_policy: normalized.approval_policy ?? current.approval_policy,
+    verification_method: normalized.verification_method !== undefined ? normalized.verification_method : current.verification_method,
+    rollback_guidance: normalized.rollback_guidance !== undefined ? normalized.rollback_guidance : current.rollback_guidance,
+    output_contract: normalized.output_contract ?? current.output_contract,
+    version_status: normalized.version_status ?? current.version_status,
     enabled: normalized.enabled ?? current.enabled
   };
 
@@ -122,6 +180,17 @@ export function updateSkill(id: string, input: SkillInput): SkillRecord {
         content = ?,
         required_tools = ?,
         risk_notes = ?,
+        applicable_scenarios = ?,
+        input_context = ?,
+        evidence_requirements = ?,
+        recommended_tools = ?,
+        recommended_mcp_servers = ?,
+        risk_level = ?,
+        approval_policy = ?,
+        verification_method = ?,
+        rollback_guidance = ?,
+        output_contract = ?,
+        version_status = ?,
         enabled = ?,
         updated_at = CURRENT_TIMESTAMP
     WHERE id = ?
@@ -133,6 +202,17 @@ export function updateSkill(id: string, input: SkillInput): SkillRecord {
     merged.content,
     JSON.stringify(merged.required_tools),
     merged.risk_notes,
+    JSON.stringify(merged.applicable_scenarios),
+    JSON.stringify(merged.input_context),
+    JSON.stringify(merged.evidence_requirements),
+    JSON.stringify(merged.recommended_tools),
+    JSON.stringify(merged.recommended_mcp_servers),
+    merged.risk_level,
+    merged.approval_policy,
+    merged.verification_method,
+    merged.rollback_guidance,
+    JSON.stringify(merged.output_contract),
+    merged.version_status,
     merged.enabled,
     id
   );
@@ -198,7 +278,18 @@ export function toSkillRuntimeContext(skill: HermesChannelSkillRecord): SkillRun
     version: skill.version,
     content: skill.content,
     requiredTools: skill.required_tools,
-    riskNotes: skill.risk_notes
+    riskNotes: skill.risk_notes,
+    applicableScenarios: skill.applicable_scenarios,
+    inputContext: skill.input_context,
+    evidenceRequirements: skill.evidence_requirements,
+    recommendedTools: skill.recommended_tools,
+    recommendedMcpServers: skill.recommended_mcp_servers,
+    riskLevel: skill.risk_level,
+    approvalPolicy: skill.approval_policy,
+    verificationMethod: skill.verification_method,
+    rollbackGuidance: skill.rollback_guidance,
+    outputContract: skill.output_contract,
+    versionStatus: skill.version_status
   };
 }
 
@@ -212,6 +303,17 @@ function parseSkill(row: Record<string, unknown>): SkillRecord {
     content: String(row.content || ''),
     required_tools: parseStringArray(row.required_tools),
     risk_notes: nullableString(row.risk_notes),
+    applicable_scenarios: parseStringArray(row.applicable_scenarios),
+    input_context: parseStringArray(row.input_context),
+    evidence_requirements: parseStringArray(row.evidence_requirements),
+    recommended_tools: parseStringArray(row.recommended_tools),
+    recommended_mcp_servers: parseStringArray(row.recommended_mcp_servers),
+    risk_level: String(row.risk_level || 'medium'),
+    approval_policy: String(row.approval_policy || 'inherit'),
+    verification_method: nullableString(row.verification_method),
+    rollback_guidance: nullableString(row.rollback_guidance),
+    output_contract: parseStringArray(row.output_contract),
+    version_status: String(row.version_status || 'draft'),
     enabled: Number(row.enabled ?? 1),
     created_by: nullableString(row.created_by),
     created_at: String(row.created_at || ''),
@@ -276,6 +378,72 @@ function normalizeSkillInput(input: SkillInput, requireName: boolean): SkillInpu
       : null;
   }
 
+  if (Array.isArray(input.applicable_scenarios)) {
+    normalized.applicable_scenarios = normalizeStringArray(input.applicable_scenarios);
+  } else if (requireName) {
+    normalized.applicable_scenarios = [];
+  }
+
+  if (Array.isArray(input.input_context)) {
+    normalized.input_context = normalizeStringArray(input.input_context);
+  } else if (requireName) {
+    normalized.input_context = [];
+  }
+
+  if (Array.isArray(input.evidence_requirements)) {
+    normalized.evidence_requirements = normalizeStringArray(input.evidence_requirements);
+  } else if (requireName) {
+    normalized.evidence_requirements = [];
+  }
+
+  if (Array.isArray(input.recommended_tools)) {
+    normalized.recommended_tools = normalizeStringArray(input.recommended_tools);
+  } else if (requireName) {
+    normalized.recommended_tools = [];
+  }
+
+  if (Array.isArray(input.recommended_mcp_servers)) {
+    normalized.recommended_mcp_servers = normalizeStringArray(input.recommended_mcp_servers);
+  } else if (requireName) {
+    normalized.recommended_mcp_servers = [];
+  }
+
+  if (typeof input.risk_level === 'string' && input.risk_level.trim()) {
+    normalized.risk_level = input.risk_level.trim();
+  } else if (requireName) {
+    normalized.risk_level = 'medium';
+  }
+
+  if (typeof input.approval_policy === 'string' && input.approval_policy.trim()) {
+    normalized.approval_policy = input.approval_policy.trim();
+  } else if (requireName) {
+    normalized.approval_policy = 'inherit';
+  }
+
+  if ('verification_method' in input) {
+    normalized.verification_method = typeof input.verification_method === 'string' && input.verification_method.trim()
+      ? input.verification_method.trim()
+      : null;
+  }
+
+  if ('rollback_guidance' in input) {
+    normalized.rollback_guidance = typeof input.rollback_guidance === 'string' && input.rollback_guidance.trim()
+      ? input.rollback_guidance.trim()
+      : null;
+  }
+
+  if (Array.isArray(input.output_contract)) {
+    normalized.output_contract = normalizeStringArray(input.output_contract);
+  } else if (requireName) {
+    normalized.output_contract = [];
+  }
+
+  if (typeof input.version_status === 'string' && input.version_status.trim()) {
+    normalized.version_status = input.version_status.trim();
+  } else if (requireName) {
+    normalized.version_status = 'draft';
+  }
+
   if (input.enabled !== undefined) {
     normalized.enabled = input.enabled === true || input.enabled === 1 ? 1 : 0;
   } else if (requireName) {
@@ -283,6 +451,12 @@ function normalizeSkillInput(input: SkillInput, requireName: boolean): SkillInpu
   }
 
   return normalized;
+}
+
+function normalizeStringArray(value: unknown[]): string[] {
+  return value
+    .filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+    .map((item) => item.trim());
 }
 
 function parseStringArray(value: unknown): string[] {

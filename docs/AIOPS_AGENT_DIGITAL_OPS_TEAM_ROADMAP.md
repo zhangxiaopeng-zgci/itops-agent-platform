@@ -388,6 +388,20 @@ P3 当前边界：
 - Workflow 模板能引用 Skill。
 - Skill 发布/回滚仍通过 Release 机制受控。
 
+P4 实施切片：
+
+- [x] P4a：Skill 增加运维语义字段：适用场景、输入上下文、证据、推荐工具/MCP、风险、审批、验证、回滚、输出契约和版本状态。
+- [x] P4b：Skill API、Channel 解析、Hermes Runtime prompt 注入和能力包导入导出贯通语义字段。
+- [x] P4c：Hermes 团队控制台展示 Channel Skill 覆盖摘要，包括风险、审批、场景、证据、推荐工具、MCP、验证和回滚。
+- [ ] P4d：Workflow 节点声明 recommended Skill，并在模板编辑器/任务详情中展示引用关系。
+- [ ] P4e：Skill 语义与 Release/Evaluation 进一步联动，形成发布前评估和回滚边界。
+
+P4 当前边界：
+
+- 不改变现有 Workflow 执行器选择 Agent 的方式。
+- 不开放 MCP tool execution，仅把 MCP 作为 Skill 推荐连接器和 Channel 能力摘要。
+- Skill 的运行态生效仍通过 Channel 绑定和 Hermes Runtime 注入；发布/回滚继续走 Release 机制。
+
 ### P5：Execution Evidence 证据链
 
 目标：
@@ -652,6 +666,8 @@ P3b：执行器透传 Runbook metadata
 P3c：Workflow 页面 Hermes-enhanced 摘要
 P3d：任务详情 Runbook 阶段展示
 P4a：Skill 运维语义字段
+P4b：Skill Runtime 注入和导入导出
+P4c：Channel 控制台 Skill 能力摘要
 P5a：Execution Evidence 标准化
 ```
 
