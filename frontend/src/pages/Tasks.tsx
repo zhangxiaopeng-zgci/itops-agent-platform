@@ -1,8 +1,8 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, type ReactNode } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
-import { useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { io, Socket } from 'socket.io-client';
-import { Play, Pause, XCircle, Clock, CheckCircle, XCircle as XIcon, FileText, Activity, List, FileCheck } from 'lucide-react';
+import { Play, Pause, XCircle, Clock, CheckCircle, XCircle as XIcon, FileText, Activity, List, FileCheck, ExternalLink, ShieldAlert } from 'lucide-react';
 import { formatDistanceToNow, format } from 'date-fns';
 import { enUS, zhCN } from 'date-fns/locale';
 import clsx from 'clsx';
@@ -26,12 +26,25 @@ interface Task {
   created_at: string;
   execution_order?: string[];
   report_id?: string;
+  context?: Record<string, unknown>;
 }
 
 interface Workflow {
   id: string;
   name: string;
   nodes: any[];
+}
+
+interface ToolApproval {
+  id: string;
+  tool_name: string;
+  status: 'pending' | 'approved' | 'rejected' | 'executed' | 'failed';
+  risk_level: string;
+  reason?: string | null;
+  requested_at: string;
+  correlation_id?: string | null;
+  input?: Record<string, unknown>;
+  execution_result?: Record<string, unknown> | null;
 }
 
 const taskStatusKeys: Record<string, MessageKey> = {
@@ -52,6 +65,7 @@ const nodeStatusKeys: Record<string, MessageKey> = {
 
 export default function Tasks() {
   const { token } = useAuth();
+  const navigate = useNavigate();
   const { locale, t } = useLocale();
   const dateLocale = locale === 'zh-CN' ? zhCN : enUS;
   const browserLocale = locale === 'zh-CN' ? 'zh-CN' : 'en-US';
@@ -115,6 +129,15 @@ export default function Tasks() {
       const res = await api.get('/api/workflows');
       return res.data.data as Workflow[];
     },
+  });
+
+  const { data: toolApprovals } = useQuery({
+    queryKey: ['tool-approvals', 'task-readonly-closure'],
+    queryFn: async () => {
+      const res = await api.get('/api/tool-approvals', { params: { limit: 200 } });
+      return (res.data.data?.approvals || []) as ToolApproval[];
+    },
+    refetchInterval: 30000,
   });
 
   useEffect(() => {
@@ -662,6 +685,8 @@ export default function Tasks() {
                           const isRunning = executingNodeId === node.id;
                           const status = getNodeDisplayStatus(result?.status, isRunning);
                           const runbook = getRunbookMetadata(node, result);
+                          const refs = extractExecutionRefs(node, result);
+                          const closure = buildNodeClosure(refs, toolApprovals || [], tasks || [], selectedTask.id);
 
                           return (
                             <div
@@ -753,6 +778,77 @@ export default function Tasks() {
                                       </div>
                                     </div>
                                   )}
+                                </div>
+                              )}
+
+                              {(runbook.approvalRequired || runbook.verificationRequired || refs.approvalIds.length > 0 || refs.taskIds.length > 0 || refs.correlationIds.length > 0) && (
+                                <div className="px-4 py-3 border-b border-border bg-background/40">
+                                  <div className="flex items-center justify-between gap-3 mb-3">
+                                    <div>
+                                      <h5 className="text-sm font-medium text-text-primary">{t('tasks.closure.title')}</h5>
+                                      <p className="text-xs text-text-tertiary">{t('tasks.closure.subtitle')}</p>
+                                    </div>
+                                    {refs.correlationIds.length > 0 && (
+                                      <div className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-border bg-surface text-xs text-text-secondary">
+                                        {t('tasks.closure.correlation', { id: shortId(refs.correlationIds[0]) })}
+                                      </div>
+                                    )}
+                                  </div>
+
+                                  <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
+                                    <ClosurePanel
+                                      title={t('tasks.closure.approvals')}
+                                      empty={runbook.approvalRequired ? t('tasks.closure.noApprovalLinked') : t('tasks.closure.noApprovals')}
+                                      required={runbook.approvalRequired}
+                                      requiredLabel={t('tasks.closure.required')}
+                                    >
+                                      {closure.approvals.map((approval) => (
+                                        <button
+                                          key={approval.id}
+                                          type="button"
+                                          onClick={() => navigate(`/tool-approvals?approvalId=${encodeURIComponent(approval.id)}`)}
+                                          className="w-full text-left rounded-lg border border-border bg-surface px-3 py-2 hover:border-primary/40 transition-colors"
+                                        >
+                                          <div className="flex items-start justify-between gap-3">
+                                            <div className="min-w-0">
+                                              <div className="flex items-center gap-2">
+                                                <ShieldAlert className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                                                <span className="text-sm font-medium text-text-primary truncate">{approval.tool_name}</span>
+                                              </div>
+                                              <div className="text-xs text-text-tertiary mt-1 truncate">
+                                                {approval.risk_level} · {shortId(approval.id)}
+                                              </div>
+                                            </div>
+                                            <ApprovalStatusBadge status={approval.status} t={t} />
+                                          </div>
+                                        </button>
+                                      ))}
+                                    </ClosurePanel>
+
+                                    <ClosurePanel
+                                      title={t('tasks.closure.tasks')}
+                                      empty={runbook.verificationRequired ? t('tasks.closure.noVerificationTask') : t('tasks.closure.noTasks')}
+                                      required={runbook.verificationRequired}
+                                      requiredLabel={t('tasks.closure.required')}
+                                    >
+                                      {closure.tasks.map((task) => (
+                                        <button
+                                          key={task.id}
+                                          type="button"
+                                          onClick={() => navigate(`/tasks?taskId=${encodeURIComponent(task.id)}`)}
+                                          className="w-full text-left rounded-lg border border-border bg-surface px-3 py-2 hover:border-primary/40 transition-colors"
+                                        >
+                                          <div className="flex items-start justify-between gap-3">
+                                            <div className="min-w-0">
+                                              <div className="text-sm font-medium text-text-primary truncate">{task.name}</div>
+                                              <div className="text-xs text-text-tertiary mt-1 truncate">{shortId(task.id)}</div>
+                                            </div>
+                                            <TaskStatusBadge status={task.status} t={t} />
+                                          </div>
+                                        </button>
+                                      ))}
+                                    </ClosurePanel>
+                                  </div>
                                 </div>
                               )}
 
@@ -977,6 +1073,214 @@ function formatEvidenceName(evidence: string, t: (key: MessageKey) => string) {
     inspection_report: 'tasks.runbook.evidence.inspectionReport'
   };
   return evidenceKeys[evidence] ? t(evidenceKeys[evidence]) : evidence;
+}
+
+interface ExecutionRefs {
+  approvalIds: string[];
+  taskIds: string[];
+  correlationIds: string[];
+}
+
+function extractExecutionRefs(node: any, result: any): ExecutionRefs {
+  const refs = {
+    approvalIds: new Set<string>(),
+    taskIds: new Set<string>(),
+    correlationIds: new Set<string>()
+  };
+
+  collectExecutionRefs(node?.data, refs);
+  collectExecutionRefs(result?.metadata, refs);
+  collectExecutionRefs(result?.output, refs);
+  collectExecutionRefs(result?.error, refs);
+  collectExecutionRefs(result?.metadata?.trace, refs);
+
+  return {
+    approvalIds: Array.from(refs.approvalIds),
+    taskIds: Array.from(refs.taskIds),
+    correlationIds: Array.from(refs.correlationIds)
+  };
+}
+
+function collectExecutionRefs(
+  value: unknown,
+  refs: { approvalIds: Set<string>; taskIds: Set<string>; correlationIds: Set<string> }
+) {
+  if (!value) return;
+
+  if (typeof value === 'string') {
+    try {
+      collectExecutionRefs(JSON.parse(value), refs);
+    } catch {
+      collectLooseRefs(value, refs);
+    }
+    return;
+  }
+
+  if (Array.isArray(value)) {
+    value.forEach((item) => collectExecutionRefs(item, refs));
+    return;
+  }
+
+  if (typeof value !== 'object') return;
+
+  const record = value as Record<string, unknown>;
+  addRef(record.approvalId, refs.approvalIds);
+  addRef(record.approval_id, refs.approvalIds);
+  addRef(record.taskId, refs.taskIds);
+  addRef(record.task_id, refs.taskIds);
+  addRef(record.correlationId, refs.correlationIds);
+  addRef(record.correlation_id, refs.correlationIds);
+
+  Object.values(record).forEach((item) => collectExecutionRefs(item, refs));
+}
+
+function collectLooseRefs(
+  text: string,
+  refs: { approvalIds: Set<string>; taskIds: Set<string>; correlationIds: Set<string> }
+) {
+  const patterns: Array<[RegExp, Set<string>]> = [
+    [/(?:approvalId|approval_id|approval)\s*[:=]\s*["']?([a-zA-Z0-9._:-]{8,128})/g, refs.approvalIds],
+    [/(?:taskId|task_id|task)\s*[:=]\s*["']?([a-zA-Z0-9._:-]{8,128})/g, refs.taskIds],
+    [/(?:correlationId|correlation_id|corr)\s*[:=]\s*["']?([a-zA-Z0-9._:-]{8,128})/g, refs.correlationIds]
+  ];
+
+  patterns.forEach(([pattern, target]) => {
+    Array.from(text.matchAll(pattern)).forEach((match) => {
+      if (match[1]) target.add(match[1]);
+    });
+  });
+}
+
+function addRef(value: unknown, target: Set<string>) {
+  if (typeof value === 'string' && value.length >= 8) {
+    target.add(value);
+  }
+}
+
+function buildNodeClosure(refs: ExecutionRefs, approvals: ToolApproval[], tasks: Task[], currentTaskId: string) {
+  const taskIds = new Set(refs.taskIds.filter((id) => id !== currentTaskId));
+  const correlationIds = new Set(refs.correlationIds);
+  const approvalIds = new Set(refs.approvalIds);
+
+  const relatedApprovals = approvals.filter((approval) => (
+    approvalIds.has(approval.id) ||
+    (approval.correlation_id ? correlationIds.has(approval.correlation_id) : false) ||
+    taskIds.has(findStringField(approval.input, 'taskId') || '') ||
+    taskIds.has(findStringField(approval.execution_result, 'taskId') || '')
+  ));
+
+  relatedApprovals.forEach((approval) => {
+    const inputTaskId = findStringField(approval.input, 'taskId');
+    const resultTaskId = findStringField(approval.execution_result, 'taskId');
+    if (inputTaskId && inputTaskId !== currentTaskId) taskIds.add(inputTaskId);
+    if (resultTaskId && resultTaskId !== currentTaskId) taskIds.add(resultTaskId);
+  });
+
+  const relatedTasks = tasks.filter((task) => taskIds.has(task.id));
+  return {
+    approvals: dedupeById(relatedApprovals),
+    tasks: dedupeById(relatedTasks)
+  };
+}
+
+function findStringField(value: unknown, key: string): string | null {
+  if (!value || typeof value !== 'object') return null;
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = findStringField(item, key);
+      if (found) return found;
+    }
+    return null;
+  }
+
+  const record = value as Record<string, unknown>;
+  const direct = record[key];
+  if (typeof direct === 'string' && direct.length > 0) return direct;
+
+  for (const child of Object.values(record)) {
+    const found = findStringField(child, key);
+    if (found) return found;
+  }
+  return null;
+}
+
+function dedupeById<T extends { id: string }>(items: T[]): T[] {
+  const seen = new Set<string>();
+  return items.filter((item) => {
+    if (seen.has(item.id)) return false;
+    seen.add(item.id);
+    return true;
+  });
+}
+
+function ClosurePanel({
+  title,
+  empty,
+  required,
+  requiredLabel,
+  children
+}: {
+  title: string;
+  empty: string;
+  required: boolean;
+  requiredLabel: string;
+  children: ReactNode;
+}) {
+  const hasChildren = Boolean(children) && (!Array.isArray(children) || children.length > 0);
+  return (
+    <div className="rounded-lg border border-border bg-background p-3 min-w-0">
+      <div className="flex items-center justify-between gap-2 mb-2">
+        <h6 className="text-xs font-semibold uppercase tracking-wide text-text-tertiary">{title}</h6>
+        {required && <span className="text-[11px] text-amber-500">{requiredLabel}</span>}
+      </div>
+      {hasChildren ? (
+        <div className="space-y-2">{children}</div>
+      ) : (
+        <div className="text-sm text-text-tertiary">{empty}</div>
+      )}
+    </div>
+  );
+}
+
+function ApprovalStatusBadge({ status, t }: { status: ToolApproval['status']; t: (key: MessageKey) => string }) {
+  const statusKeys: Record<ToolApproval['status'], MessageKey> = {
+    pending: 'toolApprovals.status.pending',
+    approved: 'toolApprovals.status.approved',
+    rejected: 'toolApprovals.status.rejected',
+    executed: 'toolApprovals.status.executed',
+    failed: 'toolApprovals.status.failed'
+  };
+  return (
+    <span className={clsx(
+      'px-2 py-1 rounded-md text-xs font-medium whitespace-nowrap',
+      status === 'pending' && 'bg-amber-500/10 text-amber-500',
+      status === 'approved' && 'bg-blue-500/10 text-blue-500',
+      status === 'executed' && 'bg-status-success/10 text-status-success',
+      status === 'failed' && 'bg-status-failed/10 text-status-failed',
+      status === 'rejected' && 'bg-text-tertiary/10 text-text-tertiary'
+    )}>
+      {t(statusKeys[status])}
+    </span>
+  );
+}
+
+function TaskStatusBadge({ status, t }: { status: string; t: (key: MessageKey) => string }) {
+  return (
+    <span className={clsx(
+      'px-2 py-1 rounded-md text-xs font-medium whitespace-nowrap',
+      status === 'completed' && 'bg-status-success/10 text-status-success',
+      status === 'running' && 'bg-status-running/10 text-status-running',
+      status === 'failed' && 'bg-status-failed/10 text-status-failed',
+      status === 'paused' && 'bg-status-paused/10 text-status-paused',
+      (status === 'pending' || status === 'cancelled') && 'bg-status-pending/10 text-status-pending'
+    )}>
+      {t(taskStatusKeys[status] || 'common.unknown')}
+    </span>
+  );
+}
+
+function shortId(value: string): string {
+  return value.length > 12 ? `${value.slice(0, 8)}...` : value;
 }
 
 function RunbookMetaItem({

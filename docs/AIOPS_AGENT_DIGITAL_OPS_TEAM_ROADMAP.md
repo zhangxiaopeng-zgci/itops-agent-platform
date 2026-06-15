@@ -347,11 +347,11 @@ P2 当前边界：
 
 实施切片：
 
-- P3a：模板元数据增强和旧模板自动升级。
-- P3b：执行器透传 Runbook metadata。
-- P3c：Workflow 列表展示 Hermes-enhanced 摘要。
-- P3d：任务详情展示节点 Runbook 阶段和证据要求。
-- P3e：把审批/验证节点与现有 Tool Approval / Task 状态做只读聚合。
+- [x] P3a：模板元数据增强和旧模板自动升级。
+- [x] P3b：执行器透传 Runbook metadata。
+- [x] P3c：Workflow 列表展示 Hermes-enhanced 摘要。
+- [x] P3d：任务详情展示节点 Runbook 阶段和证据要求。
+- [x] P3e：把审批/验证节点与现有 Tool Approval / Task 状态做只读聚合。
 
 P3 当前边界：
 
