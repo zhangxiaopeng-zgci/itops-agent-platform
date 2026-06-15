@@ -497,7 +497,8 @@ export default function Tasks() {
                     return orderedNodes.map((node, index) => {
                       const result = selectedTask.node_results?.[node.id];
                       const isRunning = executingNodeId === node.id;
-                      const status = result?.status || (isRunning ? 'running' : 'pending');
+                      const status = getNodeDisplayStatus(result?.status, isRunning);
+                      const runbook = getRunbookMetadata(node, result);
 
                       return (
                         <div key={node.id} className="flex items-center gap-2">
@@ -514,6 +515,11 @@ export default function Tasks() {
                             <span className="text-sm font-medium text-text-primary whitespace-nowrap">
                               {node.data?.label}
                             </span>
+                            {runbook.phase && (
+                              <span className="px-2 py-0.5 rounded-md bg-primary/10 text-primary text-xs whitespace-nowrap">
+                                {formatRunbookPhase(runbook.phase, t)}
+                              </span>
+                            )}
                             {status === 'completed' && (
                               <CheckCircle className="w-4 h-4 text-status-success" />
                             )}
@@ -654,7 +660,8 @@ export default function Tasks() {
                         return orderedNodes.map((node, index) => {
                           const result = selectedTask.node_results?.[node.id];
                           const isRunning = executingNodeId === node.id;
-                          const status = result?.status || (isRunning ? 'running' : 'pending');
+                          const status = getNodeDisplayStatus(result?.status, isRunning);
+                          const runbook = getRunbookMetadata(node, result);
 
                           return (
                             <div
@@ -703,6 +710,51 @@ export default function Tasks() {
                                   {t(nodeStatusKeys[status] || 'common.unknown')}
                                 </span>
                               </div>
+
+                              {(runbook.phase || runbook.evidenceRequired.length > 0 || runbook.riskGate || runbook.approvalRequired || runbook.verificationRequired) && (
+                                <div className="px-4 py-3 border-b border-border bg-surface/40">
+                                  <div className="grid grid-cols-1 lg:grid-cols-4 gap-3">
+                                    {runbook.phase && (
+                                      <RunbookMetaItem
+                                        label={t('tasks.runbook.phase')}
+                                        value={formatRunbookPhase(runbook.phase, t)}
+                                      />
+                                    )}
+                                    {runbook.riskGate && (
+                                      <RunbookMetaItem
+                                        label={t('tasks.runbook.riskGate')}
+                                        value={formatRiskGate(runbook.riskGate, t)}
+                                      />
+                                    )}
+                                    <RunbookMetaItem
+                                      label={t('tasks.runbook.approval')}
+                                      value={runbook.approvalRequired ? t('tasks.runbook.required') : t('tasks.runbook.notRequired')}
+                                      tone={runbook.approvalRequired ? 'warning' : 'normal'}
+                                    />
+                                    <RunbookMetaItem
+                                      label={t('tasks.runbook.verification')}
+                                      value={runbook.verificationRequired ? t('tasks.runbook.required') : t('tasks.runbook.notRequired')}
+                                      tone={runbook.verificationRequired ? 'success' : 'normal'}
+                                    />
+                                  </div>
+
+                                  {runbook.evidenceRequired.length > 0 && (
+                                    <div className="mt-3">
+                                      <div className="text-xs text-text-tertiary mb-2">{t('tasks.runbook.evidenceRequired')}</div>
+                                      <div className="flex flex-wrap gap-2">
+                                        {runbook.evidenceRequired.map((item) => (
+                                          <span
+                                            key={item}
+                                            className="px-2 py-1 rounded-md border border-border bg-background text-xs text-text-secondary"
+                                          >
+                                            {formatEvidenceName(item, t)}
+                                          </span>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
 
                               {/* Node result */}
                               {result && (
@@ -853,6 +905,102 @@ export default function Tasks() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function getNodeDisplayStatus(rawStatus: string | undefined, isRunning: boolean) {
+  if (isRunning) return 'running';
+  if (rawStatus === 'success') return 'completed';
+  return rawStatus || 'pending';
+}
+
+function getRunbookMetadata(node: any, result: any) {
+  const metadata = result?.metadata || {};
+  return {
+    phase: metadata.runbookPhase || node.data?.runbookPhase || null,
+    evidenceRequired: normalizeStringList(metadata.evidenceRequired || node.data?.evidenceRequired),
+    riskGate: metadata.riskGate || node.data?.riskGate || null,
+    approvalRequired: Boolean(metadata.approvalRequired ?? node.data?.approvalRequired),
+    verificationRequired: Boolean(metadata.verificationRequired ?? node.data?.verificationRequired)
+  };
+}
+
+function normalizeStringList(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is string => typeof item === 'string' && item.length > 0);
+}
+
+function formatRunbookPhase(phase: string, t: (key: MessageKey) => string) {
+  const phaseKeys: Record<string, MessageKey> = {
+    diagnose: 'tasks.runbook.phase.diagnose',
+    evidence: 'tasks.runbook.phase.evidence',
+    approval_plan: 'tasks.runbook.phase.approvalPlan',
+    review: 'tasks.runbook.phase.review',
+    evolve: 'tasks.runbook.phase.evolve',
+    inspect: 'tasks.runbook.phase.inspect',
+    report: 'tasks.runbook.phase.report'
+  };
+  return t(phaseKeys[phase] || 'tasks.runbook.phase.unknown');
+}
+
+function formatRiskGate(riskGate: string, t: (key: MessageKey) => string) {
+  const riskGateKeys: Record<string, MessageKey> = {
+    read_only: 'tasks.runbook.risk.readOnly',
+    approval_required: 'tasks.runbook.risk.approvalRequired',
+    review_required: 'tasks.runbook.risk.reviewRequired'
+  };
+  return t(riskGateKeys[riskGate] || 'tasks.runbook.risk.unknown');
+}
+
+function formatEvidenceName(evidence: string, t: (key: MessageKey) => string) {
+  const evidenceKeys: Record<string, MessageKey> = {
+    alert: 'tasks.runbook.evidence.alert',
+    metrics: 'tasks.runbook.evidence.metrics',
+    recent_changes: 'tasks.runbook.evidence.recentChanges',
+    logs: 'tasks.runbook.evidence.logs',
+    server_metrics: 'tasks.runbook.evidence.serverMetrics',
+    process_state: 'tasks.runbook.evidence.processState',
+    diagnosis: 'tasks.runbook.evidence.diagnosis',
+    log_evidence: 'tasks.runbook.evidence.logEvidence',
+    server_evidence: 'tasks.runbook.evidence.serverEvidence',
+    remediation_plan: 'tasks.runbook.evidence.remediationPlan',
+    verification_result: 'tasks.runbook.evidence.verificationResult',
+    symptom: 'tasks.runbook.evidence.symptom',
+    server_state: 'tasks.runbook.evidence.serverState',
+    rca: 'tasks.runbook.evidence.rca',
+    command_evidence: 'tasks.runbook.evidence.commandEvidence',
+    repair_plan: 'tasks.runbook.evidence.repairPlan',
+    task_result: 'tasks.runbook.evidence.taskResult',
+    service_state: 'tasks.runbook.evidence.serviceState',
+    inspection_evidence: 'tasks.runbook.evidence.inspectionEvidence',
+    inspection_report: 'tasks.runbook.evidence.inspectionReport'
+  };
+  return evidenceKeys[evidence] ? t(evidenceKeys[evidence]) : evidence;
+}
+
+function RunbookMetaItem({
+  label,
+  value,
+  tone = 'normal'
+}: {
+  label: string;
+  value: string;
+  tone?: 'normal' | 'warning' | 'success';
+}) {
+  return (
+    <div className="rounded-lg border border-border bg-background px-3 py-2 min-w-0">
+      <div className="text-xs text-text-tertiary truncate">{label}</div>
+      <div
+        className={clsx(
+          'mt-1 text-sm font-medium truncate',
+          tone === 'normal' && 'text-text-primary',
+          tone === 'warning' && 'text-amber-500',
+          tone === 'success' && 'text-status-success'
+        )}
+      >
+        {value}
+      </div>
     </div>
   );
 }
