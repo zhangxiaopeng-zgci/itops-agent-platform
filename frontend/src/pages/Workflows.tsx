@@ -18,6 +18,17 @@ interface Workflow {
   description: string;
   nodes: any[];
   edges: any[];
+  agent_configs?: {
+    hermesEnhanced?: boolean;
+    runbookDriven?: boolean;
+    collaborationMode?: string;
+    runbookPattern?: string;
+    stages?: Array<{
+      phase?: string;
+      approvalRequired?: boolean;
+      verificationRequired?: boolean;
+    }>;
+  };
   is_template: number;
   created_at: string;
   updated_at?: string;
@@ -43,6 +54,10 @@ export default function Workflows() {
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
 
   const getWorkflowStyle = (workflow: Workflow) => {
+    if (isHermesEnhancedWorkflow(workflow)) {
+      return { icon: Sparkles, color: 'text-teal-500', bg: 'bg-teal-500/10', border: 'border-teal-500/30' };
+    }
+
     const serverNames = ['\u670d\u52a1\u5668', '\u5de1\u68c0', '\u5408\u89c4', 'server', 'inspect', 'compliance'];
     const securityNames = ['\u5b89\u5168', '\u6f0f\u6d1e', 'security', 'vulnerability'];
     const dataNames = ['\u6570\u636e', '\u5907\u4efd', '\u6062\u590d', 'data', 'backup', 'restore'];
@@ -474,9 +489,15 @@ export default function Workflows() {
                           <div className="flex items-center gap-2 mb-1">
                             <h3 className="font-semibold text-text-primary truncate">{workflow.name}</h3>
                             {workflow.is_template === 1 && (
-                              <span className="flex items-center gap-1 px-2 py-0.5 bg-gradient-to-r from-primary/20 to-purple-500/20 text-primary text-xs rounded-full border border-primary/20">
+                              <span className="flex items-center gap-1 px-2 py-0.5 bg-primary/10 text-primary text-xs rounded-full border border-primary/20">
                                 <Sparkles className="w-3 h-3" />
                                 {t('workflows.templateBadge')}
+                              </span>
+                            )}
+                            {isHermesEnhancedWorkflow(workflow) && (
+                              <span className="flex items-center gap-1 px-2 py-0.5 bg-teal-500/10 text-teal-500 text-xs rounded-full border border-teal-500/20">
+                                <CheckCircle className="w-3 h-3" />
+                                {t('workflows.hermesEnhanced')}
                               </span>
                             )}
                           </div>
@@ -513,6 +534,20 @@ export default function Workflows() {
                     <p className="text-sm text-text-secondary mb-4 line-clamp-2 min-h-[40px]">
                       {workflow.description || t('workflows.noDescription')}
                     </p>
+
+                    {isHermesEnhancedWorkflow(workflow) && (
+                      <div className="mb-4 grid grid-cols-1 sm:grid-cols-3 gap-2">
+                        <RunbookChip label={t('workflows.runbook.mode')} value={workflow.agent_configs?.collaborationMode || '-'} />
+                        <RunbookChip label={t('workflows.runbook.stages')} value={String(workflow.agent_configs?.stages?.length || 0)} />
+                        <RunbookChip
+                          label={t('workflows.runbook.gates')}
+                          value={summarizeRunbookGates(workflow, {
+                            readOnly: t('workflows.runbook.readOnly'),
+                            gateSummary: (approval, verification) => t('workflows.runbook.gateSummary', { approval, verification })
+                          })}
+                        />
+                      </div>
+                    )}
 
                     <div className="bg-gradient-to-br from-background/80 to-background/40 rounded-xl p-5 mb-4 border border-border/60">
                       <div className="flex items-center justify-between mb-4">
@@ -638,6 +673,36 @@ export default function Workflows() {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+function isHermesEnhancedWorkflow(workflow: Workflow) {
+  return Boolean(
+    workflow.agent_configs?.hermesEnhanced ||
+    workflow.agent_configs?.runbookDriven ||
+    workflow.nodes?.some((node) => node.data?.runbookPhase)
+  );
+}
+
+function summarizeRunbookGates(
+  workflow: Workflow,
+  labels: { readOnly: string; gateSummary: (approval: number, verification: number) => string }
+) {
+  const stages = workflow.agent_configs?.stages || [];
+  const approvalCount = stages.filter((stage) => stage.approvalRequired).length;
+  const verificationCount = stages.filter((stage) => stage.verificationRequired).length;
+  if (approvalCount === 0 && verificationCount === 0) {
+    return labels.readOnly;
+  }
+  return labels.gateSummary(approvalCount, verificationCount);
+}
+
+function RunbookChip({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg border border-border bg-background px-3 py-2 min-w-0">
+      <div className="text-xs text-text-tertiary truncate">{label}</div>
+      <div className="mt-1 text-sm font-medium text-text-primary truncate">{value}</div>
     </div>
   );
 }

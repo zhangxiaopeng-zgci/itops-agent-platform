@@ -5,12 +5,22 @@ import { logger } from '../../utils/logger';
 interface WorkflowAgentNodeSpec {
   name: string;
   avatar: string;
+  description?: string;
   allowFailure?: boolean;
+  runbookPhase?: string;
+  evidenceRequired?: string[];
+  riskGate?: string;
+  approvalRequired?: boolean;
+  verificationRequired?: boolean;
+  outputKey?: string;
 }
 
 interface WorkflowTemplateSpec {
   name: string;
   description: string;
+  teamType: string;
+  collaborationMode: 'pipeline' | 'parallel' | 'debate';
+  runbookPattern: string;
   nodes: WorkflowAgentNodeSpec[];
 }
 
@@ -18,32 +28,149 @@ const HERMES_WORKFLOW_TEMPLATES: WorkflowTemplateSpec[] = [
   {
     name: 'Hermes 告警诊断与修复闭环',
     description: 'Hermes 先完成告警诊断和证据收集，再结合日志、服务器命令和修复编排 Agent 形成审批式修复闭环，最后生成处理报告。',
+    teamType: 'alert_remediation',
+    collaborationMode: 'pipeline',
+    runbookPattern: 'diagnose-evidence-risk-approval-execute-verify-review',
     nodes: [
-      { name: 'Hermes 诊断修复 Agent', avatar: '🧠' },
-      { name: '日志分析 Agent', avatar: '📝' },
-      { name: '服务器命令执行 Agent', avatar: '💻' },
-      { name: 'Hermes 修复编排 Agent', avatar: '🛠️' },
-      { name: '文档生成 Agent', avatar: '📄' }
+      {
+        name: 'Hermes 诊断修复 Agent',
+        avatar: '🧠',
+        description: '收集告警上下文、提出初步 RCA 和证据缺口。',
+        runbookPhase: 'diagnose',
+        evidenceRequired: ['alert', 'metrics', 'recent_changes'],
+        riskGate: 'read_only',
+        outputKey: 'diagnosis'
+      },
+      {
+        name: '日志分析 Agent',
+        avatar: '📝',
+        description: '围绕告警时间窗补充日志证据。',
+        runbookPhase: 'evidence',
+        evidenceRequired: ['logs'],
+        riskGate: 'read_only',
+        outputKey: 'log_evidence'
+      },
+      {
+        name: '服务器命令执行 Agent',
+        avatar: '💻',
+        description: '执行只读命令补充主机状态和影响面。',
+        runbookPhase: 'evidence',
+        evidenceRequired: ['server_metrics', 'process_state'],
+        riskGate: 'read_only',
+        outputKey: 'server_evidence'
+      },
+      {
+        name: 'Hermes 修复编排 Agent',
+        avatar: '🛠️',
+        description: '生成修复计划、风险说明、审批和回滚建议。',
+        runbookPhase: 'approval_plan',
+        evidenceRequired: ['diagnosis', 'log_evidence', 'server_evidence'],
+        riskGate: 'approval_required',
+        approvalRequired: true,
+        verificationRequired: true,
+        outputKey: 'remediation_plan'
+      },
+      {
+        name: '文档生成 Agent',
+        avatar: '📄',
+        description: '沉淀处理报告、验证结果和复盘输入。',
+        runbookPhase: 'review',
+        evidenceRequired: ['remediation_plan', 'verification_result'],
+        riskGate: 'read_only',
+        outputKey: 'runbook_report'
+      }
     ]
   },
   {
     name: 'Hermes 故障诊断与审批修复',
     description: '面向明确故障的 Hermes 增强流程：诊断修复 Agent 判断根因，命令执行 Agent 补充事实，修复编排 Agent 提交审批式工作流，复盘进化 Agent 输出改进建议。',
+    teamType: 'alert_remediation',
+    collaborationMode: 'pipeline',
+    runbookPattern: 'diagnose-evidence-approval-execute-review',
     nodes: [
-      { name: 'Hermes 诊断修复 Agent', avatar: '🧠' },
-      { name: '服务器命令执行 Agent', avatar: '💻' },
-      { name: 'Hermes 修复编排 Agent', avatar: '🛠️' },
-      { name: 'Hermes 复盘进化 Agent', avatar: '🧬' }
+      {
+        name: 'Hermes 诊断修复 Agent',
+        avatar: '🧠',
+        description: '基于故障描述输出 RCA 假设、证据列表和风险等级。',
+        runbookPhase: 'diagnose',
+        evidenceRequired: ['symptom', 'metrics', 'logs'],
+        riskGate: 'read_only',
+        outputKey: 'rca'
+      },
+      {
+        name: '服务器命令执行 Agent',
+        avatar: '💻',
+        description: '补齐只读命令证据，避免无证据修复。',
+        runbookPhase: 'evidence',
+        evidenceRequired: ['server_state'],
+        riskGate: 'read_only',
+        outputKey: 'command_evidence'
+      },
+      {
+        name: 'Hermes 修复编排 Agent',
+        avatar: '🛠️',
+        description: '把 RCA 转换为受控修复计划、审批单和验证步骤。',
+        runbookPhase: 'approval_plan',
+        evidenceRequired: ['rca', 'command_evidence'],
+        riskGate: 'approval_required',
+        approvalRequired: true,
+        verificationRequired: true,
+        outputKey: 'repair_plan'
+      },
+      {
+        name: 'Hermes 复盘进化 Agent',
+        avatar: '🧬',
+        description: '根据执行结果生成 Skill/Workflow/Policy 改进建议。',
+        runbookPhase: 'evolve',
+        evidenceRequired: ['repair_plan', 'task_result', 'verification_result'],
+        riskGate: 'review_required',
+        outputKey: 'evolution_proposal'
+      }
     ]
   },
   {
     name: 'Hermes 巡检复盘与优化建议',
     description: '用于巡检后的复盘与优化：系统巡检和命令执行收集事实，文档生成 Agent 形成报告，Hermes 复盘进化 Agent 输出可审批的优化 proposal。',
+    teamType: 'inspection_review',
+    collaborationMode: 'parallel',
+    runbookPattern: 'inspect-evidence-report-evolve',
     nodes: [
-      { name: '系统巡检 Agent', avatar: '🔎' },
-      { name: '服务器命令执行 Agent', avatar: '💻' },
-      { name: '文档生成 Agent', avatar: '📄' },
-      { name: 'Hermes 复盘进化 Agent', avatar: '🧬' }
+      {
+        name: '系统巡检 Agent',
+        avatar: '🔎',
+        description: '收集服务器和系统健康状态。',
+        runbookPhase: 'inspect',
+        evidenceRequired: ['metrics', 'service_state'],
+        riskGate: 'read_only',
+        outputKey: 'inspection_evidence'
+      },
+      {
+        name: '服务器命令执行 Agent',
+        avatar: '💻',
+        description: '补充只读命令证据，定位异常资源。',
+        runbookPhase: 'evidence',
+        evidenceRequired: ['server_state'],
+        riskGate: 'read_only',
+        outputKey: 'server_evidence'
+      },
+      {
+        name: '文档生成 Agent',
+        avatar: '📄',
+        description: '生成巡检报告和异常摘要。',
+        runbookPhase: 'report',
+        evidenceRequired: ['inspection_evidence', 'server_evidence'],
+        riskGate: 'read_only',
+        outputKey: 'inspection_report'
+      },
+      {
+        name: 'Hermes 复盘进化 Agent',
+        avatar: '🧬',
+        description: '把重复异常沉淀为 Skill/Workflow/Policy 优化提案。',
+        runbookPhase: 'evolve',
+        evidenceRequired: ['inspection_report'],
+        riskGate: 'review_required',
+        outputKey: 'optimization_proposal'
+      }
     ]
   }
 ];
@@ -221,23 +348,44 @@ export function ensureHermesWorkflowTemplates(): void {
   const existingNames = new Set(existingWorkflows.map(workflow => workflow.name));
 
   const insertWorkflow = db.prepare(`
-    INSERT INTO workflows (id, name, description, nodes, edges, is_template)
-    VALUES (?, ?, ?, ?, ?, ?)
+    INSERT INTO workflows (id, name, description, nodes, edges, agent_configs, is_template)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `);
+  const updateWorkflow = db.prepare(`
+    UPDATE workflows
+    SET description = ?,
+        nodes = ?,
+        edges = ?,
+        agent_configs = ?,
+        updated_at = CURRENT_TIMESTAMP
+    WHERE name = ? AND is_template = 1
   `);
 
   let createdCount = 0;
+  let updatedCount = 0;
   HERMES_WORKFLOW_TEMPLATES.forEach(template => {
+    const { nodes, edges } = buildLinearAgentWorkflow(template.nodes, agentMap);
+    const agentConfigs = buildHermesWorkflowAgentConfig(template);
+
     if (existingNames.has(template.name)) {
+      updateWorkflow.run(
+        template.description,
+        JSON.stringify(nodes),
+        JSON.stringify(edges),
+        JSON.stringify(agentConfigs),
+        template.name
+      );
+      updatedCount += 1;
       return;
     }
 
-    const { nodes, edges } = buildLinearAgentWorkflow(template.nodes, agentMap);
     insertWorkflow.run(
       randomUUID(),
       template.name,
       template.description,
       JSON.stringify(nodes),
       JSON.stringify(edges),
+      JSON.stringify(agentConfigs),
       1
     );
     createdCount += 1;
@@ -245,6 +393,9 @@ export function ensureHermesWorkflowTemplates(): void {
 
   if (createdCount > 0) {
     logger.info(`✅ 成功创建 ${createdCount} 个 Hermes 增强版工作流模板`);
+  }
+  if (updatedCount > 0) {
+    logger.info(`✅ 成功更新 ${updatedCount} 个 Hermes 增强版工作流模板`);
   }
 }
 
@@ -260,7 +411,14 @@ function buildLinearAgentWorkflow(
       label: spec.name,
       agentId: agentMap.get(spec.name) || null,
       avatar: spec.avatar,
-      allowFailure: spec.allowFailure || false
+      description: spec.description,
+      allowFailure: spec.allowFailure || false,
+      runbookPhase: spec.runbookPhase,
+      evidenceRequired: spec.evidenceRequired || [],
+      riskGate: spec.riskGate || 'read_only',
+      approvalRequired: Boolean(spec.approvalRequired),
+      verificationRequired: Boolean(spec.verificationRequired),
+      outputKey: spec.outputKey
     }
   }));
 
@@ -271,4 +429,30 @@ function buildLinearAgentWorkflow(
   }));
 
   return { nodes, edges };
+}
+
+function buildHermesWorkflowAgentConfig(template: WorkflowTemplateSpec) {
+  return {
+    hermesEnhanced: true,
+    runbookDriven: true,
+    teamType: template.teamType,
+    collaborationMode: template.collaborationMode,
+    runbookPattern: template.runbookPattern,
+    safety: {
+      evidenceFirst: true,
+      approvalGate: template.nodes.some(node => node.approvalRequired),
+      verificationRequired: template.nodes.some(node => node.verificationRequired),
+      productionBoundary: 'Hermes proposes and records controlled plans; backend approval, workflow and tool policy remain the execution boundary.'
+    },
+    stages: template.nodes.map((node, index) => ({
+      order: index + 1,
+      agent: node.name,
+      phase: node.runbookPhase,
+      evidenceRequired: node.evidenceRequired || [],
+      riskGate: node.riskGate || 'read_only',
+      approvalRequired: Boolean(node.approvalRequired),
+      verificationRequired: Boolean(node.verificationRequired),
+      outputKey: node.outputKey || null
+    }))
+  };
 }

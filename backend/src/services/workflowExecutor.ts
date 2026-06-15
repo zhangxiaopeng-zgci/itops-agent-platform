@@ -151,7 +151,8 @@ export async function executeWorkflow(
           workflowId: workflow.id,
           workflowName: workflow.name,
           nodeId,
-          nodeName: node.data.label
+          nodeName: node.data.label,
+          runbook: buildRunbookNodeContext(node)
         };
         logger.info(`🤖 Calling executeAgentRun with agentId: ${node.data.agentId} context:`, nodeContext);
         const runResult = await executeAgentRun(node.data.agentId, input, nodeContext);
@@ -165,7 +166,12 @@ export async function executeWorkflow(
             executionTime: Date.now(),
             runtime: typeof runResult.metadata?.runtime === 'string' ? runResult.metadata.runtime : null,
             runtimeMetadata: runResult.metadata || {},
-            trace: runResult.trace || []
+            trace: runResult.trace || [],
+            runbookPhase: node.data.runbookPhase,
+            evidenceRequired: node.data.evidenceRequired || [],
+            riskGate: node.data.riskGate,
+            approvalRequired: Boolean(node.data.approvalRequired),
+            verificationRequired: Boolean(node.data.verificationRequired)
           }
         };
         
@@ -283,6 +289,18 @@ export async function executeWorkflow(
       error: errorMessage
     });
   }
+}
+
+function buildRunbookNodeContext(node: WorkflowNode) {
+  return {
+    enhanced: Boolean(node.data.runbookPhase),
+    phase: node.data.runbookPhase || null,
+    evidenceRequired: node.data.evidenceRequired || [],
+    riskGate: node.data.riskGate || null,
+    approvalRequired: Boolean(node.data.approvalRequired),
+    verificationRequired: Boolean(node.data.verificationRequired),
+    outputKey: node.data.outputKey || null
+  };
 }
 
 async function generateWorkflowExecutionReport(

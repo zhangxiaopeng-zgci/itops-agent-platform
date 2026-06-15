@@ -1,8 +1,10 @@
-# AIOps Agent 数字运维团队产品化路线
+# AIOps Agent / Workflow 管理平台增强路线
 
 ## 背景
 
-参考“从单 Agent 工具升级为数字员工团队”的理念，AIOps Agent 后续不应继续只围绕单个 Agent、单个 Runtime 或单个工具入口堆功能，而应该把现有 Hermes Worker、Channel、Skill、MCP、Workflow、Policy、Trace、Evolution Proposal 和 Release Overlay 组织成一套可被企业理解、治理和持续运营的数字运维团队平台。
+参考 RunbookHermes 的证据驱动、审批门禁、验证闭环和持续学习理念，AIOps Agent 后续仍然保持 Agent / Workflow 管理平台定位，不转向独立 Incident/Runbook 平台。RunbookHermes 的理念作为增强层，用来提升 Agent 执行质量、Workflow 闭环能力和持续进化能力。
+
+后续演进重点不是替换当前产品骨架，而是把现有 Hermes Worker、Channel、Skill、MCP、Workflow、Policy、Trace、Evolution Proposal 和 Release Overlay 组织进 Agent / Workflow 管理主线。
 
 当前系统已经具备以下基础：
 
@@ -12,21 +14,21 @@
 - Evolution Proposal、Evaluation、Release Version、Release Overlay Runtime。
 - Hermes 控制台、Hermes 运维助手、进化提案页面。
 
-下一阶段的关键不是“让模型更自由”，而是让系统从“能运行 Agent”升级为“能管理一支 AI 运维团队”。
+下一阶段的关键不是“让模型更自由”，而是让系统从“能运行 Agent / Workflow”升级为“能治理 Agent 能力、增强 Workflow 闭环、沉淀执行经验”。
 
 ## 产品定位
 
 目标定位：
 
 ```text
-AIOps Agent = 可管理、可协作、可审计、可进化的数字运维团队平台
+AIOps Agent = 可管理、可协作、可审计、可进化的 Agent / Workflow 管理平台
 ```
 
 操作者不应该感知为“我在调用一个 Agent”，而应该感知为：
 
 - 我有一个运维 Leader 负责拆解、调度和裁决。
 - 我有多个专业 Worker 负责诊断、修复、复盘、审查、文档沉淀。
-- 我可以选择团队模板完成告警诊断、巡检、修复审批、故障复盘。
+- 我可以选择 Agent Team 或 Workflow 模板完成告警诊断、巡检、修复审批、故障复盘。
 - 平台会沉淀经验为 Skill，并通过受控发布机制让团队越用越懂业务。
 
 ## 设计原则
@@ -196,14 +198,15 @@ flowchart TB
 
 目标：
 
-- 把系统叙事从“Agent 管理平台”升级为“数字运维团队平台”。
+- 把系统叙事从“Agent 列表 + Workflow 列表”升级为“Agent / Workflow 管理平台 + Hermes 增强能力层”。
 - 让用户理解 Agent、Channel、Skill、MCP、Workflow、Policy、Trace、Release 的关系。
 
 工作项：
 
 - 更新产品文案和文档：
   - AIOps Agent。
-  - 数字运维团队。
+  - Agent / Workflow 管理平台。
+  - Hermes 增强能力层。
   - Hermes 是长期记忆和经验沉淀 Runtime。
 - Hermes 控制台重组为：
   - 总览。
@@ -227,7 +230,7 @@ flowchart TB
 
 实施切片：
 
-- P1a：产品文案收敛，把平台描述升级为“数字运维团队平台”。
+- P1a：产品文案收敛，把平台描述升级为“Agent / Workflow 管理平台 + Hermes 增强能力层”。
 - P1b：在 Hermes 控制台顶部增加派生 Team Overview，不新增数据库表。
 - P1c：用现有 Channel / Agent Binding / Worker / Skill / MCP / Release 数据展示团队能力覆盖。
 - P1d：明确 Team 当前是只读产品模型，P2 再升级为 `agent_teams` 和 `agent_team_runs` 一等对象。
@@ -278,124 +281,283 @@ P1 需要避免：
 - Parallel 模式至少跑通“多服务器状态摘要”。
 - Debate 模式至少跑通“发布建议讨论”。
 
-### P3：Hermes Skill 经验沉淀闭环
+实施切片：
+
+- P2a：新增 Team 一等对象：
+  - `agent_teams`
+  - `agent_team_members`
+  - `agent_team_runs`
+  - `agent_team_run_steps`
+- P2b：默认初始化三支团队：
+  - 告警诊断与修复团队：`pipeline`
+  - 巡检复盘团队：`parallel`
+  - 变更风险审查团队：`debate`
+- P2c：控制台优先读取 `/api/agent-teams`，后端未迁移时回退 P1 派生视图。
+- P2d：支持从团队卡片发起最小 Team Run。
+- P2e：Team Run 当前记录 Leader plan 和 Worker step evidence，不直接调用生产工具。
+
+P2 当前边界：
+
+- Team Run 是编排证据和状态对象。
+- Worker step 会关联 Agent、Channel、Worker role。
+- 真实 Hermes Worker 执行、审批任务嵌入和 Skill Candidate 生成留给下一切片。
+- 不绕过现有 Tool Approval / Workflow / PolicyGuard。
+
+### P3：Workflow Runbook 化增强
 
 目标：
 
-- 让 Hermes 运行经验形成可复用 Skill，而不是只停留在 trace。
+- 保持 Workflow 作为平台核心编排对象。
+- 吸收 RunbookHermes 的证据优先、风险门禁、审批执行、验证复盘理念。
+- 让 Workflow 模板从“节点串联”升级为“诊断-证据-风险-审批-执行-验证-复盘”的可审计闭环。
 
 工作项：
 
-- 每次 Team Run 结束后生成经验摘要：
-  - 背景。
-  - 证据。
-  - 决策。
-  - 成功/失败。
-  - 可复用步骤。
-- 支持从复盘结果生成 Skill Candidate。
-- Skill Candidate 包含：
-  - 来源 trace。
+- 保留旧默认 Workflow，不破坏已有自动化。
+- 增强 Hermes Workflow Template：
+  - Hermes 告警诊断与修复闭环。
+  - Hermes 故障诊断与审批修复。
+  - Hermes 巡检复盘与优化建议。
+- 每个模板节点补充 Runbook metadata：
+  - `runbookPhase`
+  - `evidenceRequired`
+  - `riskGate`
+  - `approvalRequired`
+  - `verificationRequired`
+  - `outputKey`
+- Workflow `agent_configs` 补充：
+  - `hermesEnhanced`
+  - `runbookDriven`
+  - `teamType`
+  - `collaborationMode`
+  - `runbookPattern`
+  - `stages`
+  - `safety`
+- Workflow 执行时把 Runbook metadata 注入 Agent context。
+- Workflow node result 写入 Runbook metadata，方便任务详情、trace 和复盘读取。
+- Workflow 列表展示 Hermes-enhanced、协作模式、阶段数、审批/验证门禁摘要。
+
+验收：
+
+- 管理员能在 Workflow 页面看到哪些模板已经 Hermes-enhanced。
+- Hermes 增强模板包含明确的证据、风险、审批、验证阶段。
+- 执行任务时每个节点上下文包含 runbook metadata。
+- `node_results` 中能追溯节点所属阶段、证据要求和门禁要求。
+- 旧 Workflow 仍按原逻辑执行。
+
+实施切片：
+
+- P3a：模板元数据增强和旧模板自动升级。
+- P3b：执行器透传 Runbook metadata。
+- P3c：Workflow 列表展示 Hermes-enhanced 摘要。
+- P3d：任务详情展示节点 Runbook 阶段和证据要求。
+- P3e：把审批/验证节点与现有 Tool Approval / Task 状态做只读聚合。
+
+P3 当前边界：
+
+- 不新增独立 Runbook 主对象。
+- 不让 Workflow 自动绕过审批执行危险工具。
+- 不重写 Workflow 执行状态机。
+- 先把 Runbook 语义固化到模板、上下文和结果中。
+
+### P4：Skill 运维语义化
+
+目标：
+
+- 把 Skill 从普通 prompt/配置升级为可版本化的运维技能包。
+
+工作项：
+
+- Skill 增加运维语义：
   - 适用场景。
-  - 前置条件。
-  - 工具依赖。
-  - 风险级别。
-  - 回滚/禁用建议。
-- 接入现有 Evolution Proposal：
-  - `skill_update`
-  - `workflow_template_update`
-  - `tool_policy_update`
-  - `prompt_update`
-- Skill 发布后通过 Release Overlay 影响 runtime effective config。
+  - 输入上下文要求。
+  - 证据要求。
+  - 推荐 MCP/Tool。
+  - 风险等级。
+  - 审批要求。
+  - 验证方式。
+  - 回滚建议。
+  - 版本状态。
+- Channel 能力摘要展示 Skill 覆盖。
+- Workflow 节点可以声明推荐 Skill。
+- Hermes Runtime 构造 prompt 时注入有效 Skill 摘要。
 
 验收：
 
-- 成功任务可以一键生成 Skill Candidate。
-- 失败任务可以生成修复型 Skill Proposal。
-- 发布后的 Skill 在下一次 Team Run trace 中能看到 active release version。
-- 回滚后 Team Run 使用旧版本配置。
+- Agent/Channel 页面能看懂某个 Skill 适合处理什么问题。
+- Workflow 模板能引用 Skill。
+- Skill 发布/回滚仍通过 Release 机制受控。
 
-### P4：统一控制台与运营视图
+### P5：Execution Evidence 证据链
 
 目标：
 
-- 做出类似 ClawManager 的统一中控感。
-- 管理员能从一个控制台看团队、能力、成本、安全和进化状态。
+- 让每次 Agent / Workflow / Team 执行都有结构化证据链。
 
 工作项：
 
-- 新增或增强控制台 Tab：
-  - Team Overview。
-  - Runtime Topology。
-  - Capability Inventory。
-  - Evolution Operations。
-  - Cost & Usage。
-  - Risk Surface。
-- Team Overview 展示：
-  - 团队数量。
-  - Leader/Worker 角色。
-  - 最近运行。
-  - 成功率。
-  - 待审批事项。
-- Evolution Operations 展示：
-  - 哪些 proposal 来自哪些失败。
-  - 为什么通过/失败。
-  - 是否值得发布。
-  - 发布影响哪些 Team/Channel/Skill/MCP/Workflow/Policy。
-- Cost & Usage 展示：
-  - 按 Team。
-  - 按 Agent。
-  - 按 Channel。
-  - 按 Worker。
-  - 按模型。
-- Risk Surface 展示：
-  - fallback。
-  - 高风险工具调用。
-  - 审批积压。
-  - release 未回滚计划。
-  - MCP Server 异常。
+- 标准化执行证据字段：
+  - `input`
+  - `context`
+  - `evidence`
+  - `hypothesis`
+  - `riskLevel`
+  - `plannedActions`
+  - `approvalId`
+  - `taskId`
+  - `verificationResult`
+  - `traceId`
+- Agent 执行详情展示证据和风险。
+- Workflow 任务详情展示节点证据。
+- Hermes 控制台展示 Team Run、Workflow Run、Trace、Approval 的关联链。
 
 验收：
 
-- 管理员不需要在多个页面之间拼线索。
-- 每个 Team 的能力、风险、成本和最近演进状态可一屏解释。
-- 高风险项能跳转到审批、trace、proposal 或 release。
+- 任意一次执行能回答“为什么这么判断、做了什么、结果如何”。
+- 证据链能支撑复盘和 Evolution Proposal。
 
-### P5：MCP Tool Bridge 与可选 Runtime Adapter
+### P6：Approval & Verification 闭环增强
 
 目标：
 
-- 把 MCP 从“注册中心”推进为“受控工具能力入口”。
-- 为 OpenClaw 类短任务 Runtime 预留 Adapter，不影响 Hermes 主线。
+- 把安全门禁吸收到现有审批和任务体系，允许 Hermes 参与修复但不能失控执行。
 
 工作项：
 
-- MCP Tool Bridge：
-  - capability discovery。
-  - tool/resource/prompt 缓存。
-  - MCP tool 映射为平台 Tool API 描述。
-  - 接入 PolicyGuard、Approval、Audit、Trace。
-  - 默认关闭，admin 显式启用。
-- Optional Runtime Adapter：
-  - 定义 Runtime Registry。
-  - 支持 `hermes`、`native`、`openclaw-compatible`。
-  - Channel 可以声明 runtime type。
-  - Leader 根据任务类型路由：
-    - 短平快、无记忆任务 -> OpenClaw-compatible。
-    - 需要经验沉淀 -> Hermes。
-    - 需要真实执行 -> Native Tool / Workflow。
+- 动作风险分类：
+  - `read_only`
+  - `low_risk`
+  - `high_risk`
+  - `destructive`
+- 高风险动作必须审批。
+- 执行前生成：
+  - impact。
+  - rollback。
+  - validation。
+- 执行后强制验证：
+  - 命令验证。
+  - 指标验证。
+  - 日志验证。
+  - 人工确认。
 
 验收：
 
-- 未启用 MCP tool 不进入 Agent 可用工具。
-- 启用 MCP tool 后仍经过审批和审计。
-- Runtime Adapter 不破坏现有 Hermes Worker。
-- OpenClaw-compatible 可以先用 mock/custom-http 方式验证，不作为硬依赖。
+- 高风险 prompt 不能绕过审批。
+- 修复执行后必须有验证结果。
+- 验证失败能进入复盘和改进提案。
 
-### P6：企业级部署、治理和持续运营
+### P7：Evolution 反馈驱动进化
 
 目标：
 
-- 让数字运维团队具备真实企业可用的部署、安全、治理和运营边界。
+- 让自我进化来自真实执行反馈，而不是泛化建议。
+
+提案来源：
+
+- Workflow 失败。
+- Tool 调用失败。
+- 审批被拒绝。
+- 验证失败。
+- 人工修改修复方案。
+- 同类问题重复发生。
+- 复盘 Agent 输出建议。
+
+提案类型：
+
+- Skill 改进。
+- Workflow 模板改进。
+- MCP Server 建议。
+- Tool Policy 调整。
+- Prompt / System Instruction 优化。
+- Runbook 文档更新。
+
+闭环：
+
+```text
+执行反馈
+  -> Evolve Agent 分析
+  -> Evolution Proposal
+  -> Review Queue
+  -> Admin 审批
+  -> Release Version
+  -> 回写 Skill / Workflow / Policy effective config
+```
+
+验收：
+
+- 每个 proposal 能追溯来源执行和失败原因。
+- 发布前可评估，发布后可回滚。
+
+### P8：Agent / Workflow 管理台产品化
+
+目标：
+
+- 保持 Agent / Workflow 管理平台定位，同时让管理台能表达团队、能力、风险和执行质量。
+
+工作项：
+
+- Agent 管理页增强：
+  - 所属 Team。
+  - 绑定 Channel。
+  - 可用 Skill。
+  - 可用 MCP。
+  - 可用 Tool。
+  - 最近执行效果。
+  - 风险权限。
+- Workflow 管理页增强：
+  - 是否 Hermes-enhanced。
+  - 使用哪些 Agent Team。
+  - 需要哪些 Skill/MCP。
+  - 是否包含审批。
+  - 是否包含验证。
+  - 最近成功率。
+- Hermes 控制台增强：
+  - Team 拓扑。
+  - Channel 健康。
+  - Skill 覆盖。
+  - MCP 健康。
+  - 执行质量。
+  - Evolution 反馈。
+
+验收：
+
+- 管理员不需要理解底层 Hermes 细节，也能管理能力。
+- Agent/Workflow/Hermes 控制台之间的关系一致。
+
+### P9：评估与回归测试体系
+
+目标：
+
+- 防止 Skill / Workflow / Policy 进化后变差。
+
+工作项：
+
+- 增加 Eval Dataset：
+  - 典型告警样本。
+  - 典型服务器故障。
+  - 典型 Kubernetes 问题。
+  - 历史失败案例。
+  - 审批拒绝案例。
+  - 验证失败案例。
+- 评估指标：
+  - 诊断是否命中。
+  - 是否引用证据。
+  - 是否误判风险。
+  - 是否建议危险动作。
+  - 是否生成验证步骤。
+  - 是否符合审批策略。
+  - 是否复用正确 Skill。
+
+验收：
+
+- 运行态变更发布前必须经过评估。
+- 回滚有明确触发条件。
+
+### P10：企业级部署、治理和持续运营
+
+目标：
+
+- 让 Agent / Workflow 管理平台具备真实企业可用的部署、安全、治理和运营边界。
 
 工作项：
 
@@ -440,18 +602,18 @@ P1 需要避免：
 ```text
 P1 信息架构收敛
   -> P2 Team Template + Pipeline 编排
-  -> P3 从 Team Run 生成 Skill Candidate
-  -> P4 控制台展示 Team / Skill / Proposal / Release 关系
+  -> P3 Workflow Runbook 化增强
+  -> P4 Skill 运维语义化
+  -> P5 Execution Evidence
 ```
 
 最小可用版本验收：
 
 - 有“告警诊断与修复团队”模板。
 - 用户能从 Hermes 运维助手或 Team 页面发起一次 Team Run。
-- Leader 能调用 Diagnose 和 Remediate Worker。
-- 输出能关联 approval/task/trace。
-- 复盘后能生成 Skill Candidate。
-- 管理员能看到该 Skill Candidate 来源于哪次 Team Run。
+- 工作流模板能明确诊断、证据、风险、审批、验证、复盘阶段。
+- 输出能关联 evidence、approval、task、trace。
+- 复盘后能生成可审批的 Skill / Workflow / Policy 改进建议。
 
 ## 与现有阶段的关系
 
@@ -465,11 +627,11 @@ P1 信息架构收敛
 
 本路线是产品化主线：
 
-- P1/P4 承接阶段 28。
+- P1/P8 承接阶段 28。
 - P2 新增 Team Orchestrator。
-- P3 承接阶段 24-30，让 Skill 经验沉淀真正进入运行态。
-- P5 承接已有阶段 31 MCP Tool Bridge，并预留 OpenClaw-compatible Runtime。
-- P6 承接已有阶段 32 多环境、灰度和治理。
+- P3 让 Workflow 吸收 RunbookHermes 的证据、风险、审批、验证语义。
+- P4-P7 承接阶段 24-30，让 Skill 经验沉淀和 Evolution 进入受控运行态。
+- P10 承接已有阶段 32 多环境、灰度和治理。
 
 ## 推荐推进顺序
 
@@ -480,24 +642,27 @@ P1a：文案和概念模型收敛
 P1b：Hermes 控制台 Team/Channel/Agent/Skill/MCP/Release 关系图
 P2a：Team Template 数据模型和只读页面
 P2b：Pipeline Team Run 最小执行
+P3a：Workflow 模板 Runbook metadata
+P3b：执行器透传 Runbook metadata
 ```
 
 第二批：
 
 ```text
-P3a：Team Run 经验摘要
-P3b：Skill Candidate 生成
-P4a：Evolution Operations 运营视图
-P4b：Cost & Risk Summary
+P3c：Workflow 页面 Hermes-enhanced 摘要
+P3d：任务详情 Runbook 阶段展示
+P4a：Skill 运维语义字段
+P5a：Execution Evidence 标准化
 ```
 
 第三批：
 
 ```text
-P5a：MCP Tool Bridge 受控导入
-P5b：OpenClaw-compatible Runtime Adapter 骨架
-P6a：staging replay / shadow run
-P6b：生产治理、备份恢复、发布审计
+P6a：Approval & Verification 闭环
+P7a：失败反馈生成 Evolution Proposal
+P8a：Agent / Workflow 管理台产品化
+P9a：Eval Dataset 与发布前评估
+P10a：生产治理、备份恢复、发布审计
 ```
 
 ## 风险与边界
@@ -510,7 +675,7 @@ P6b：生产治理、备份恢复、发布审计
 
 ## 一句话目标
 
-把 AIOps Agent 从“能运行多个 Agent 的平台”升级为“能管理一支 AI 运维团队的平台”：
+把 AIOps Agent 从“能运行多个 Agent 和 Workflow 的平台”升级为“能治理 Agent 能力、增强 Workflow 闭环、沉淀运维经验的平台”：
 
 ```text
 团队可配置

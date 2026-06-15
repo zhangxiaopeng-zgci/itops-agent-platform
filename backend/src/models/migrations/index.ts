@@ -17,6 +17,7 @@ import v015AddEvolutionProposals from './v015_add_evolution_proposals';
 import v016AddEvolutionProposalEvaluations from './v016_add_evolution_proposal_evaluations';
 import v017AddEvolutionReleaseVersions from './v017_add_evolution_release_versions';
 import v018AddEvolutionContinuousTasks from './v018_add_evolution_continuous_tasks';
+import v019AddAgentTeams from './v019_add_agent_teams';
 
 export const ALL_MIGRATIONS: Migration[] = [
   v001InitialSchema,
@@ -37,6 +38,7 @@ export const ALL_MIGRATIONS: Migration[] = [
   v016AddEvolutionProposalEvaluations,
   v017AddEvolutionReleaseVersions,
   v018AddEvolutionContinuousTasks,
+  v019AddAgentTeams,
 ];
 
 export function createMigrationManager(db: any): MigrationManager {

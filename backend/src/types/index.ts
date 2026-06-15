@@ -5,6 +5,16 @@ export interface WorkflowNode {
     label: string;
     agentId: string;
     allowFailure?: boolean;
+    avatar?: string;
+    description?: string;
+    runbookPhase?: string;
+    evidenceRequired?: string[];
+    riskGate?: string;
+    approvalRequired?: boolean;
+    verificationRequired?: boolean;
+    outputKey?: string;
+    inputKey?: string;
+    prompt?: string;
   };
   position: {
     x: number;
@@ -51,6 +61,11 @@ export interface NodeResult {
     executionTime?: number;
     runtime?: string | null;
     runtimeMetadata?: Record<string, unknown>;
+    runbookPhase?: string;
+    evidenceRequired?: string[];
+    riskGate?: string;
+    approvalRequired?: boolean;
+    verificationRequired?: boolean;
     trace?: Array<{
       type?: string;
       content?: string;

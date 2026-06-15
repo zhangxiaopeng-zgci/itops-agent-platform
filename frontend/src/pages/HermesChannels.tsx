@@ -1,6 +1,6 @@
 import { type ChangeEvent, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Activity, BookOpenCheck, Bot, Cable, CheckCircle2, Clock, Download, GitBranch, PlugZap, RefreshCw, Save, ShieldCheck, Upload, UsersRound, Wrench, XCircle } from 'lucide-react';
+import { Activity, BookOpenCheck, Bot, Cable, CheckCircle2, Clock, Download, GitBranch, Play, PlugZap, RefreshCw, Save, ShieldCheck, Upload, UsersRound, Wrench, XCircle } from 'lucide-react';
 import clsx from 'clsx';
 import api from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
@@ -195,6 +195,56 @@ interface HermesControlPlaneOverview {
   };
 }
 
+interface AgentTeam {
+  id: string;
+  name: string;
+  description?: string | null;
+  team_type: string;
+  collaboration_mode: string;
+  status: string;
+  members: Array<{
+    id: string;
+    role: string;
+    display_name: string;
+    agent_id?: string | null;
+    agent_name?: string | null;
+    channel_type?: string | null;
+    channel_id?: string | null;
+    channel_name?: string | null;
+    worker_role?: string | null;
+    worker_healthy: boolean;
+    step_order: number;
+    enabled: number;
+  }>;
+  readiness: {
+    ready: boolean;
+    missing: string[];
+    warnings: string[];
+  };
+  capabilitySummary: {
+    channels: number;
+    agents: number;
+    workers: number;
+    skills: number;
+    mcpServers: number;
+    tools: number;
+    activeReleases: number;
+  };
+  recentRuns?: AgentTeamRun[];
+}
+
+interface AgentTeamRun {
+  id: string;
+  team_id: string;
+  team_name?: string;
+  mode: string;
+  input: string;
+  status: string;
+  correlation_id?: string | null;
+  created_at: string;
+  completed_at?: string | null;
+}
+
 interface ChannelFormState {
   name: string;
   description: string;
@@ -233,6 +283,9 @@ interface DigitalOpsTeam {
   mcpServers: number;
   tools: number;
   ready: boolean;
+  source: 'derived' | 'api';
+  mode: string;
+  recentRunStatus?: string | null;
 }
 
 const panelClass = 'bg-surface/95 rounded-xl border border-border shadow-sm';
@@ -301,6 +354,16 @@ export default function HermesChannels() {
       const res = await api.get('/api/hermes-control-plane/overview');
       return res.data.data as HermesControlPlaneOverview;
     },
+    refetchInterval: 30000
+  });
+
+  const { data: agentTeams } = useQuery({
+    queryKey: ['agent-teams'],
+    queryFn: async () => {
+      const res = await api.get('/api/agent-teams');
+      return res.data.data as AgentTeam[];
+    },
+    retry: 1,
     refetchInterval: 30000
   });
 
@@ -381,6 +444,27 @@ export default function HermesChannels() {
     },
     onError: (error: unknown) => {
       toast.error(error instanceof Error ? error.message : t('hermesChannels.toast.mcpCreateFailed'));
+    }
+  });
+
+  const createTeamRunMutation = useMutation({
+    mutationFn: async ({ teamId, input, mode }: { teamId: string; input: string; mode: string }) => {
+      const res = await api.post(`/api/agent-teams/${teamId}/runs`, {
+        input,
+        mode,
+        context: {
+          source: 'digital_ops_team_console',
+          phase: 'P2'
+        }
+      });
+      return res.data.data as AgentTeamRun;
+    },
+    onSuccess: () => {
+      toast.success(t('hermesChannels.team.runCreated'));
+      queryClient.invalidateQueries({ queryKey: ['agent-teams'] });
+    },
+    onError: (error: unknown) => {
+      toast.error(error instanceof Error ? error.message : t('hermesChannels.team.runFailed'));
     }
   });
 
@@ -497,7 +581,15 @@ export default function HermesChannels() {
           </div>
         </div>
 
-        {overview && <DigitalOpsTeamOverview overview={overview} />}
+        {overview && (
+          <DigitalOpsTeamOverview
+            overview={overview}
+            agentTeams={agentTeams || []}
+            canRun={user?.role === 'admin' || user?.role === 'operator'}
+            runningTeamId={createTeamRunMutation.variables?.teamId || null}
+            onRun={(teamId, input, mode) => createTeamRunMutation.mutate({ teamId, input, mode })}
+          />
+        )}
 
         {overview && <ControlPlaneOverview overview={overview} />}
 
@@ -578,12 +670,31 @@ export default function HermesChannels() {
   );
 }
 
-function DigitalOpsTeamOverview({ overview }: { overview: HermesControlPlaneOverview }) {
+function DigitalOpsTeamOverview({
+  overview,
+  agentTeams,
+  canRun,
+  runningTeamId,
+  onRun
+}: {
+  overview: HermesControlPlaneOverview;
+  agentTeams: AgentTeam[];
+  canRun: boolean;
+  runningTeamId: string | null;
+  onRun: (teamId: string, input: string, mode: string) => void;
+}) {
   const { t } = useLocale();
-  const teams = useMemo(() => buildDigitalOpsTeams(overview), [overview]);
+  const [runInputs, setRunInputs] = useState<Record<string, string>>({});
+  const teams = useMemo(() => buildDigitalOpsTeams(overview, agentTeams), [overview, agentTeams]);
   const enabledSkills = overview.capabilityInventory.reduce((sum, item) => sum + item.enabledSkills, 0);
   const enabledMcpServers = overview.capabilityInventory.reduce((sum, item) => sum + item.enabledMcpServers, 0);
   const activeReleases = overview.evolutionState.activeReleaseCount;
+
+  const handleRun = (team: DigitalOpsTeam) => {
+    const input = (runInputs[team.id] || '').trim();
+    if (!input) return;
+    onRun(team.id, input, team.mode);
+  };
 
   return (
     <div className={`${panelClass} p-5`}>
@@ -634,6 +745,36 @@ function DigitalOpsTeamOverview({ overview }: { overview: HermesControlPlaneOver
               <MetricChip label={t('hermesChannels.overview.skills')} value={String(team.skills)} />
               <MetricChip label={t('hermesChannels.overview.mcp')} value={String(team.mcpServers)} />
               <MetricChip label={t('hermesChannels.overview.tools')} value={String(team.tools)} />
+            </div>
+
+            <div className="mt-4 pt-4 border-t border-border">
+              <div className="flex items-center justify-between gap-2 text-xs text-text-tertiary mb-2">
+                <span>{team.source === 'api' ? t('hermesChannels.team.firstClass') : t('hermesChannels.team.derived')}</span>
+                <span>{t('hermesChannels.team.modeLabel', { mode: team.mode })}</span>
+              </div>
+              <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
+                <input
+                  disabled={!canRun || team.source !== 'api'}
+                  className={inputClass}
+                  value={runInputs[team.id] || ''}
+                  onChange={(event) => setRunInputs({ ...runInputs, [team.id]: event.target.value })}
+                  placeholder={team.source === 'api' ? t('hermesChannels.team.runPlaceholder') : t('hermesChannels.team.runUnavailable')}
+                />
+                <button
+                  type="button"
+                  disabled={!canRun || team.source !== 'api' || !runInputs[team.id]?.trim() || runningTeamId === team.id}
+                  onClick={() => handleRun(team)}
+                  className="inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-primary text-white hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  <Play className="w-4 h-4" />
+                  {runningTeamId === team.id ? t('hermesChannels.team.running') : t('hermesChannels.team.run')}
+                </button>
+              </div>
+              {team.recentRunStatus && (
+                <div className="mt-2 text-xs text-text-tertiary">
+                  {t('hermesChannels.team.lastRun', { status: team.recentRunStatus })}
+                </div>
+              )}
             </div>
           </div>
         ))}
@@ -905,42 +1046,77 @@ function sumRecord(record: Record<string, number>) {
   return Object.values(record).reduce((sum, value) => sum + Number(value || 0), 0);
 }
 
-function buildDigitalOpsTeams(overview: HermesControlPlaneOverview): DigitalOpsTeam[] {
+function buildDigitalOpsTeams(overview: HermesControlPlaneOverview, agentTeams: AgentTeam[]): DigitalOpsTeam[] {
   const specs: Array<{
     id: string;
+    teamType: string;
     titleKey: MessageKey;
     descKey: MessageKey;
     icon: typeof Bot;
     channelTypes: string[];
     workerRoles: string[];
+    mode: string;
   }> = [
     {
       id: 'alert-remediation',
+      teamType: 'alert_remediation',
       titleKey: 'hermesChannels.team.alertRemediation.title',
       descKey: 'hermesChannels.team.alertRemediation.desc',
       icon: ShieldCheck,
       channelTypes: ['diagnose', 'remediate', 'review'],
-      workerRoles: ['diagnose', 'remediate', 'evolve']
+      workerRoles: ['diagnose', 'remediate', 'evolve'],
+      mode: 'pipeline'
     },
     {
       id: 'inspection-review',
+      teamType: 'inspection_review',
       titleKey: 'hermesChannels.team.inspectionReview.title',
       descKey: 'hermesChannels.team.inspectionReview.desc',
       icon: Activity,
       channelTypes: ['diagnose', 'review'],
-      workerRoles: ['diagnose', 'evolve']
+      workerRoles: ['diagnose', 'evolve'],
+      mode: 'parallel'
     },
     {
       id: 'change-risk',
+      teamType: 'change_risk',
       titleKey: 'hermesChannels.team.changeRisk.title',
       descKey: 'hermesChannels.team.changeRisk.desc',
       icon: GitBranch,
       channelTypes: ['remediate', 'review'],
-      workerRoles: ['remediate', 'evolve']
+      workerRoles: ['remediate', 'evolve'],
+      mode: 'debate'
     }
   ];
 
   return specs.map((spec) => {
+    const apiTeam = agentTeams.find((team) => team.team_type === spec.teamType);
+    if (apiTeam) {
+      return {
+        id: apiTeam.id,
+        titleKey: spec.titleKey,
+        descKey: spec.descKey,
+        icon: spec.icon,
+        channelTypes: spec.channelTypes,
+        workerRoles: apiTeam.members
+          .map((member) => member.worker_role)
+          .filter((role): role is string => Boolean(role)),
+        channelNames: apiTeam.members
+          .map((member) => member.channel_name)
+          .filter((name): name is string => Boolean(name)),
+        agentNames: apiTeam.members
+          .map((member) => member.agent_name)
+          .filter((name): name is string => Boolean(name)),
+        skills: apiTeam.capabilitySummary.skills,
+        mcpServers: apiTeam.capabilitySummary.mcpServers,
+        tools: apiTeam.capabilitySummary.tools,
+        ready: apiTeam.readiness.ready,
+        source: 'api' as const,
+        mode: apiTeam.collaboration_mode,
+        recentRunStatus: apiTeam.recentRuns?.[0]?.status || null
+      };
+    }
+
     const inventory = overview.capabilityInventory.filter((item) => spec.channelTypes.includes(item.channelType));
     const channels = overview.channels.filter((channel) => spec.channelTypes.includes(channel.type));
     const agents = overview.agentBindings.filter((agent) => agent.channel_type && spec.channelTypes.includes(agent.channel_type));
@@ -954,7 +1130,10 @@ function buildDigitalOpsTeams(overview: HermesControlPlaneOverview): DigitalOpsT
       tools: inventory.reduce((sum, item) => sum + item.enabledTools, 0),
       ready: spec.channelTypes.every((type) => channels.some((channel) => channel.type === type && channel.enabled === 1))
         && spec.workerRoles.every((role) => workers.some((worker) => worker.role === role && worker.healthy))
-        && agents.length > 0
+        && agents.length > 0,
+      source: 'derived' as const,
+      mode: spec.mode,
+      recentRunStatus: null
     };
   });
 }
