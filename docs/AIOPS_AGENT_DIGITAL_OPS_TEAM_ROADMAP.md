@@ -393,7 +393,7 @@ P4 实施切片：
 - [x] P4a：Skill 增加运维语义字段：适用场景、输入上下文、证据、推荐工具/MCP、风险、审批、验证、回滚、输出契约和版本状态。
 - [x] P4b：Skill API、Channel 解析、Hermes Runtime prompt 注入和能力包导入导出贯通语义字段。
 - [x] P4c：Hermes 团队控制台展示 Channel Skill 覆盖摘要，包括风险、审批、场景、证据、推荐工具、MCP、验证和回滚。
-- [ ] P4d：Workflow 节点声明 recommended Skill，并在模板编辑器/任务详情中展示引用关系。
+- [x] P4d：Workflow 节点声明 recommended Skill，并在模板编辑器/任务详情中展示引用关系。
 - [ ] P4e：Skill 语义与 Release/Evaluation 进一步联动，形成发布前评估和回滚边界。
 
 P4 当前边界：

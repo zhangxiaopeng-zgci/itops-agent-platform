@@ -12,6 +12,8 @@ export interface WorkflowNode {
     riskGate?: string;
     approvalRequired?: boolean;
     verificationRequired?: boolean;
+    recommendedSkillId?: string;
+    recommendedSkillIds?: string[];
     outputKey?: string;
     inputKey?: string;
     prompt?: string;
@@ -66,6 +68,7 @@ export interface NodeResult {
     riskGate?: string;
     approvalRequired?: boolean;
     verificationRequired?: boolean;
+    recommendedSkillIds?: string[];
     trace?: Array<{
       type?: string;
       content?: string;

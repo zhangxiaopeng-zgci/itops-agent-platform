@@ -12,6 +12,7 @@ interface WorkflowAgentNodeSpec {
   riskGate?: string;
   approvalRequired?: boolean;
   verificationRequired?: boolean;
+  recommendedSkillId?: string;
   outputKey?: string;
 }
 
@@ -39,6 +40,7 @@ const HERMES_WORKFLOW_TEMPLATES: WorkflowTemplateSpec[] = [
         runbookPhase: 'diagnose',
         evidenceRequired: ['alert', 'metrics', 'recent_changes'],
         riskGate: 'read_only',
+        recommendedSkillId: 'skill-hermes-diagnosis',
         outputKey: 'diagnosis'
       },
       {
@@ -48,6 +50,7 @@ const HERMES_WORKFLOW_TEMPLATES: WorkflowTemplateSpec[] = [
         runbookPhase: 'evidence',
         evidenceRequired: ['logs'],
         riskGate: 'read_only',
+        recommendedSkillId: 'skill-hermes-diagnosis',
         outputKey: 'log_evidence'
       },
       {
@@ -57,6 +60,7 @@ const HERMES_WORKFLOW_TEMPLATES: WorkflowTemplateSpec[] = [
         runbookPhase: 'evidence',
         evidenceRequired: ['server_metrics', 'process_state'],
         riskGate: 'read_only',
+        recommendedSkillId: 'skill-hermes-diagnosis',
         outputKey: 'server_evidence'
       },
       {
@@ -68,6 +72,7 @@ const HERMES_WORKFLOW_TEMPLATES: WorkflowTemplateSpec[] = [
         riskGate: 'approval_required',
         approvalRequired: true,
         verificationRequired: true,
+        recommendedSkillId: 'skill-hermes-remediation-approval',
         outputKey: 'remediation_plan'
       },
       {
@@ -77,6 +82,7 @@ const HERMES_WORKFLOW_TEMPLATES: WorkflowTemplateSpec[] = [
         runbookPhase: 'review',
         evidenceRequired: ['remediation_plan', 'verification_result'],
         riskGate: 'read_only',
+        recommendedSkillId: 'skill-hermes-review-evolution',
         outputKey: 'runbook_report'
       }
     ]
@@ -95,6 +101,7 @@ const HERMES_WORKFLOW_TEMPLATES: WorkflowTemplateSpec[] = [
         runbookPhase: 'diagnose',
         evidenceRequired: ['symptom', 'metrics', 'logs'],
         riskGate: 'read_only',
+        recommendedSkillId: 'skill-hermes-diagnosis',
         outputKey: 'rca'
       },
       {
@@ -104,6 +111,7 @@ const HERMES_WORKFLOW_TEMPLATES: WorkflowTemplateSpec[] = [
         runbookPhase: 'evidence',
         evidenceRequired: ['server_state'],
         riskGate: 'read_only',
+        recommendedSkillId: 'skill-hermes-diagnosis',
         outputKey: 'command_evidence'
       },
       {
@@ -115,6 +123,7 @@ const HERMES_WORKFLOW_TEMPLATES: WorkflowTemplateSpec[] = [
         riskGate: 'approval_required',
         approvalRequired: true,
         verificationRequired: true,
+        recommendedSkillId: 'skill-hermes-remediation-approval',
         outputKey: 'repair_plan'
       },
       {
@@ -124,6 +133,7 @@ const HERMES_WORKFLOW_TEMPLATES: WorkflowTemplateSpec[] = [
         runbookPhase: 'evolve',
         evidenceRequired: ['repair_plan', 'task_result', 'verification_result'],
         riskGate: 'review_required',
+        recommendedSkillId: 'skill-hermes-review-evolution',
         outputKey: 'evolution_proposal'
       }
     ]
@@ -142,6 +152,7 @@ const HERMES_WORKFLOW_TEMPLATES: WorkflowTemplateSpec[] = [
         runbookPhase: 'inspect',
         evidenceRequired: ['metrics', 'service_state'],
         riskGate: 'read_only',
+        recommendedSkillId: 'skill-hermes-diagnosis',
         outputKey: 'inspection_evidence'
       },
       {
@@ -151,6 +162,7 @@ const HERMES_WORKFLOW_TEMPLATES: WorkflowTemplateSpec[] = [
         runbookPhase: 'evidence',
         evidenceRequired: ['server_state'],
         riskGate: 'read_only',
+        recommendedSkillId: 'skill-hermes-diagnosis',
         outputKey: 'server_evidence'
       },
       {
@@ -160,6 +172,7 @@ const HERMES_WORKFLOW_TEMPLATES: WorkflowTemplateSpec[] = [
         runbookPhase: 'report',
         evidenceRequired: ['inspection_evidence', 'server_evidence'],
         riskGate: 'read_only',
+        recommendedSkillId: 'skill-hermes-review-evolution',
         outputKey: 'inspection_report'
       },
       {
@@ -169,6 +182,7 @@ const HERMES_WORKFLOW_TEMPLATES: WorkflowTemplateSpec[] = [
         runbookPhase: 'evolve',
         evidenceRequired: ['inspection_report'],
         riskGate: 'review_required',
+        recommendedSkillId: 'skill-hermes-review-evolution',
         outputKey: 'optimization_proposal'
       }
     ]
@@ -418,6 +432,8 @@ function buildLinearAgentWorkflow(
       riskGate: spec.riskGate || 'read_only',
       approvalRequired: Boolean(spec.approvalRequired),
       verificationRequired: Boolean(spec.verificationRequired),
+      recommendedSkillId: spec.recommendedSkillId,
+      recommendedSkillIds: spec.recommendedSkillId ? [spec.recommendedSkillId] : [],
       outputKey: spec.outputKey
     }
   }));
@@ -452,6 +468,8 @@ function buildHermesWorkflowAgentConfig(template: WorkflowTemplateSpec) {
       riskGate: node.riskGate || 'read_only',
       approvalRequired: Boolean(node.approvalRequired),
       verificationRequired: Boolean(node.verificationRequired),
+      recommendedSkillId: node.recommendedSkillId || null,
+      recommendedSkillIds: node.recommendedSkillId ? [node.recommendedSkillId] : [],
       outputKey: node.outputKey || null
     }))
   };

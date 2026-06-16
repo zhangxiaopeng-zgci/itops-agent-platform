@@ -41,6 +41,15 @@ interface Agent {
   description?: string;
 }
 
+interface SkillPack {
+  id: string;
+  name: string;
+  category: string;
+  version: string;
+  risk_level?: string;
+  approval_policy?: string;
+}
+
 interface WorkflowData {
   id?: string;
   name: string;
@@ -88,6 +97,11 @@ const AgentNode = ({ data, selected }: { data: any; selected: boolean }) => {
           {t('workflowEditor.node.promptConfigured')}
         </div>
       )}
+      {data.recommendedSkillId && (
+        <div className="mt-2 text-xs text-teal-600 dark:text-teal-300 bg-teal-500/10 px-2 py-1 rounded border border-teal-500/25">
+          {t('workflowEditor.node.skillConfigured')}
+        </div>
+      )}
       <Handle type="source" position={Position.Right} className="w-3 h-3 bg-primary" />
     </div>
   );
@@ -121,6 +135,14 @@ function WorkflowEditorContent() {
     queryFn: async () => {
       const res = await api.get('/api/agents');
       return res.data.data as Agent[];
+    },
+  });
+
+  const { data: skills } = useQuery({
+    queryKey: ['skills', 'workflow-editor'],
+    queryFn: async () => {
+      const res = await api.get('/api/skills', { params: { enabled: true } });
+      return (res.data.data || []) as SkillPack[];
     },
   });
 
@@ -648,6 +670,34 @@ function WorkflowEditorContent() {
                     rows={2}
                     className="w-full px-3 py-2 rounded bg-background border border-border focus:border-primary focus:outline-none resize-none"
                   />
+                </div>
+
+                <div className="pt-3 border-t border-border">
+                  <label className="block text-sm text-text-secondary mb-2">{t('workflowEditor.config.recommendedSkill')}</label>
+                  <select
+                    value={(selectedNode.data?.recommendedSkillId as string) || ''}
+                    onChange={(e) => {
+                      const skillId = e.target.value;
+                      const nextSkillIds = skillId ? [skillId] : [];
+                      setNodes((nds) =>
+                        nds.map((n) =>
+                          n.id === selectedNode.id
+                            ? { ...n, data: { ...n.data, recommendedSkillId: skillId, recommendedSkillIds: nextSkillIds } }
+                            : n
+                        )
+                      );
+                      setSelectedNode((prev) => prev ? { ...prev, data: { ...prev.data, recommendedSkillId: skillId, recommendedSkillIds: nextSkillIds } } : null);
+                    }}
+                    className="w-full px-3 py-2 rounded bg-background border border-border focus:border-primary focus:outline-none text-sm"
+                  >
+                    <option value="">{t('workflowEditor.config.noRecommendedSkill')}</option>
+                    {(skills || []).map((skill) => (
+                      <option key={skill.id} value={skill.id}>
+                        {skill.name} · {skill.category} · {skill.risk_level || 'medium'}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-text-secondary mt-1">{t('workflowEditor.config.recommendedSkillHelp')}</p>
                 </div>
 
                 {/* Input/output config */}

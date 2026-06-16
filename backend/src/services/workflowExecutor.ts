@@ -171,7 +171,8 @@ export async function executeWorkflow(
             evidenceRequired: node.data.evidenceRequired || [],
             riskGate: node.data.riskGate,
             approvalRequired: Boolean(node.data.approvalRequired),
-            verificationRequired: Boolean(node.data.verificationRequired)
+            verificationRequired: Boolean(node.data.verificationRequired),
+            recommendedSkillIds: getRecommendedSkillIds(node)
           }
         };
         
@@ -299,8 +300,24 @@ function buildRunbookNodeContext(node: WorkflowNode) {
     riskGate: node.data.riskGate || null,
     approvalRequired: Boolean(node.data.approvalRequired),
     verificationRequired: Boolean(node.data.verificationRequired),
+    recommendedSkillIds: getRecommendedSkillIds(node),
     outputKey: node.data.outputKey || null
   };
+}
+
+function getRecommendedSkillIds(node: WorkflowNode): string[] {
+  const ids = new Set<string>();
+  if (typeof node.data.recommendedSkillId === 'string' && node.data.recommendedSkillId.trim()) {
+    ids.add(node.data.recommendedSkillId.trim());
+  }
+  if (Array.isArray(node.data.recommendedSkillIds)) {
+    node.data.recommendedSkillIds.forEach((skillId) => {
+      if (typeof skillId === 'string' && skillId.trim()) {
+        ids.add(skillId.trim());
+      }
+    });
+  }
+  return Array.from(ids);
 }
 
 async function generateWorkflowExecutionReport(

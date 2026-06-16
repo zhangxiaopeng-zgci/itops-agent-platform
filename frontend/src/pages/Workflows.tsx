@@ -536,9 +536,10 @@ export default function Workflows() {
                     </p>
 
                     {isHermesEnhancedWorkflow(workflow) && (
-                      <div className="mb-4 grid grid-cols-1 sm:grid-cols-3 gap-2">
+                      <div className="mb-4 grid grid-cols-1 sm:grid-cols-4 gap-2">
                         <RunbookChip label={t('workflows.runbook.mode')} value={workflow.agent_configs?.collaborationMode || '-'} />
                         <RunbookChip label={t('workflows.runbook.stages')} value={String(workflow.agent_configs?.stages?.length || 0)} />
+                        <RunbookChip label={t('workflows.runbook.skills')} value={String(countRecommendedSkills(workflow))} />
                         <RunbookChip
                           label={t('workflows.runbook.gates')}
                           value={summarizeRunbookGates(workflow, {
@@ -696,6 +697,31 @@ function summarizeRunbookGates(
     return labels.readOnly;
   }
   return labels.gateSummary(approvalCount, verificationCount);
+}
+
+function countRecommendedSkills(workflow: Workflow) {
+  const skillIds = new Set<string>();
+  (workflow.agent_configs?.stages || []).forEach((stage: any) => {
+    if (typeof stage.recommendedSkillId === 'string' && stage.recommendedSkillId) {
+      skillIds.add(stage.recommendedSkillId);
+    }
+    if (Array.isArray(stage.recommendedSkillIds)) {
+      stage.recommendedSkillIds.forEach((skillId: unknown) => {
+        if (typeof skillId === 'string' && skillId) skillIds.add(skillId);
+      });
+    }
+  });
+  (workflow.nodes || []).forEach((node: any) => {
+    if (typeof node.data?.recommendedSkillId === 'string' && node.data.recommendedSkillId) {
+      skillIds.add(node.data.recommendedSkillId);
+    }
+    if (Array.isArray(node.data?.recommendedSkillIds)) {
+      node.data.recommendedSkillIds.forEach((skillId: unknown) => {
+        if (typeof skillId === 'string' && skillId) skillIds.add(skillId);
+      });
+    }
+  });
+  return skillIds.size;
 }
 
 function RunbookChip({ label, value }: { label: string; value: string }) {

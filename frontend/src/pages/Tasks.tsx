@@ -47,6 +47,13 @@ interface ToolApproval {
   execution_result?: Record<string, unknown> | null;
 }
 
+interface SkillPack {
+  id: string;
+  name: string;
+  category: string;
+  version: string;
+}
+
 const taskStatusKeys: Record<string, MessageKey> = {
   pending: 'status.task.pending',
   running: 'status.task.running',
@@ -139,6 +146,16 @@ export default function Tasks() {
     },
     refetchInterval: 30000,
   });
+
+  const { data: skills } = useQuery({
+    queryKey: ['skills', 'task-runbook-skill-map'],
+    queryFn: async () => {
+      const res = await api.get('/api/skills', { params: { enabled: true } });
+      return (res.data.data || []) as SkillPack[];
+    },
+  });
+
+  const skillNameById = new Map((skills || []).map((skill) => [skill.id, skill.name]));
 
   useEffect(() => {
     if (!token) return;
@@ -543,6 +560,11 @@ export default function Tasks() {
                                 {formatRunbookPhase(runbook.phase, t)}
                               </span>
                             )}
+                            {runbook.recommendedSkillIds.length > 0 && (
+                              <span className="px-2 py-0.5 rounded-md bg-teal-500/10 text-teal-500 text-xs whitespace-nowrap">
+                                {t('tasks.runbook.skill')}
+                              </span>
+                            )}
                             {status === 'completed' && (
                               <CheckCircle className="w-4 h-4 text-status-success" />
                             )}
@@ -736,7 +758,7 @@ export default function Tasks() {
                                 </span>
                               </div>
 
-                              {(runbook.phase || runbook.evidenceRequired.length > 0 || runbook.riskGate || runbook.approvalRequired || runbook.verificationRequired) && (
+                              {(runbook.phase || runbook.recommendedSkillIds.length > 0 || runbook.evidenceRequired.length > 0 || runbook.riskGate || runbook.approvalRequired || runbook.verificationRequired) && (
                                 <div className="px-4 py-3 border-b border-border bg-surface/40">
                                   <div className="grid grid-cols-1 lg:grid-cols-4 gap-3">
                                     {runbook.phase && (
@@ -762,6 +784,22 @@ export default function Tasks() {
                                       tone={runbook.verificationRequired ? 'success' : 'normal'}
                                     />
                                   </div>
+
+                                  {runbook.recommendedSkillIds.length > 0 && (
+                                    <div className="mt-3">
+                                      <div className="text-xs text-text-tertiary mb-2">{t('tasks.runbook.recommendedSkills')}</div>
+                                      <div className="flex flex-wrap gap-2">
+                                        {runbook.recommendedSkillIds.map((skillId) => (
+                                          <span
+                                            key={skillId}
+                                            className="px-2 py-1 rounded-md border border-teal-500/25 bg-teal-500/10 text-xs text-teal-600 dark:text-teal-300"
+                                          >
+                                            {skillNameById.get(skillId) || skillId}
+                                          </span>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  )}
 
                                   {runbook.evidenceRequired.length > 0 && (
                                     <div className="mt-3">
@@ -1018,8 +1056,14 @@ function getRunbookMetadata(node: any, result: any) {
     evidenceRequired: normalizeStringList(metadata.evidenceRequired || node.data?.evidenceRequired),
     riskGate: metadata.riskGate || node.data?.riskGate || null,
     approvalRequired: Boolean(metadata.approvalRequired ?? node.data?.approvalRequired),
-    verificationRequired: Boolean(metadata.verificationRequired ?? node.data?.verificationRequired)
+    verificationRequired: Boolean(metadata.verificationRequired ?? node.data?.verificationRequired),
+    recommendedSkillIds: normalizeRecommendedSkillIds(metadata.recommendedSkillIds || node.data?.recommendedSkillIds || node.data?.recommendedSkillId)
   };
+}
+
+function normalizeRecommendedSkillIds(value: unknown): string[] {
+  if (typeof value === 'string' && value.trim()) return [value.trim()];
+  return normalizeStringList(value);
 }
 
 function normalizeStringList(value: unknown): string[] {
