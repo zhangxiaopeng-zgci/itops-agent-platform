@@ -1,4 +1,4 @@
-import { randomUUID } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import { scheduleJob, Job } from 'node-schedule';
 import db from '../models/database';
 import { logger } from '../utils/logger';
@@ -58,10 +58,13 @@ export interface EvolutionReviewQueueRecord {
   status: string;
   correlation_id: string | null;
   generated_proposal_id: string | null;
+  cluster_key: string | null;
+  normalized_reason: string | null;
   created_at: string;
   reviewed_at: string | null;
   proposal?: EvolutionReviewQueueProposalSummary | null;
   review_value?: EvolutionReviewQueueValueSummary;
+  cluster?: EvolutionReviewQueueClusterSummary | null;
 }
 
 export interface EvolutionReviewQueueProposalSummary {
@@ -93,6 +96,21 @@ export interface EvolutionReviewQueueValueSummary {
   score: number | null;
   should_promote: boolean;
   reason: string;
+}
+
+export interface EvolutionReviewQueueClusterSummary {
+  key: string;
+  normalized_reason: string;
+  occurrence_count: number;
+  linked_proposal_count: number;
+  first_seen_at: string | null;
+  last_seen_at: string | null;
+  samples: Array<{
+    id: string;
+    source_id: string;
+    reason: string | null;
+    created_at: string;
+  }>;
 }
 
 class EvolutionContinuousService {
@@ -371,6 +389,7 @@ export function listEvolutionReviewQueue(filters: {
 function queueFailureEvidence(): Record<string, unknown> {
   let queued = 0;
   let generated = 0;
+  let reusedClusterProposals = 0;
   const proposalIds = new Set<string>();
   const workerRuns = db.prepare(`
     SELECT id, worker_role, status, correlation_id, error
@@ -392,6 +411,7 @@ function queueFailureEvidence(): Record<string, unknown> {
     });
     queued += result.queued;
     generated += result.generated;
+    reusedClusterProposals += result.reusedClusterProposal;
     addString(result.proposalId, proposalIds);
   });
 
@@ -418,6 +438,7 @@ function queueFailureEvidence(): Record<string, unknown> {
     });
     queued += result.queued;
     generated += result.generated;
+    reusedClusterProposals += result.reusedClusterProposal;
     addString(result.proposalId, proposalIds);
   });
 
@@ -454,12 +475,14 @@ function queueFailureEvidence(): Record<string, unknown> {
     });
     queued += result.queued;
     generated += result.generated;
+    reusedClusterProposals += result.reusedClusterProposal;
     addString(result.proposalId, proposalIds);
   });
 
   return {
     queued,
     generated,
+    reusedClusterProposals,
     generatedProposalId: Array.from(proposalIds)[0] || undefined,
     proposalIds: Array.from(proposalIds),
     workerRunCandidates: workerRuns.length,
@@ -471,6 +494,7 @@ function queueFailureEvidence(): Record<string, unknown> {
 function queueRejectedApprovalEvidence(): Record<string, unknown> {
   let queued = 0;
   let generated = 0;
+  let reusedClusterProposals = 0;
   const proposalIds = new Set<string>();
   const approvals = db.prepare(`
     SELECT id, tool_name, risk_level, reason, status, correlation_id, review_comment, input
@@ -495,12 +519,14 @@ function queueRejectedApprovalEvidence(): Record<string, unknown> {
     });
     queued += result.queued;
     generated += result.generated;
+    reusedClusterProposals += result.reusedClusterProposal;
     addString(result.proposalId, proposalIds);
   });
 
   return {
     queued,
     generated,
+    reusedClusterProposals,
     generatedProposalId: Array.from(proposalIds)[0] || undefined,
     proposalIds: Array.from(proposalIds),
     rejectedApprovalCandidates: approvals.length
@@ -548,30 +574,60 @@ function enqueueReviewItem(input: {
   priority: string;
   correlationId?: string | null;
   evidence?: Record<string, unknown>;
-}): { queued: number; generated: number; proposalId: string | null } {
+}): { queued: number; generated: number; reusedClusterProposal: number; proposalId: string | null } {
+  const cluster = buildFeedbackCluster(input);
+  const representativeProposalId = findRepresentativeClusterProposalId(cluster.key);
   const result = db.prepare(`
     INSERT OR IGNORE INTO evolution_review_queue (
-      id, source_type, source_id, reason, priority, status, correlation_id, created_at
+      id, source_type, source_id, reason, priority, status, correlation_id,
+      cluster_key, normalized_reason, created_at
     )
-    VALUES (?, ?, ?, ?, ?, 'queued', ?, CURRENT_TIMESTAMP)
+    VALUES (?, ?, ?, ?, ?, 'queued', ?, ?, ?, CURRENT_TIMESTAMP)
   `).run(
     randomUUID(),
     input.sourceType,
     input.sourceId,
     input.reason,
     input.priority,
-    input.correlationId || null
+    input.correlationId || null,
+    cluster.key,
+    cluster.normalizedReason
   );
 
-  const proposal = createOrGetFeedbackDrivenProposal({
-    sourceType: input.sourceType,
-    sourceId: input.sourceId,
-    reason: input.reason,
-    priority: input.priority,
-    correlationId: input.correlationId || null,
-    evidence: input.evidence || {},
-    createdBy: 'system'
-  });
+  db.prepare(`
+    UPDATE evolution_review_queue
+    SET cluster_key = COALESCE(cluster_key, ?),
+        normalized_reason = COALESCE(normalized_reason, ?)
+    WHERE source_type = ?
+      AND source_id = ?
+  `).run(cluster.key, cluster.normalizedReason, input.sourceType, input.sourceId);
+
+  const proposal = representativeProposalId
+    ? getEvolutionProposal(representativeProposalId)
+    : createOrGetFeedbackDrivenProposal({
+      sourceType: input.sourceType,
+      sourceId: input.sourceId,
+      reason: input.reason,
+      priority: input.priority,
+      correlationId: input.correlationId || null,
+      evidence: {
+        ...(input.evidence || {}),
+        feedbackCluster: {
+          key: cluster.key,
+          normalizedReason: cluster.normalizedReason
+        }
+      },
+      createdBy: 'system'
+    });
+
+  if (!proposal) {
+    return {
+      queued: result.changes,
+      generated: 0,
+      reusedClusterProposal: 0,
+      proposalId: null
+    };
+  }
 
   db.prepare(`
     UPDATE evolution_review_queue
@@ -585,7 +641,8 @@ function enqueueReviewItem(input: {
 
   return {
     queued: result.changes,
-    generated: 1,
+    generated: representativeProposalId ? 0 : 1,
+    reusedClusterProposal: representativeProposalId ? 1 : 0,
     proposalId: proposal.id
   };
 }
@@ -593,6 +650,98 @@ function enqueueReviewItem(input: {
 function getProposalStatus(proposalId: string): string | null {
   const row = db.prepare('SELECT status FROM evolution_proposals WHERE id = ?').get(proposalId) as { status: string } | undefined;
   return row?.status || null;
+}
+
+function findRepresentativeClusterProposalId(clusterKey: string): string | null {
+  const row = db.prepare(`
+    SELECT q.generated_proposal_id AS proposal_id
+    FROM evolution_review_queue q
+    INNER JOIN evolution_proposals p ON p.id = q.generated_proposal_id
+    WHERE q.cluster_key = ?
+      AND q.generated_proposal_id IS NOT NULL
+      AND p.status NOT IN ('rejected', 'archived', 'published')
+    ORDER BY
+      CASE p.priority
+        WHEN 'P0' THEN 1
+        WHEN 'P1' THEN 2
+        WHEN 'P2' THEN 3
+        ELSE 4
+      END,
+      q.created_at ASC
+    LIMIT 1
+  `).get(clusterKey) as { proposal_id: string } | undefined;
+
+  return row?.proposal_id || null;
+}
+
+function buildFeedbackCluster(input: {
+  sourceType: string;
+  reason: string;
+  evidence?: Record<string, unknown>;
+}): { key: string; normalizedReason: string } {
+  const evidence = input.evidence || {};
+  const normalizedReason = normalizeClusterText(buildClusterReason(input.sourceType, input.reason, evidence));
+  const signature = `${input.sourceType}:${normalizedReason}`;
+  const digest = createHash('sha256').update(signature).digest('hex').slice(0, 20);
+  return {
+    key: `${input.sourceType}:${digest}`,
+    normalizedReason
+  };
+}
+
+function buildClusterReason(sourceType: string, reason: string, evidence: Record<string, unknown>): string {
+  switch (sourceType) {
+    case 'worker_run':
+      return [
+        evidence.worker_role,
+        evidence.status,
+        evidence.error
+      ].filter(Boolean).join(' ');
+    case 'agent_execution':
+      return [
+        evidence.agent_name,
+        evidence.error_message
+      ].filter(Boolean).join(' ');
+    case 'task': {
+      const failedNodes = Array.isArray(evidence.failedNodes) ? evidence.failedNodes : [];
+      const failedNodeText = failedNodes
+        .map((node) => {
+          const record = objectOrEmpty(node);
+          return `${record.nodeId || ''} ${record.error || ''}`.trim();
+        })
+        .filter(Boolean)
+        .join(' ');
+      return [
+        evidence.workflow_id,
+        evidence.status,
+        failedNodeText || evidence.current_node_id
+      ].filter(Boolean).join(' ');
+    }
+    case 'tool_approval':
+      return [
+        evidence.tool_name,
+        evidence.risk_level,
+        evidence.reason,
+        evidence.review_comment
+      ].filter(Boolean).join(' ');
+    default:
+      return reason;
+  }
+}
+
+function normalizeClusterText(value: unknown): string {
+  const raw = typeof value === 'string' && value.trim() ? value : 'unknown feedback failure';
+  const normalized = raw
+    .toLowerCase()
+    .replace(/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}/g, '<uuid>')
+    .replace(/\b[a-f0-9]{16,}\b/g, '<hex>')
+    .replace(/\b\d{4}-\d{2}-\d{2}[t\s]\d{2}:\d{2}:\d{2}(?:\.\d+)?z?\b/g, '<timestamp>')
+    .replace(/\b\d{10,}\b/g, '<number>')
+    .replace(/\b\d+\b/g, '<number>')
+    .replace(/https?:\/\/\S+/g, '<url>')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return normalized.slice(0, 240) || 'unknown feedback failure';
 }
 
 function parseTask(row: Record<string, unknown>): EvolutionContinuousTaskRecord {
@@ -636,6 +785,8 @@ function parseQueueItem(row: Record<string, unknown>): EvolutionReviewQueueRecor
     status: String(row.status || 'queued'),
     correlation_id: nullableString(row.correlation_id),
     generated_proposal_id: nullableString(row.generated_proposal_id),
+    cluster_key: nullableString(row.cluster_key),
+    normalized_reason: nullableString(row.normalized_reason),
     created_at: String(row.created_at || ''),
     reviewed_at: nullableString(row.reviewed_at)
   };
@@ -646,7 +797,8 @@ function hydrateQueueItem(item: EvolutionReviewQueueRecord): EvolutionReviewQueu
     return {
       ...item,
       proposal: null,
-      review_value: buildReviewValue(item, null, null)
+      review_value: buildReviewValue(item, null, null),
+      cluster: summarizeQueueCluster(item)
     };
   }
 
@@ -655,7 +807,52 @@ function hydrateQueueItem(item: EvolutionReviewQueueRecord): EvolutionReviewQueu
   return {
     ...item,
     proposal: proposal ? summarizeQueueProposal(proposal, evaluation) : null,
-    review_value: buildReviewValue(item, proposal, evaluation)
+    review_value: buildReviewValue(item, proposal, evaluation),
+    cluster: summarizeQueueCluster(item)
+  };
+}
+
+function summarizeQueueCluster(item: EvolutionReviewQueueRecord): EvolutionReviewQueueClusterSummary | null {
+  if (!item.cluster_key) {
+    return null;
+  }
+
+  const stats = db.prepare(`
+    SELECT
+      COUNT(*) AS occurrence_count,
+      COUNT(DISTINCT generated_proposal_id) AS linked_proposal_count,
+      MIN(created_at) AS first_seen_at,
+      MAX(created_at) AS last_seen_at
+    FROM evolution_review_queue
+    WHERE cluster_key = ?
+  `).get(item.cluster_key) as {
+    occurrence_count: number;
+    linked_proposal_count: number;
+    first_seen_at: string | null;
+    last_seen_at: string | null;
+  } | undefined;
+
+  const samples = db.prepare(`
+    SELECT id, source_id, reason, created_at
+    FROM evolution_review_queue
+    WHERE cluster_key = ?
+    ORDER BY created_at DESC
+    LIMIT 3
+  `).all(item.cluster_key) as Array<Record<string, unknown>>;
+
+  return {
+    key: item.cluster_key,
+    normalized_reason: item.normalized_reason || item.reason || item.cluster_key,
+    occurrence_count: Number(stats?.occurrence_count || 0),
+    linked_proposal_count: Number(stats?.linked_proposal_count || 0),
+    first_seen_at: nullableString(stats?.first_seen_at),
+    last_seen_at: nullableString(stats?.last_seen_at),
+    samples: samples.map(sample => ({
+      id: String(sample.id),
+      source_id: String(sample.source_id || ''),
+      reason: nullableString(sample.reason),
+      created_at: String(sample.created_at || '')
+    }))
   };
 }
 

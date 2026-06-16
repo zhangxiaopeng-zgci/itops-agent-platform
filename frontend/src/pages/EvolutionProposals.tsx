@@ -180,6 +180,20 @@ interface EvolutionQueueItem {
     should_promote: boolean;
     reason: string;
   };
+  cluster?: {
+    key: string;
+    normalized_reason: string;
+    occurrence_count: number;
+    linked_proposal_count: number;
+    first_seen_at?: string | null;
+    last_seen_at?: string | null;
+    samples: Array<{
+      id: string;
+      source_id: string;
+      reason?: string | null;
+      created_at: string;
+    }>;
+  } | null;
 }
 
 const panelClass = 'bg-surface/95 rounded-xl border border-border shadow-sm';
@@ -1098,6 +1112,22 @@ function ContinuousEvolutionPanel({
                           </span>
                         </>
                       )}
+                    </div>
+                  </div>
+                )}
+
+                {item.cluster && item.cluster.occurrence_count > 1 && (
+                  <div className="mt-2 rounded-md border border-status-warning/20 bg-status-warning/5 px-2 py-1.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-medium text-status-warning">
+                        {t('evolution.continuous.cluster.repeat', { count: item.cluster.occurrence_count })}
+                      </span>
+                      <span className="shrink-0 text-text-tertiary">
+                        {t('evolution.continuous.cluster.proposals', { count: item.cluster.linked_proposal_count })}
+                      </span>
+                    </div>
+                    <div className="mt-1 text-text-tertiary truncate">
+                      {item.cluster.normalized_reason}
                     </div>
                   </div>
                 )}

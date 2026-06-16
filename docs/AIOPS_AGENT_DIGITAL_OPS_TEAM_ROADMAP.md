@@ -693,7 +693,7 @@ P7 实施切片：
 
 - [x] P7a：失败反馈确定性生成 Evolution Proposal 候选。
 - [x] P7b：Review Queue 运营视图增强，展示来源、失败原因、生成提案、评估状态和发布价值。
-- [ ] P7c：同类问题聚合和重复发生识别，避免一事一提案的噪声。
+- [x] P7c：同类问题聚合和重复发生识别，避免一事一提案的噪声。
 - [ ] P7d：复盘 Agent 消费候选证据，补充结构化 patch、评估计划和风险说明。
 - [ ] P7e：Proposal -> Evaluation -> Approval -> Release 的运营仪表盘收口。
 
@@ -734,6 +734,23 @@ P7b 收敛结果：
   - 展示生成提案标题、类型、状态、评估分和推荐动作。
   - 保留 “打开提案” 跳转，便于从反馈来源进入 proposal 详情。
 - 当前边界：P7b 不做自动评估、自动审批、自动发布；`promote` 只是运营建议，真正进入审批仍由后续任务或管理员触发。
+
+P7c 收敛结果：
+
+- Review Queue 增加确定性聚合字段：
+  - `cluster_key`：按来源类型和归一化失败原因生成的稳定 signature。
+  - `normalized_reason`：去掉 UUID、长数字、时间戳、URL 等噪声后的可读聚合依据。
+- 失败反馈入队时会先查找同 `cluster_key` 的代表 proposal：
+  - 如果存在未 rejected/archived/published 的代表 proposal，则新队列项复用它。
+  - 如果不存在代表 proposal，才创建新的 feedback-driven proposal。
+  - 每条失败仍保留自己的 queue item 和原始 evidence，避免丢证据。
+- Review Queue API 返回 `cluster` 摘要：
+  - occurrence count
+  - linked proposal count
+  - first/last seen
+  - 最近样本
+- Evolution Proposal 页面展示“同类重复 N 次 / M 个提案”，帮助操作者识别重复问题和提案噪声。
+- 当前边界：P7c 只对新入队或再次扫描到的反馈写入 cluster；历史无 cluster 的旧数据不做破坏性回填。已 rejected/archived/published 的 proposal 不作为复用代表。
 
 ### P8：Agent / Workflow 管理台产品化
 
