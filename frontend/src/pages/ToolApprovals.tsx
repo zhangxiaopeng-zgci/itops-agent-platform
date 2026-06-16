@@ -28,6 +28,19 @@ interface ToolApproval {
   } | null;
 }
 
+interface ApprovalSafetyPlan {
+  schemaVersion?: string;
+  riskLevel?: string;
+  riskClass?: string;
+  approvalRequired?: boolean;
+  verificationRequired?: boolean;
+  destructive?: boolean;
+  proposedAction?: string;
+  impact?: string;
+  rollback?: string;
+  validation?: string;
+}
+
 const statusLabelKeys: Record<ToolApproval['status'], MessageKey> = {
   pending: 'toolApprovals.status.pending',
   approved: 'toolApprovals.status.approved',
@@ -82,6 +95,7 @@ export default function ToolApprovals() {
 
   const approvals = data?.approvals || [];
   const selectedTaskId = selectedApproval ? extractTaskId(selectedApproval) : null;
+  const selectedSafetyPlan = selectedApproval ? getSafetyPlan(selectedApproval) : null;
 
   useEffect(() => {
     const approvalId = searchParams.get('approvalId');
@@ -216,6 +230,34 @@ export default function ToolApprovals() {
 	                  </div>
 	                )}
 
+                {selectedSafetyPlan && (
+                  <div className="rounded-lg border border-amber-500/25 bg-amber-500/5 p-3">
+                    <div className="flex items-start justify-between gap-3 mb-3">
+                      <div>
+                        <p className="text-sm font-semibold text-text-primary">{t('toolApprovals.safety.title')}</p>
+                        <p className="text-xs text-text-secondary mt-1">{t('toolApprovals.safety.subtitle')}</p>
+                      </div>
+                      <span className={clsx(
+                        'px-2 py-1 rounded-md border text-xs whitespace-nowrap',
+                        selectedSafetyPlan.destructive
+                          ? 'bg-red-500/10 text-red-400 border-red-500/30'
+                          : 'bg-amber-500/10 text-amber-400 border-amber-500/30'
+                      )}>
+                        {selectedSafetyPlan.riskClass || selectedSafetyPlan.riskLevel || '-'}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 mb-3">
+                      <SafetyMetric label={t('toolApprovals.safety.approval')} value={selectedSafetyPlan.approvalRequired ? t('common.yes') : t('common.no')} />
+                      <SafetyMetric label={t('toolApprovals.safety.verification')} value={selectedSafetyPlan.verificationRequired ? t('common.yes') : t('common.no')} />
+                    </div>
+                    <div className="space-y-2">
+                      <SafetyText label={t('toolApprovals.safety.impact')} value={selectedSafetyPlan.impact} />
+                      <SafetyText label={t('toolApprovals.safety.rollback')} value={selectedSafetyPlan.rollback} />
+                      <SafetyText label={t('toolApprovals.safety.validation')} value={selectedSafetyPlan.validation} />
+                    </div>
+                  </div>
+                )}
+
 	                <div>
                   <p className="text-xs text-text-secondary mb-2">{t('toolApprovals.inputParams')}</p>
                   <pre className="max-h-64 overflow-auto rounded-lg bg-background border border-border p-3 text-xs text-text-primary whitespace-pre-wrap">
@@ -293,10 +335,49 @@ function DetailRow({ label, value }: { label: string; value: string }) {
   );
 }
 
+function SafetyMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-md bg-background border border-border px-2 py-1.5">
+      <div className="text-[11px] text-text-tertiary">{label}</div>
+      <div className="text-sm font-semibold text-text-primary">{value}</div>
+    </div>
+  );
+}
+
+function SafetyText({ label, value }: { label: string; value?: string }) {
+  return (
+    <div>
+      <p className="text-[11px] font-medium text-text-tertiary">{label}</p>
+      <p className="text-sm text-text-secondary leading-5">{value || '-'}</p>
+    </div>
+  );
+}
+
 function extractTaskId(approval: ToolApproval): string | null {
   const directTaskId = readStringField(approval.input, 'taskId');
   if (directTaskId) return directTaskId;
   return findStringField(approval.execution_result, 'taskId');
+}
+
+function getSafetyPlan(approval: ToolApproval): ApprovalSafetyPlan | null {
+  const plan = approval.input?.safetyPlan;
+  if (!plan || typeof plan !== 'object' || Array.isArray(plan)) {
+    return null;
+  }
+
+  const record = plan as Record<string, unknown>;
+  return {
+    schemaVersion: readStringField(record, 'schemaVersion') || undefined,
+    riskLevel: readStringField(record, 'riskLevel') || undefined,
+    riskClass: readStringField(record, 'riskClass') || undefined,
+    approvalRequired: record.approvalRequired === true,
+    verificationRequired: record.verificationRequired === true,
+    destructive: record.destructive === true,
+    proposedAction: readStringField(record, 'proposedAction') || undefined,
+    impact: readStringField(record, 'impact') || undefined,
+    rollback: readStringField(record, 'rollback') || undefined,
+    validation: readStringField(record, 'validation') || undefined,
+  };
 }
 
 function findStringField(value: unknown, key: string): string | null {

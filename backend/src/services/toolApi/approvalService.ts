@@ -51,6 +51,10 @@ export function createToolApproval(data: {
   decision: ToolDecision;
 }): ToolApprovalRecord {
   const id = randomUUID();
+  const approvalInput = {
+    ...data.input,
+    safetyPlan: buildApprovalSafetyPlan(data.toolName, data.input, data.decision)
+  };
 
   db.prepare(`
     INSERT INTO tool_approvals (
@@ -61,7 +65,7 @@ export function createToolApproval(data: {
   `).run(
     id,
     data.toolName,
-    JSON.stringify(data.input),
+    JSON.stringify(approvalInput),
     data.context.userId || null,
     data.context.userRole,
     data.context.source || 'api',
@@ -72,6 +76,11 @@ export function createToolApproval(data: {
   );
 
   return getToolApproval(id)!;
+}
+
+export function stripApprovalMetadata(input: Record<string, unknown>): Record<string, unknown> {
+  const { safetyPlan, ...rest } = input;
+  return rest;
 }
 
 export function listToolApprovals(filters: {
@@ -184,4 +193,87 @@ function parseJson<T>(value: string, fallback: T): T {
   } catch {
     return fallback;
   }
+}
+
+function buildApprovalSafetyPlan(
+  toolName: string,
+  input: Record<string, unknown>,
+  decision: ToolDecision
+): Record<string, unknown> {
+  const proposedAction = readString(input.proposedAction)
+    || readString(input.action)
+    || readString(input.input)
+    || readString(input.description)
+    || `Invoke tool ${toolName}`;
+  const impact = readString(input.impact)
+    || readString(input.impactAnalysis)
+    || buildDefaultImpact(toolName, decision.riskLevel, input);
+  const rollback = readString(input.rollbackPlan)
+    || readString(input.rollback)
+    || buildDefaultRollback(toolName, decision.riskLevel);
+  const validation = readString(input.verificationPlan)
+    || readString(input.validationPlan)
+    || buildDefaultValidation(toolName, input);
+  const destructive = decision.riskLevel === 'destructive';
+
+  return {
+    schemaVersion: 'approval.safetyPlan.v1',
+    toolName,
+    riskLevel: decision.riskLevel,
+    riskClass: normalizeRiskClass(decision.riskLevel),
+    approvalRequired: decision.status === 'approval_required',
+    verificationRequired: decision.riskLevel !== 'read_only',
+    destructive,
+    proposedAction,
+    impact,
+    rollback,
+    validation,
+    generatedAt: new Date().toISOString(),
+    sourceFields: {
+      impact: Boolean(readString(input.impact) || readString(input.impactAnalysis)),
+      rollback: Boolean(readString(input.rollbackPlan) || readString(input.rollback)),
+      validation: Boolean(readString(input.verificationPlan) || readString(input.validationPlan))
+    }
+  };
+}
+
+function normalizeRiskClass(riskLevel: string): string {
+  if (riskLevel === 'read_only') return 'read_only';
+  if (riskLevel === 'low_risk') return 'low_risk';
+  if (riskLevel === 'medium_risk' || riskLevel === 'high_risk') return 'high_risk';
+  return 'destructive';
+}
+
+function buildDefaultImpact(toolName: string, riskLevel: string, input: Record<string, unknown>): string {
+  if (toolName === 'run_workflow') {
+    return `Starts workflow ${readString(input.workflowId) || 'unknown'} and may create operational changes through workflow nodes.`;
+  }
+  if (toolName === 'submit_remediation_for_approval') {
+    return 'Records a remediation proposal for human review without directly changing runtime state.';
+  }
+  return `Invokes ${toolName} with ${riskLevel} risk; reviewer must confirm target scope and blast radius before approval.`;
+}
+
+function buildDefaultRollback(toolName: string, riskLevel: string): string {
+  if (riskLevel === 'read_only') {
+    return 'No rollback is required for read-only actions.';
+  }
+  if (toolName === 'run_workflow') {
+    return 'Use workflow/task logs to identify changed nodes, then run the workflow-specific rollback or manual remediation procedure before retrying.';
+  }
+  return 'Reviewer must ensure a manual rollback path exists before approving this action.';
+}
+
+function buildDefaultValidation(toolName: string, input: Record<string, unknown>): string {
+  if (toolName === 'run_workflow') {
+    return 'After execution, run verify_remediation against the created task and inspect failed nodes/logs.';
+  }
+  if (readString(input.taskId)) {
+    return `Verify task ${readString(input.taskId)} status and failed nodes after execution.`;
+  }
+  return 'After execution, verify command output, metrics, logs, and operator confirmation as applicable.';
+}
+
+function readString(value: unknown): string | null {
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
 }

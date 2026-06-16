@@ -572,6 +572,25 @@ P5d 当前边界：
 - 修复执行后必须有验证结果。
 - 验证失败能进入复盘和改进提案。
 
+P6 实施切片：
+
+- [x] P6a：审批请求标准化 `approval.safetyPlan.v1`，展示 impact / rollback / validation。
+- [ ] P6b：审批执行后自动生成或关联 verification requirement。
+- [ ] P6c：验证失败自动进入复盘入口和 Evolution Proposal 候选。
+- [ ] P6d：高风险/破坏性 prompt 增强拦截和审计说明。
+
+P6a 收敛结果：
+
+- Tool approval 创建时在输入中附加 `safetyPlan`：
+  - `riskClass`
+  - `approvalRequired`
+  - `verificationRequired`
+  - `impact`
+  - `rollback`
+  - `validation`
+- 审批执行时会剥离 `safetyPlan`，避免影响工具业务参数。
+- 工具审批页展示安全计划，审批人可以在批准前确认影响、回滚和验证要求。
+
 ### P7：Evolution 反馈驱动进化
 
 目标：

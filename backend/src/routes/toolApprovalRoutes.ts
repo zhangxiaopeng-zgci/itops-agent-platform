@@ -5,7 +5,8 @@ import {
   listToolApprovals,
   markToolApprovalApproved,
   markToolApprovalExecuted,
-  markToolApprovalRejected
+  markToolApprovalRejected,
+  stripApprovalMetadata
 } from '../services/toolApi/approvalService';
 import { invokeTool } from '../services/toolApi/toolRegistry';
 import { ToolContext } from '../services/toolApi/types';
@@ -70,7 +71,7 @@ router.post('/:id/approve', requireRole('admin', 'operator'), async (req: Authen
       correlationId: approval.correlation_id || undefined
     };
 
-    const result = await invokeTool(approval.tool_name, approval.input, context, { skipApproval: true });
+    const result = await invokeTool(approval.tool_name, stripApprovalMetadata(approval.input), context, { skipApproval: true });
     const updated = markToolApprovalExecuted(
       req.params.id,
       reviewerId,
