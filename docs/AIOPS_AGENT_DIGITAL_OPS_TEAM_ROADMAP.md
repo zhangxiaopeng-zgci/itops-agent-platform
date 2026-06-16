@@ -449,7 +449,7 @@ P4 当前边界：
 P5 实施切片：
 
 - [x] P5a：标准化 `executionEvidence` 摘要，不改表结构，写入 Agent execution metadata 与 Workflow node result metadata。
-- [ ] P5b：Correlation Trace 页面聚合 executionEvidence，串联 Agent / Workflow / Team / Approval / Task。
+- [x] P5b：Correlation Trace 页面聚合 executionEvidence，串联 Agent / Workflow / Team / Approval / Task。
 - [ ] P5c：Evolution Proposal evidence snapshot 优先消费 executionEvidence，而不是只扫 trace 文本。
 - [ ] P5d：Team Run 视图补充 Hermes worker、Channel、Skill、MCP、Release overlay 的证据链。
 
@@ -476,6 +476,34 @@ P5a 当前边界：
 - 不新增 evidence 表，先复用现有 JSON metadata。
 - `hypothesis`、`plannedActions`、`verificationResult` 先用确定性文本/trace 提取，后续 P5c 再让 Hermes/Evolution 消费并校正。
 - 旧历史记录不会自动回填，只有新执行产生标准化 evidence。
+
+P5b 收敛结果：
+
+- 新增统一 `getCorrelationTrace(correlationId)` 服务，API 与 Tool API 复用同一条聚合逻辑。
+- Correlation Trace 聚合范围扩展为：
+  - Hermes Session
+  - Agent Execution
+  - Tool Approval
+  - Task / Workflow node result
+  - Agent Team Run
+  - Hermes Worker Run
+  - Audit Log
+- Correlation Trace 返回 `correlation.executionEvidence.v1` 摘要：
+  - `counts`
+  - `riskLevels`
+  - `toolCalls`
+  - `approvalIds`
+  - `taskIds`
+  - `traceIds`
+  - `releaseOverlayVersionIds`
+  - `latestEvidenceAt`
+- Hermes 运维助手闭环区展示执行证据链摘要，操作者可以在一个入口看到 Agent / Workflow / Team / Approval / Task 的关联证据。
+
+P5b 当前边界：
+
+- 仍不新增独立 evidence 表，查询依赖现有 JSON metadata 与 correlationId 模糊匹配。
+- Team Run / Worker Run 当前先纳入链路计数和关联展示，详细证据展开留给 P5d。
+- Evolution Proposal 尚未改为优先消费结构化 evidence，留给 P5c。
 
 ### P6：Approval & Verification 闭环增强
 

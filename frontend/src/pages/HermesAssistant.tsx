@@ -150,11 +150,42 @@ interface TaskItem {
   created_at: string;
 }
 
+interface ExecutionEvidenceItem {
+  sourceType?: string;
+  sourceId?: string;
+  agentName?: string | null;
+  taskName?: string | null;
+  nodeId?: string | null;
+  status?: string;
+  riskLevel?: string;
+  hypothesis?: string;
+  traceId?: string;
+  generatedAt?: string;
+  createdAt?: string | null;
+  evidence?: Record<string, unknown>;
+}
+
+interface CorrelationEvidenceSummary {
+  schemaVersion?: string;
+  counts?: Record<string, unknown>;
+  riskLevels?: string[];
+  toolCalls?: string[];
+  traceIds?: string[];
+  releaseOverlayVersionIds?: string[];
+  latestEvidenceAt?: string | null;
+}
+
 interface CorrelationChain {
   correlationId: string;
   hermesSessions?: HermesSession[];
+  agentExecutions?: Array<Record<string, unknown>>;
   approvals?: ToolApprovalItem[];
   tasks?: TaskItem[];
+  auditLogs?: Array<Record<string, unknown>>;
+  teamRuns?: Array<Record<string, unknown>>;
+  workerRuns?: Array<Record<string, unknown>>;
+  executionEvidence?: ExecutionEvidenceItem[];
+  executionEvidenceSummary?: CorrelationEvidenceSummary;
 }
 
 interface HermesSession {
@@ -440,6 +471,61 @@ function getTaskLogSummary(task: TaskItem) {
     .filter(Boolean);
 }
 
+function readCount(counts: Record<string, unknown> | undefined, key: string) {
+  const value = counts?.[key];
+  return typeof value === 'number' && Number.isFinite(value) ? value : 0;
+}
+
+function uniqueStrings(values: unknown[]) {
+  return Array.from(new Set(values.filter((value): value is string => typeof value === 'string' && value.trim().length > 0).map((value) => value.trim())));
+}
+
+function summarizeCorrelationEvidence(chains: CorrelationChain[]) {
+  const evidence = chains.flatMap((chain) => chain.executionEvidence || []);
+  const summaries = chains.map((chain) => chain.executionEvidenceSummary).filter((summary): summary is CorrelationEvidenceSummary => Boolean(summary));
+  const counts = summaries.reduce((acc, summary) => ({
+    evidence: acc.evidence + readCount(summary.counts, 'evidence'),
+    agentExecutions: acc.agentExecutions + readCount(summary.counts, 'agentExecutions'),
+    hermesSessions: acc.hermesSessions + readCount(summary.counts, 'hermesSessions'),
+    approvals: acc.approvals + readCount(summary.counts, 'approvals'),
+    tasks: acc.tasks + readCount(summary.counts, 'tasks'),
+    teamRuns: acc.teamRuns + readCount(summary.counts, 'teamRuns'),
+    workerRuns: acc.workerRuns + readCount(summary.counts, 'workerRuns'),
+    auditLogs: acc.auditLogs + readCount(summary.counts, 'auditLogs'),
+  }), {
+    evidence: 0,
+    agentExecutions: 0,
+    hermesSessions: 0,
+    approvals: 0,
+    tasks: 0,
+    teamRuns: 0,
+    workerRuns: 0,
+    auditLogs: 0,
+  });
+  const recentEvidence = evidence
+    .slice()
+    .sort((left, right) => String(right.generatedAt || right.createdAt || '').localeCompare(String(left.generatedAt || left.createdAt || '')))
+    .slice(0, 4);
+
+  return {
+    counts: {
+      ...counts,
+      evidence: counts.evidence || evidence.length,
+      agentExecutions: counts.agentExecutions || chains.reduce((total, chain) => total + (chain.agentExecutions?.length || 0), 0),
+      approvals: counts.approvals || chains.reduce((total, chain) => total + (chain.approvals?.length || 0), 0),
+      tasks: counts.tasks || chains.reduce((total, chain) => total + (chain.tasks?.length || 0), 0),
+      teamRuns: counts.teamRuns || chains.reduce((total, chain) => total + (chain.teamRuns?.length || 0), 0),
+      workerRuns: counts.workerRuns || chains.reduce((total, chain) => total + (chain.workerRuns?.length || 0), 0),
+    },
+    riskLevels: uniqueStrings(summaries.flatMap((summary) => summary.riskLevels || [])),
+    toolCalls: uniqueStrings(summaries.flatMap((summary) => summary.toolCalls || [])),
+    traceIds: uniqueStrings(summaries.flatMap((summary) => summary.traceIds || [])),
+    releaseOverlayVersionIds: uniqueStrings(summaries.flatMap((summary) => summary.releaseOverlayVersionIds || [])),
+    latestEvidenceAt: summaries.map((summary) => summary.latestEvidenceAt).filter(Boolean).sort().pop() || null,
+    recentEvidence,
+  };
+}
+
 function buildContextLines(options: {
   servers: ServerItem[];
   alert?: AlertItem;
@@ -624,6 +710,7 @@ export default function HermesAssistant() {
     ...(lastResult?.hermesSession ? [lastResult.hermesSession] : []),
     ...(correlationChains || []).flatMap((chain) => chain.hermesSessions || []),
   ]), [correlationChains, lastResult?.hermesSession]);
+  const correlationEvidence = useMemo(() => summarizeCorrelationEvidence(correlationChains || []), [correlationChains]);
   const aggregatedApprovalIds = useMemo(() => {
     return Array.from(new Set([
       ...traceLinks.approvalIds,
@@ -1465,6 +1552,85 @@ export default function HermesAssistant() {
                     {t('hermes.closure.refresh')}
                   </button>
                 </div>
+
+                {(correlationEvidence.counts.evidence > 0 || correlationEvidence.counts.agentExecutions > 0 || correlationEvidence.counts.teamRuns > 0 || correlationEvidence.counts.workerRuns > 0) && (
+                  <div className="mb-4 rounded-xl bg-background border border-border p-4">
+                    <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between mb-3">
+                      <div className="flex items-center gap-2">
+                        <FileSearch className="w-4 h-4 text-primary" />
+                        <div>
+                          <h3 className="text-sm font-semibold text-text-primary">{t('hermes.closure.evidenceTitle')}</h3>
+                          <p className="text-xs text-text-tertiary mt-0.5">{t('hermes.closure.evidenceSubtitle')}</p>
+                        </div>
+                      </div>
+                      {correlationEvidence.latestEvidenceAt && (
+                        <span className="text-xs text-text-tertiary">
+                          {t('hermes.closure.latestEvidence')}: {new Date(correlationEvidence.latestEvidenceAt).toLocaleString()}
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-6 gap-2 mb-3">
+                      {[
+                        { label: t('hermes.closure.evidenceItems'), value: correlationEvidence.counts.evidence },
+                        { label: t('hermes.closure.agentExecutions'), value: correlationEvidence.counts.agentExecutions },
+                        { label: t('hermes.closure.workflowTasks'), value: correlationEvidence.counts.tasks },
+                        { label: t('hermes.closure.teamRuns'), value: correlationEvidence.counts.teamRuns },
+                        { label: t('hermes.closure.workerRuns'), value: correlationEvidence.counts.workerRuns },
+                        { label: t('hermes.closure.auditLogs'), value: correlationEvidence.counts.auditLogs },
+                      ].map((item) => (
+                        <div key={item.label} className="rounded-lg bg-surface border border-border px-3 py-2 min-w-0">
+                          <div className="text-lg font-semibold text-text-primary">{item.value}</div>
+                          <div className="text-[11px] text-text-tertiary truncate">{item.label}</div>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="flex flex-wrap gap-2 mb-3">
+                      {correlationEvidence.riskLevels.map((risk) => (
+                        <span key={risk} className="px-2 py-1 rounded-lg bg-amber-500/10 text-amber-300 border border-amber-500/20 text-xs">
+                          {t('hermes.closure.riskLevel')}: {risk}
+                        </span>
+                      ))}
+                      {correlationEvidence.toolCalls.slice(0, 6).map((tool) => (
+                        <span key={tool} className="px-2 py-1 rounded-lg bg-primary/10 text-primary border border-primary/20 text-xs">
+                          {tool}
+                        </span>
+                      ))}
+                      {correlationEvidence.releaseOverlayVersionIds.slice(0, 4).map((versionId) => (
+                        <span key={versionId} className="px-2 py-1 rounded-lg bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 text-xs">
+                          {t('hermes.closure.releaseOverlays')}: {shortId(versionId)}
+                        </span>
+                      ))}
+                    </div>
+
+                    {correlationEvidence.recentEvidence.length === 0 ? (
+                      <div className="py-4 text-center text-sm text-text-tertiary">{t('hermes.closure.noEvidence')}</div>
+                    ) : (
+                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-2">
+                        {correlationEvidence.recentEvidence.map((item) => {
+                          const title = item.agentName || item.taskName || item.sourceType || '-';
+                          const source = [item.sourceType, item.nodeId || item.sourceId].filter(Boolean).join(' / ');
+                          return (
+                            <div key={`${item.sourceType || 'evidence'}-${item.sourceId || item.traceId || item.generatedAt}`} className="rounded-lg bg-surface border border-border p-3 min-w-0">
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="text-xs font-medium text-text-primary truncate">{title}</span>
+                                {item.riskLevel && <span className="text-[11px] text-amber-300 flex-shrink-0">{item.riskLevel}</span>}
+                              </div>
+                              <div className="mt-1 text-[11px] text-text-tertiary truncate">{source}</div>
+                              {item.hypothesis && (
+                                <div className="mt-2 text-xs text-text-secondary line-clamp-2">{item.hypothesis}</div>
+                              )}
+                              {item.traceId && (
+                                <div className="mt-2 text-[11px] text-text-tertiary">trace {shortId(item.traceId)}</div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {chainHermesSessions.length > 0 && (
                   <div className="mb-4 rounded-xl bg-background border border-border p-4">

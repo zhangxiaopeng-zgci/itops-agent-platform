@@ -5,7 +5,7 @@ import { executeWorkflow } from '../workflowExecutor';
 import { evaluateReadOnlyCommand } from './policyGuard';
 import { ToolContext, ToolDefinition, ToolInvocationResult } from './types';
 import { WorkflowParsed } from '../../types';
-import { listHermesSessionsByCorrelation } from '../hermesSessionService';
+import { getCorrelationTrace } from '../correlationTraceService';
 
 const VALID_ALERT_STATUSES = new Set(['new', 'acknowledged', 'resolved']);
 const VALID_ALERT_SEVERITIES = new Set(['critical', 'high', 'medium', 'low']);
@@ -610,57 +610,7 @@ export const getCorrelationTraceTool: ToolDefinition = {
   },
   execute(input: Record<string, unknown>) {
     const correlationId = requireString(input, 'correlationId');
-    if (!/^[a-zA-Z0-9._:-]{8,128}$/.test(correlationId)) {
-      throw new Error('Invalid correlation id');
-    }
-
-    const pattern = `%${escapeLike(correlationId)}%`;
-    const likeSql = "LIKE ? ESCAPE '\\'";
-
-    const agentExecutions = db.prepare(`
-      SELECT *
-      FROM agent_executions
-      WHERE IFNULL(metadata, '') ${likeSql}
-      ORDER BY created_at DESC
-      LIMIT 50
-    `).all(pattern).map((row) => parseAgentExecution(row as Record<string, unknown>));
-
-    const hermesSessions = listHermesSessionsByCorrelation(correlationId);
-
-    const approvals = db.prepare(`
-      SELECT *
-      FROM tool_approvals
-      WHERE correlation_id = ?
-         OR input ${likeSql}
-         OR IFNULL(execution_result, '') ${likeSql}
-      ORDER BY requested_at DESC
-      LIMIT 50
-    `).all(correlationId, pattern, pattern).map((row) => parseToolApproval(row as Record<string, unknown>));
-
-    const tasks = db.prepare(`
-      SELECT *
-      FROM tasks
-      WHERE IFNULL(context, '') ${likeSql}
-      ORDER BY created_at DESC
-      LIMIT 50
-    `).all(pattern).map((row) => parseTask(row as Record<string, unknown>));
-
-    const auditLogs = db.prepare(`
-      SELECT *
-      FROM audit_logs
-      WHERE IFNULL(details, '') ${likeSql}
-      ORDER BY created_at DESC
-      LIMIT 100
-    `).all(pattern).map((row) => parseAuditLog(row as Record<string, unknown>));
-
-    return {
-      correlationId,
-      hermesSessions,
-      agentExecutions,
-      approvals,
-      tasks,
-      auditLogs
-    };
+    return getCorrelationTrace(correlationId);
   }
 };
 
