@@ -214,6 +214,18 @@ function assertPublishable(proposal: EvolutionProposalRecord): void {
   if (!patchValidation.valid) {
     throw new Error('Proposal must include a valid structured patch before publishing');
   }
+
+  const semanticGuard = objectOrEmpty(objectOrEmpty(evaluation.result_summary).semanticGuard);
+  if (isSkillOrWorkflowProposal(proposal.type) && Object.keys(semanticGuard).length === 0) {
+    throw new Error('Proposal must be re-evaluated with Skill semantic release guards before publishing');
+  }
+  if (semanticGuard.passed === false) {
+    throw new Error('Proposal semantic release guard did not pass');
+  }
+  const rollbackBoundary = objectOrEmpty(semanticGuard.rollbackBoundary);
+  if (isSkillOrWorkflowProposal(proposal.type) && rollbackBoundary.valid !== true) {
+    throw new Error('Proposal must define a valid rollback boundary before publishing');
+  }
 }
 
 function normalizeTarget(proposal: EvolutionProposalRecord): { objectType: string; targetId: string | null } {
@@ -263,6 +275,9 @@ function buildVersionPayload(
   previousVersionId: string | null
 ): Record<string, unknown> {
   const structuredPatch = getStructuredPatchFromProposal(proposal);
+  const evaluation = getLatestEvolutionProposalEvaluation(proposal.id);
+  const evalSummary = objectOrEmpty(evaluation?.result_summary);
+  const semanticGuard = objectOrEmpty(evalSummary.semanticGuard);
   return {
     proposalId: proposal.id,
     proposalType: proposal.type,
@@ -275,11 +290,21 @@ function buildVersionPayload(
     targetDescriptor: proposal.target_descriptor,
     evidenceRefs: proposal.evidence_refs,
     evalSummary: proposal.eval_summary,
+    latestEvaluationSummary: evaluation?.result_summary || null,
+    semanticGuard: Object.keys(semanticGuard).length > 0 ? semanticGuard : null,
     riskNotes: proposal.risk_notes,
     correlationId: proposal.correlation_id,
     previousVersionId,
     applyMode: 'versioned_release_record'
   };
+}
+
+function isSkillOrWorkflowProposal(type: string): boolean {
+  return type === 'skill_update' || type === 'workflow_template_update';
+}
+
+function objectOrEmpty(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
 }
 
 function appendReleaseEvent(

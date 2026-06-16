@@ -103,6 +103,7 @@ interface ProposalEvaluation {
   replay_sample_count: number;
   findings: EvaluationFinding[];
   replay_samples: ReplaySample[];
+  result_summary?: Record<string, unknown> | null;
   created_at: string;
 }
 
@@ -785,8 +786,17 @@ function EvaluationPanel({ evaluations }: { evaluations: ProposalEvaluation[] })
     [t('evolution.eval.safety'), latest.safety_score],
     [t('evolution.eval.evidence'), latest.evidence_score],
     [t('evolution.eval.completeness'), latest.completeness_score],
-    [t('evolution.eval.replay'), latest.replay_score]
+    [t('evolution.eval.replay'), latest.replay_score],
+    [t('evolution.eval.semantic'), readSummaryNumber(latest, 'semanticScore')]
   ];
+  const semanticGuard = getSemanticGuard(latest);
+  const releaseGuard = getNestedRecord(semanticGuard, 'releaseGuard');
+  const rollbackBoundary = getNestedRecord(semanticGuard, 'rollbackBoundary');
+  const skillCoverage = getNestedRecord(semanticGuard, 'skillCoverage');
+  const affectedSkillIds = readStringList(semanticGuard?.affectedSkillIds);
+  const affectedWorkflowIds = readStringList(semanticGuard?.affectedWorkflowIds);
+  const missingSkillIds = readStringList(semanticGuard?.missingSkillIds);
+  const semanticPassed = semanticGuard?.passed === true;
 
   return (
     <DetailSection title={t('evolution.eval.title')} icon={<Gauge className="w-4 h-4" />}>
@@ -803,7 +813,7 @@ function EvaluationPanel({ evaluations }: { evaluations: ProposalEvaluation[] })
             {latest.passed ? t('evolution.eval.passed') : t('evolution.eval.failed')}
           </div>
         </div>
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
           {scores.map(([label, value]) => (
             <div key={label} className="rounded-lg bg-background border border-border px-3 py-2">
               <div className="text-xs text-text-tertiary">{label}</div>
@@ -812,6 +822,49 @@ function EvaluationPanel({ evaluations }: { evaluations: ProposalEvaluation[] })
           ))}
         </div>
       </div>
+      {semanticGuard && (
+        <div className="mt-4 rounded-lg bg-background border border-border p-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div className="text-xs font-medium text-text-tertiary">{t('evolution.eval.semanticGuard')}</div>
+              <div className="text-sm text-text-primary mt-1">
+                {t('evolution.eval.releaseGuard')}: {String(releaseGuard?.mode || '-')}
+              </div>
+            </div>
+            <span className={clsx(
+              'inline-flex px-2 py-1 rounded-full border text-xs font-medium',
+              semanticPassed
+                ? 'bg-status-success/10 text-status-success border-status-success/30'
+                : 'bg-status-failed/10 text-status-failed border-status-failed/30'
+            )}>
+              {semanticPassed ? t('evolution.eval.passed') : t('evolution.eval.failed')}
+            </span>
+          </div>
+          <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3">
+            <SemanticList label={t('evolution.eval.affectedSkills')} values={affectedSkillIds} />
+            <SemanticList label={t('evolution.eval.affectedWorkflows')} values={affectedWorkflowIds} />
+            <SemanticList label={t('evolution.eval.missingSkills')} values={missingSkillIds} />
+          </div>
+          <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div className="rounded-lg border border-border bg-surface/70 px-3 py-2">
+              <div className="text-xs text-text-tertiary">{t('evolution.eval.rollbackBoundary')}</div>
+              <div className="text-sm text-text-primary mt-1">
+                {rollbackBoundary?.valid ? t('evolution.eval.valid') : t('evolution.eval.invalid')}
+                {' · '}
+                {String(rollbackBoundary?.source || '-')}
+              </div>
+              <div className="text-xs text-text-tertiary mt-1 line-clamp-2">{String(rollbackBoundary?.notes || '-')}</div>
+            </div>
+            <div className="rounded-lg border border-border bg-surface/70 px-3 py-2">
+              <div className="text-xs text-text-tertiary">{t('evolution.eval.skillCoverage')}</div>
+              <div className="text-sm text-text-primary mt-1">
+                {String(skillCoverage?.nodesWithRecommendedSkill ?? '-')} / {String(skillCoverage?.totalNodes ?? '-')}
+              </div>
+              <div className="text-xs text-text-tertiary mt-1">{String(releaseGuard?.reason || '-')}</div>
+            </div>
+          </div>
+        </div>
+      )}
       <div className="mt-4 grid grid-cols-1 xl:grid-cols-2 gap-4">
         <div>
           <div className="text-xs font-medium text-text-tertiary mb-2">{t('evolution.eval.findings')}</div>
@@ -841,6 +894,23 @@ function EvaluationPanel({ evaluations }: { evaluations: ProposalEvaluation[] })
         </div>
       </div>
     </DetailSection>
+  );
+}
+
+function SemanticList({ label, values }: { label: string; values: string[] }) {
+  const { t } = useLocale();
+  return (
+    <div className="rounded-lg border border-border bg-surface/70 px-3 py-2 min-w-0">
+      <div className="text-xs text-text-tertiary">{label}</div>
+      <div className="mt-1 flex flex-wrap gap-1.5">
+        {values.length === 0 && <span className="text-sm text-text-tertiary">{t('evolution.eval.notAvailable')}</span>}
+        {values.map((value) => (
+          <span key={value} className="max-w-full truncate rounded-md bg-background border border-border px-2 py-0.5 text-xs text-text-secondary">
+            {value}
+          </span>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -1029,4 +1099,39 @@ function getStructuredPatch(proposal: EvolutionProposal): StructuredPatch | null
     return null;
   }
   return record as unknown as StructuredPatch;
+}
+
+function getSemanticGuard(evaluation: ProposalEvaluation): Record<string, unknown> | null {
+  const summary = evaluation.result_summary;
+  if (!summary || typeof summary !== 'object' || Array.isArray(summary)) {
+    return null;
+  }
+  const guard = summary.semanticGuard;
+  if (!guard || typeof guard !== 'object' || Array.isArray(guard)) {
+    return null;
+  }
+  return guard as Record<string, unknown>;
+}
+
+function readSummaryNumber(evaluation: ProposalEvaluation, key: string): number | string {
+  const summary = evaluation.result_summary;
+  if (!summary || typeof summary !== 'object' || Array.isArray(summary)) {
+    return '-';
+  }
+  const value = summary[key];
+  return typeof value === 'number' && Number.isFinite(value) ? value : '-';
+}
+
+function getNestedRecord(parent: Record<string, unknown> | null, key: string): Record<string, unknown> | null {
+  const value = parent?.[key];
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null;
+}
+
+function readStringList(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value
+    .filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+    .map((item) => item.trim());
 }

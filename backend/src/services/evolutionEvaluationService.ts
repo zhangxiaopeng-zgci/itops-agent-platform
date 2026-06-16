@@ -43,6 +43,31 @@ export interface EvolutionProposalEvaluationRecord {
   created_at: string;
 }
 
+interface EvolutionSemanticGuardSummary {
+  score: number;
+  passed: boolean;
+  proposalType: string;
+  patchKind: string | null;
+  affectedSkillIds: string[];
+  affectedWorkflowIds: string[];
+  missingSkillIds: string[];
+  releaseGuard: {
+    mode: 'readonly_overlay' | 'review_required' | 'approval_required';
+    reason: string;
+  };
+  rollbackBoundary: {
+    valid: boolean;
+    strategy: string | null;
+    notes: string | null;
+    source: 'structured_patch' | 'skill' | 'none';
+  };
+  skillCoverage?: {
+    totalNodes: number;
+    nodesWithRecommendedSkill: number;
+    coverageRatio: number;
+  };
+}
+
 const DANGEROUS_PATTERNS: Array<{ code: string; pattern: RegExp; message: string }> = [
   {
     code: 'bypass_approval',
@@ -113,7 +138,16 @@ export function evaluateEvolutionProposal(input: {
   const replayScore = evaluateReplaySamples(replaySamples, findings);
   const patchValidation = evaluateStructuredPatch(proposal, findings);
   const patchScore = patchValidation.score;
-  const score = Math.round((safetyScore * 0.30) + (evidenceScore * 0.20) + (completenessScore * 0.20) + (replayScore * 0.15) + (patchScore * 0.15));
+  const semanticGuard = evaluateSkillOperationalSemantics(proposal, findings);
+  const semanticScore = semanticGuard.score;
+  const score = Math.round(
+    (safetyScore * 0.25)
+    + (evidenceScore * 0.18)
+    + (completenessScore * 0.17)
+    + (replayScore * 0.15)
+    + (patchScore * 0.15)
+    + (semanticScore * 0.10)
+  );
   const hasCriticalFinding = findings.some(finding => finding.severity === 'critical');
   const passed = score >= 75 && !hasCriticalFinding;
   const status = passed ? 'passed' : 'failed';
@@ -125,12 +159,14 @@ export function evaluateEvolutionProposal(input: {
     completenessScore,
     replayScore,
     patchScore,
+    semanticScore,
     replaySampleCount: replaySamples.length,
     structuredPatch: {
       valid: patchValidation.valid,
       score: patchValidation.score,
       findingCount: patchValidation.findings.length
     },
+    semanticGuard,
     findingCounts: {
       critical: findings.filter(finding => finding.severity === 'critical').length,
       warning: findings.filter(finding => finding.severity === 'warning').length,
@@ -310,6 +346,129 @@ function evaluateStructuredPatch(proposal: EvolutionProposalRecord, findings: Ev
   return validation;
 }
 
+function evaluateSkillOperationalSemantics(
+  proposal: EvolutionProposalRecord,
+  findings: EvolutionEvaluationFinding[]
+): EvolutionSemanticGuardSummary {
+  const patch = getStructuredPatchFromProposal(proposal);
+  const descriptor = objectOrEmpty(proposal.target_descriptor);
+  const targetId = stringOrNull(descriptor.targetId) || stringOrNull(objectOrEmpty(patch?.target).targetId);
+  const affectedSkillIds = new Set<string>();
+  const affectedWorkflowIds = new Set<string>();
+  const missingSkillIds = new Set<string>();
+  let score = 100;
+  let maxRiskLevel = 'medium';
+  let approvalRequired = false;
+  let skillCoverage: EvolutionSemanticGuardSummary['skillCoverage'];
+  let rollbackBoundary = buildRollbackBoundary(patch, null);
+
+  if (proposal.type === 'skill_update') {
+    if (!targetId) {
+      findings.push({
+        severity: 'critical',
+        code: 'semantic_missing_skill_target',
+        message: 'Skill update proposals must identify the target skill before release evaluation.'
+      });
+      score -= 45;
+    } else {
+      affectedSkillIds.add(targetId);
+      const skill = getSkillSemanticRecord(targetId);
+      if (!skill) {
+        findings.push({
+          severity: 'critical',
+          code: 'semantic_skill_not_found',
+          message: `Target skill ${targetId} does not exist in the Skill registry.`
+        });
+        score -= 55;
+      } else {
+        maxRiskLevel = normalizeRiskLevel(skill.risk_level);
+        approvalRequired = isApprovalRequired(skill.approval_policy) || isHighRisk(maxRiskLevel);
+        rollbackBoundary = buildRollbackBoundary(patch, skill);
+        score += scoreSkillOperationalFields(skill, findings);
+      }
+    }
+  }
+
+  if (proposal.type === 'workflow_template_update') {
+    if (!targetId) {
+      findings.push({
+        severity: 'critical',
+        code: 'semantic_missing_workflow_target',
+        message: 'Workflow template proposals must identify the target workflow before release evaluation.'
+      });
+      score -= 45;
+    } else {
+      affectedWorkflowIds.add(targetId);
+      const workflow = getWorkflowSemanticRecord(targetId);
+      if (!workflow) {
+        findings.push({
+          severity: 'critical',
+          code: 'semantic_workflow_not_found',
+          message: `Target workflow ${targetId} does not exist.`
+        });
+        score -= 55;
+      } else {
+        const recommendedSkillIds = collectWorkflowRecommendedSkillIds(workflow);
+        recommendedSkillIds.forEach(skillId => affectedSkillIds.add(skillId));
+        const knownSkillIds = getKnownSkillIds(recommendedSkillIds);
+        recommendedSkillIds.forEach(skillId => {
+          if (!knownSkillIds.has(skillId)) {
+            missingSkillIds.add(skillId);
+          }
+        });
+
+        if (missingSkillIds.size > 0) {
+          findings.push({
+            severity: 'critical',
+            code: 'semantic_workflow_missing_skills',
+            message: `Workflow references missing Skill ids: ${Array.from(missingSkillIds).join(', ')}.`
+          });
+          score -= 50;
+        }
+
+        const coverage = computeWorkflowSkillCoverage(workflow);
+        skillCoverage = coverage;
+        if (coverage.totalNodes > 0 && coverage.nodesWithRecommendedSkill === 0) {
+          findings.push({
+            severity: 'warning',
+            code: 'semantic_workflow_without_skill_coverage',
+            message: 'Workflow has no recommended Skill coverage, so release impact is harder to audit.'
+          });
+          score -= 20;
+        }
+
+        approvalRequired = true;
+      }
+    }
+  }
+
+  if (['skill_update', 'workflow_template_update'].includes(proposal.type) && !rollbackBoundary.valid) {
+    findings.push({
+      severity: 'critical',
+      code: 'semantic_missing_rollback_boundary',
+      message: 'Release evaluation requires a rollback boundary from the structured patch or Skill guidance.'
+    });
+    score -= 45;
+  }
+
+  const releaseGuard = buildReleaseGuard(proposal.type, approvalRequired, maxRiskLevel);
+  const requiresRollbackBoundary = proposal.type === 'skill_update' || proposal.type === 'workflow_template_update';
+  const passed = score >= 75 && missingSkillIds.size === 0 && (!requiresRollbackBoundary || rollbackBoundary.valid);
+
+  return {
+    score: clampScore(score),
+    passed,
+    proposalType: proposal.type,
+    patchKind: patch?.kind || null,
+    affectedSkillIds: Array.from(affectedSkillIds),
+    affectedWorkflowIds: Array.from(affectedWorkflowIds),
+    missingSkillIds: Array.from(missingSkillIds),
+    releaseGuard,
+    rollbackBoundary,
+    ...(skillCoverage ? { skillCoverage } : {})
+  };
+}
+
 function collectReplaySamples(proposal: EvolutionProposalRecord): EvolutionReplaySample[] {
   const samples: EvolutionReplaySample[] = [];
   const correlationId = proposal.correlation_id;
@@ -485,4 +644,224 @@ function parseJsonField<T>(value: unknown, fallback: T): T {
 
 function escapeLike(value: string): string {
   return value.replace(/[\\%_]/g, (match) => `\\${match}`);
+}
+
+function objectOrEmpty(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function stringOrNull(value: unknown): string | null {
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
+}
+
+function getSkillSemanticRecord(skillId: string): Record<string, unknown> | null {
+  const row = db.prepare(`
+    SELECT id, name, risk_level, approval_policy, verification_method,
+           rollback_guidance, output_contract, version_status
+    FROM skills
+    WHERE id = ?
+    LIMIT 1
+  `).get(skillId) as Record<string, unknown> | undefined;
+
+  return row || null;
+}
+
+function getWorkflowSemanticRecord(workflowId: string): Record<string, unknown> | null {
+  const row = db.prepare(`
+    SELECT id, name, nodes, agent_configs
+    FROM workflows
+    WHERE id = ?
+    LIMIT 1
+  `).get(workflowId) as Record<string, unknown> | undefined;
+
+  return row || null;
+}
+
+function getKnownSkillIds(skillIds: string[]): Set<string> {
+  const uniqueIds = Array.from(new Set(skillIds.filter(Boolean)));
+  if (uniqueIds.length === 0) {
+    return new Set();
+  }
+  const placeholders = uniqueIds.map(() => '?').join(', ');
+  const rows = db.prepare(`SELECT id FROM skills WHERE id IN (${placeholders})`).all(...uniqueIds) as Array<Record<string, unknown>>;
+  return new Set(rows.map(row => String(row.id)));
+}
+
+function scoreSkillOperationalFields(skill: Record<string, unknown>, findings: EvolutionEvaluationFinding[]): number {
+  let adjustment = 0;
+  const riskLevel = normalizeRiskLevel(skill.risk_level);
+
+  if (!stringOrNull(skill.verification_method)) {
+    findings.push({
+      severity: 'warning',
+      code: 'semantic_missing_skill_verification',
+      message: `Skill ${skill.id} has no verification method, making post-release checks weaker.`
+    });
+    adjustment -= 12;
+  }
+
+  if (!hasOutputContract(skill.output_contract)) {
+    findings.push({
+      severity: 'warning',
+      code: 'semantic_missing_skill_output_contract',
+      message: `Skill ${skill.id} has no output contract for downstream workflow consumers.`
+    });
+    adjustment -= 10;
+  }
+
+  if (isHighRisk(riskLevel) && !isApprovalRequired(skill.approval_policy)) {
+    findings.push({
+      severity: 'warning',
+      code: 'semantic_high_risk_without_explicit_approval',
+      message: `Skill ${skill.id} is ${riskLevel} risk but does not explicitly require approval.`
+    });
+    adjustment -= 18;
+  }
+
+  return adjustment;
+}
+
+function buildRollbackBoundary(
+  patch: ReturnType<typeof getStructuredPatchFromProposal>,
+  skill: Record<string, unknown> | null
+): EvolutionSemanticGuardSummary['rollbackBoundary'] {
+  const patchNotes = stringOrNull(objectOrEmpty(patch?.rollbackPlan).notes);
+  if (patchNotes && patchNotes.length >= 24) {
+    return {
+      valid: true,
+      strategy: stringOrNull(objectOrEmpty(patch?.rollbackPlan).strategy),
+      notes: patchNotes,
+      source: 'structured_patch'
+    };
+  }
+
+  const skillNotes = stringOrNull(skill?.rollback_guidance);
+  if (skillNotes && skillNotes.length >= 16) {
+    return {
+      valid: true,
+      strategy: 'manual_revert',
+      notes: skillNotes,
+      source: 'skill'
+    };
+  }
+
+  return {
+    valid: false,
+    strategy: null,
+    notes: patchNotes || skillNotes,
+    source: 'none'
+  };
+}
+
+function buildReleaseGuard(
+  proposalType: string,
+  approvalRequired: boolean,
+  riskLevel: string
+): EvolutionSemanticGuardSummary['releaseGuard'] {
+  if (approvalRequired || isHighRisk(riskLevel) || proposalType === 'workflow_template_update') {
+    return {
+      mode: 'approval_required',
+      reason: 'Release affects operational Skill or Workflow behavior and must go through approval plus versioned rollback.'
+    };
+  }
+
+  if (proposalType === 'skill_update') {
+    return {
+      mode: 'review_required',
+      reason: 'Skill release changes runtime prompt semantics and requires human review before publish.'
+    };
+  }
+
+  return {
+    mode: 'readonly_overlay',
+    reason: 'Release remains a versioned overlay record and does not modify source tables directly.'
+  };
+}
+
+function collectWorkflowRecommendedSkillIds(workflow: Record<string, unknown>): string[] {
+  const ids = new Set<string>();
+  const nodes = parseJsonField<unknown[]>(workflow.nodes, []);
+  const agentConfigs = parseJsonField<Record<string, unknown>>(workflow.agent_configs, {});
+
+  nodes.forEach(node => {
+    const data = objectOrEmpty(objectOrEmpty(node).data);
+    addSkillIds(ids, data.recommendedSkillId);
+    addSkillIds(ids, data.recommendedSkillIds);
+  });
+
+  const stages = Array.isArray(agentConfigs.stages) ? agentConfigs.stages : [];
+  stages.forEach(stage => {
+    addSkillIds(ids, objectOrEmpty(stage).recommendedSkillId);
+    addSkillIds(ids, objectOrEmpty(stage).recommendedSkillIds);
+  });
+
+  return Array.from(ids);
+}
+
+function computeWorkflowSkillCoverage(workflow: Record<string, unknown>): NonNullable<EvolutionSemanticGuardSummary['skillCoverage']> {
+  const nodes = parseJsonField<unknown[]>(workflow.nodes, []);
+  let totalNodes = 0;
+  let nodesWithRecommendedSkill = 0;
+
+  nodes.forEach(node => {
+    const data = objectOrEmpty(objectOrEmpty(node).data);
+    if (String(data.nodeType || '').toLowerCase() !== 'agent') {
+      return;
+    }
+    totalNodes += 1;
+    const ids = new Set<string>();
+    addSkillIds(ids, data.recommendedSkillId);
+    addSkillIds(ids, data.recommendedSkillIds);
+    if (ids.size > 0) {
+      nodesWithRecommendedSkill += 1;
+    }
+  });
+
+  return {
+    totalNodes,
+    nodesWithRecommendedSkill,
+    coverageRatio: totalNodes > 0 ? Number((nodesWithRecommendedSkill / totalNodes).toFixed(2)) : 0
+  };
+}
+
+function addSkillIds(target: Set<string>, value: unknown): void {
+  if (typeof value === 'string' && value.trim()) {
+    target.add(value.trim());
+    return;
+  }
+  if (Array.isArray(value)) {
+    value.forEach(item => addSkillIds(target, item));
+  }
+}
+
+function normalizeRiskLevel(value: unknown): string {
+  const normalized = typeof value === 'string' ? value.toLowerCase() : '';
+  return ['low', 'medium', 'high', 'critical'].includes(normalized) ? normalized : 'medium';
+}
+
+function isHighRisk(value: string): boolean {
+  return value === 'high' || value === 'critical';
+}
+
+function isApprovalRequired(value: unknown): boolean {
+  return typeof value === 'string' && /(approval|required|manual|审批|批准)/i.test(value);
+}
+
+function hasOutputContract(value: unknown): boolean {
+  if (Array.isArray(value)) {
+    return value.length > 0;
+  }
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return false;
+    }
+    try {
+      const parsed = JSON.parse(trimmed);
+      return Array.isArray(parsed) ? parsed.length > 0 : Boolean(parsed);
+    } catch {
+      return true;
+    }
+  }
+  return false;
 }

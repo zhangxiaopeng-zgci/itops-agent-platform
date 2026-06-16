@@ -394,13 +394,29 @@ P4 实施切片：
 - [x] P4b：Skill API、Channel 解析、Hermes Runtime prompt 注入和能力包导入导出贯通语义字段。
 - [x] P4c：Hermes 团队控制台展示 Channel Skill 覆盖摘要，包括风险、审批、场景、证据、推荐工具、MCP、验证和回滚。
 - [x] P4d：Workflow 节点声明 recommended Skill，并在模板编辑器/任务详情中展示引用关系。
-- [ ] P4e：Skill 语义与 Release/Evaluation 进一步联动，形成发布前评估和回滚边界。
+- [x] P4e：Skill 语义与 Release/Evaluation 进一步联动，形成发布前评估和回滚边界。
+
+P4e 收敛结果：
+
+- Evaluation 增加 Skill/Workflow 语义守卫：
+  - Skill 提案必须明确目标 Skill，并检查风险、审批、验证方式、输出契约和回滚建议。
+  - Workflow 模板提案必须明确目标 Workflow，并检查节点 recommended Skill 覆盖和缺失 Skill。
+  - 评估摘要写入 `semanticGuard`，包含受影响 Skill/Workflow、缺失 Skill、发布守卫模式、回滚边界和覆盖率。
+- Release 发布门禁增强：
+  - Skill/Workflow 提案必须使用带 `semanticGuard` 的最新通过评估。
+  - 发布前必须存在有效回滚边界。
+  - release payload 保存最新评估摘要和 semantic guard，便于回滚与审计。
+- 前端 Evolution Proposal 详情页展示：
+  - 语义分。
+  - Skill 语义发布守卫。
+  - 受影响 Skill/Workflow、缺失 Skill、回滚边界、节点 Skill 覆盖。
 
 P4 当前边界：
 
 - 不改变现有 Workflow 执行器选择 Agent 的方式。
 - 不开放 MCP tool execution，仅把 MCP 作为 Skill 推荐连接器和 Channel 能力摘要。
-- Skill 的运行态生效仍通过 Channel 绑定和 Hermes Runtime 注入；发布/回滚继续走 Release 机制。
+- Skill 的运行态生效仍通过 Channel 绑定、已发布 release overlay 和 Hermes Runtime 注入；发布/回滚继续走 Release 机制。
+- P4e 只做发布前评估和版本 payload 边界，不把 structured patch 直接写回 Skill/Workflow 源表。
 
 ### P5：Execution Evidence 证据链
 
