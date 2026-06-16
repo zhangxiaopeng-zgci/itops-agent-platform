@@ -1,5 +1,6 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import db, { initializeDatabase } from '../../models/database';
+import { evolutionContinuousService } from '../evolutionContinuousService';
 import { createHermesSession } from '../hermesSessionService';
 import { createToolApproval, markToolApprovalApproved } from './approvalService';
 import { invokeTool } from './toolRegistry';
@@ -372,6 +373,63 @@ describe('toolRegistry', () => {
     const evidence = JSON.parse(proposal?.evidence_refs || '{}') as { schemaVersion?: string; verificationResult?: { failedNodes?: unknown[] } };
     expect(evidence.schemaVersion).toBe('verification.failure.evidence.v1');
     expect(evidence.verificationResult?.failedNodes).toHaveLength(1);
+  });
+
+  it('generates evolution proposal candidates from failed task feedback', async () => {
+    db.prepare(`
+      INSERT OR REPLACE INTO tasks (
+        id, workflow_id, name, status, node_results, logs, context, execution_order, created_at, updated_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+    `).run(
+      'task-feedback-failure-test',
+      'workflow-feedback-failure-test',
+      'Feedback Failure Test',
+      'failed',
+      JSON.stringify({
+        node_feedback: { status: 'failed', error: 'feedback driven failure' }
+      }),
+      JSON.stringify([{ message: 'feedback failed', correlationId: 'corr-feedback-failure-test' }]),
+      JSON.stringify({ correlationId: 'corr-feedback-failure-test' }),
+      JSON.stringify(['node_feedback'])
+    );
+
+    const run = await evolutionContinuousService.runTask('evolution-task-failure-review', 'test');
+
+    expect(run.status).toBe('success');
+    const queueItem = db.prepare(`
+      SELECT source_type, source_id, status, generated_proposal_id
+      FROM evolution_review_queue
+      WHERE source_type = 'task'
+        AND source_id = ?
+    `).get('task-feedback-failure-test') as
+      | { source_type: string; source_id: string; status: string; generated_proposal_id: string | null }
+      | undefined;
+
+    expect(queueItem).toEqual(expect.objectContaining({
+      source_type: 'task',
+      source_id: 'task-feedback-failure-test',
+      status: 'proposal_generated'
+    }));
+    expect(queueItem?.generated_proposal_id).toBeTruthy();
+
+    const proposal = db.prepare(`
+      SELECT source, source_ref, type, status, evidence_refs
+      FROM evolution_proposals
+      WHERE id = ?
+    `).get(queueItem?.generated_proposal_id) as
+      | { source: string; source_ref: string; type: string; status: string; evidence_refs: string }
+      | undefined;
+
+    expect(proposal).toEqual(expect.objectContaining({
+      source: 'feedback_failure',
+      source_ref: 'task:task-feedback-failure-test',
+      type: 'workflow_template_update',
+      status: 'draft'
+    }));
+    const evidence = JSON.parse(proposal?.evidence_refs || '{}') as { schemaVersion?: string; sourceType?: string };
+    expect(evidence.schemaVersion).toBe('feedback.failure.evidence.v1');
+    expect(evidence.sourceType).toBe('task');
   });
 
   it('does not let skipApproval bypass denied policy decisions', async () => {

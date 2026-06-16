@@ -3,7 +3,11 @@ import { scheduleJob, Job } from 'node-schedule';
 import db from '../models/database';
 import { logger } from '../utils/logger';
 import { evaluateEvolutionProposal } from './evolutionEvaluationService';
-import { generateEvolutionProposal, updateEvolutionProposalStatus } from './evolutionProposalService';
+import {
+  createOrGetFeedbackDrivenProposal,
+  generateEvolutionProposal,
+  updateEvolutionProposalStatus
+} from './evolutionProposalService';
 
 export type EvolutionTaskKind =
   | 'daily_review'
@@ -327,6 +331,8 @@ export function listEvolutionReviewQueue(filters: {
 
 function queueFailureEvidence(): Record<string, unknown> {
   let queued = 0;
+  let generated = 0;
+  const proposalIds = new Set<string>();
   const workerRuns = db.prepare(`
     SELECT id, worker_role, status, correlation_id, error
     FROM hermes_worker_runs
@@ -337,13 +343,17 @@ function queueFailureEvidence(): Record<string, unknown> {
   `).all() as Array<Record<string, unknown>>;
 
   workerRuns.forEach((run) => {
-    queued += enqueueReviewItem({
+    const result = enqueueReviewItem({
       sourceType: 'worker_run',
       sourceId: String(run.id),
       reason: `${run.worker_role || 'worker'} ${run.status || 'unknown'}${run.error ? `: ${run.error}` : ''}`,
       priority: run.status === 'failed' ? 'P1' : 'P2',
-      correlationId: nullableString(run.correlation_id)
+      correlationId: nullableString(run.correlation_id),
+      evidence: run
     });
+    queued += result.queued;
+    generated += result.generated;
+    addString(result.proposalId, proposalIds);
   });
 
   const executions = db.prepare(`
@@ -356,26 +366,75 @@ function queueFailureEvidence(): Record<string, unknown> {
   `).all() as Array<Record<string, unknown>>;
 
   executions.forEach((execution) => {
-    queued += enqueueReviewItem({
+    const result = enqueueReviewItem({
       sourceType: 'agent_execution',
       sourceId: String(execution.id),
       reason: `${execution.agent_name || 'Agent'} execution failed${execution.error_message ? `: ${execution.error_message}` : ''}`,
       priority: 'P1',
-      correlationId: extractCorrelationId(execution.metadata)
+      correlationId: extractCorrelationId(execution.metadata),
+      evidence: {
+        ...execution,
+        metadata: parseJsonField(execution.metadata, null)
+      }
     });
+    queued += result.queued;
+    generated += result.generated;
+    addString(result.proposalId, proposalIds);
+  });
+
+  const tasks = db.prepare(`
+    SELECT id, workflow_id, name, status, current_node_id, node_results, logs, context
+    FROM tasks
+    WHERE created_at >= datetime('now', '-24 hours')
+      AND status IN ('failed', 'error')
+    ORDER BY created_at DESC
+    LIMIT 50
+  `).all() as Array<Record<string, unknown>>;
+
+  tasks.forEach((task) => {
+    const nodeResults = parseJsonField<Record<string, unknown>>(task.node_results, {});
+    const failedNodes = Object.entries(nodeResults)
+      .filter(([, value]) => objectOrEmpty(value).status === 'failed')
+      .map(([nodeId, value]) => ({
+        nodeId,
+        error: nullableString(objectOrEmpty(value).error) || 'Node failed'
+      }));
+    const result = enqueueReviewItem({
+      sourceType: 'task',
+      sourceId: String(task.id),
+      reason: `${task.name || 'workflow task'} ${task.status || 'failed'}${failedNodes.length ? `: ${failedNodes.map(node => node.nodeId).join(', ')}` : ''}`,
+      priority: failedNodes.length > 0 ? 'P1' : 'P2',
+      correlationId: extractCorrelationIdFromTask(task),
+      evidence: {
+        ...task,
+        context: parseJsonField(task.context, null),
+        logs: parseJsonField(task.logs, []),
+        node_results: nodeResults,
+        failedNodes
+      }
+    });
+    queued += result.queued;
+    generated += result.generated;
+    addString(result.proposalId, proposalIds);
   });
 
   return {
     queued,
+    generated,
+    generatedProposalId: Array.from(proposalIds)[0] || undefined,
+    proposalIds: Array.from(proposalIds),
     workerRunCandidates: workerRuns.length,
-    agentExecutionCandidates: executions.length
+    agentExecutionCandidates: executions.length,
+    taskCandidates: tasks.length
   };
 }
 
 function queueRejectedApprovalEvidence(): Record<string, unknown> {
   let queued = 0;
+  let generated = 0;
+  const proposalIds = new Set<string>();
   const approvals = db.prepare(`
-    SELECT id, tool_name, risk_level, reason, correlation_id
+    SELECT id, tool_name, risk_level, reason, status, correlation_id, review_comment, input
     FROM tool_approvals
     WHERE requested_at >= datetime('now', '-24 hours')
       AND status = 'rejected'
@@ -384,17 +443,27 @@ function queueRejectedApprovalEvidence(): Record<string, unknown> {
   `).all() as Array<Record<string, unknown>>;
 
   approvals.forEach((approval) => {
-    queued += enqueueReviewItem({
+    const result = enqueueReviewItem({
       sourceType: 'tool_approval',
       sourceId: String(approval.id),
       reason: `${approval.tool_name || 'tool'} approval rejected: ${approval.reason || approval.risk_level || 'no reason recorded'}`,
-      priority: approval.risk_level === 'high' ? 'P1' : 'P2',
-      correlationId: nullableString(approval.correlation_id)
+      priority: approval.risk_level === 'high_risk' || approval.risk_level === 'destructive' ? 'P1' : 'P2',
+      correlationId: nullableString(approval.correlation_id),
+      evidence: {
+        ...approval,
+        input: parseJsonField(approval.input, {})
+      }
     });
+    queued += result.queued;
+    generated += result.generated;
+    addString(result.proposalId, proposalIds);
   });
 
   return {
     queued,
+    generated,
+    generatedProposalId: Array.from(proposalIds)[0] || undefined,
+    proposalIds: Array.from(proposalIds),
     rejectedApprovalCandidates: approvals.length
   };
 }
@@ -439,7 +508,8 @@ function enqueueReviewItem(input: {
   reason: string;
   priority: string;
   correlationId?: string | null;
-}): number {
+  evidence?: Record<string, unknown>;
+}): { queued: number; generated: number; proposalId: string | null } {
   const result = db.prepare(`
     INSERT OR IGNORE INTO evolution_review_queue (
       id, source_type, source_id, reason, priority, status, correlation_id, created_at
@@ -454,7 +524,31 @@ function enqueueReviewItem(input: {
     input.correlationId || null
   );
 
-  return result.changes;
+  const proposal = createOrGetFeedbackDrivenProposal({
+    sourceType: input.sourceType,
+    sourceId: input.sourceId,
+    reason: input.reason,
+    priority: input.priority,
+    correlationId: input.correlationId || null,
+    evidence: input.evidence || {},
+    createdBy: 'system'
+  });
+
+  db.prepare(`
+    UPDATE evolution_review_queue
+    SET generated_proposal_id = ?,
+        status = CASE WHEN status = 'queued' THEN 'proposal_generated' ELSE status END,
+        reviewed_at = COALESCE(reviewed_at, CURRENT_TIMESTAMP)
+    WHERE source_type = ?
+      AND source_id = ?
+      AND (generated_proposal_id IS NULL OR generated_proposal_id = ?)
+  `).run(proposal.id, input.sourceType, input.sourceId, proposal.id);
+
+  return {
+    queued: result.changes,
+    generated: 1,
+    proposalId: proposal.id
+  };
 }
 
 function getProposalStatus(proposalId: string): string | null {
@@ -526,6 +620,50 @@ function parseJsonField<T>(value: unknown, fallback: T): T {
 function extractCorrelationId(metadata: unknown): string | null {
   const parsed = parseJsonField<Record<string, unknown> | null>(metadata, null);
   return typeof parsed?.correlationId === 'string' ? parsed.correlationId : null;
+}
+
+function extractCorrelationIdFromTask(task: Record<string, unknown>): string | null {
+  const context = parseJsonField<Record<string, unknown> | null>(task.context, null);
+  const logs = parseJsonField<unknown[]>(task.logs, []);
+  const nodeResults = parseJsonField<Record<string, unknown>>(task.node_results, {});
+  return findStringField(context, 'correlationId')
+    || findStringField(logs, 'correlationId')
+    || findStringField(nodeResults, 'correlationId');
+}
+
+function objectOrEmpty(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function findStringField(value: unknown, key: string, depth = 0): string | null {
+  if (depth > 8 || !value || typeof value !== 'object') {
+    return null;
+  }
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = findStringField(item, key, depth + 1);
+      if (found) return found;
+    }
+    return null;
+  }
+
+  const record = value as Record<string, unknown>;
+  const direct = nullableString(record[key]);
+  if (direct) return direct;
+
+  for (const child of Object.values(record)) {
+    const found = findStringField(child, key, depth + 1);
+    if (found) return found;
+  }
+
+  return null;
+}
+
+function addString(value: unknown, target: Set<string>): void {
+  if (typeof value === 'string' && value.trim()) {
+    target.add(value.trim());
+  }
 }
 
 function clampLimit(value: unknown, defaultValue: number, maxValue: number): number {

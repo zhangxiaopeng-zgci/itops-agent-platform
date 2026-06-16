@@ -689,6 +689,39 @@ P6d 收敛结果：
 - 每个 proposal 能追溯来源执行和失败原因。
 - 发布前可评估，发布后可回滚。
 
+P7 实施切片：
+
+- [x] P7a：失败反馈确定性生成 Evolution Proposal 候选。
+- [ ] P7b：Review Queue 运营视图增强，展示来源、失败原因、生成提案、评估状态和发布价值。
+- [ ] P7c：同类问题聚合和重复发生识别，避免一事一提案的噪声。
+- [ ] P7d：复盘 Agent 消费候选证据，补充结构化 patch、评估计划和风险说明。
+- [ ] P7e：Proposal -> Evaluation -> Approval -> Release 的运营仪表盘收口。
+
+P7a 收敛结果：
+
+- `failure_review` 持续进化任务不再只入队失败反馈，会自动创建或复用 `source=feedback_failure` 的 proposal 候选：
+  - Hermes Worker failed / fallback。
+  - Agent execution error。
+  - Workflow task failed / error。
+- `rejected_approval_review` 会为被拒绝的工具审批创建或复用 tool policy 方向的 proposal 候选。
+- Review Queue 项会回写：
+  - `generated_proposal_id`
+  - `status=proposal_generated`
+  - `reviewed_at`
+- 生成的 proposal 使用 `feedback.failure.evidence.v1`，包含：
+  - sourceType/sourceId
+  - reason
+  - priority
+  - correlationId
+  - 原始失败证据快照
+- Proposal 类型按反馈来源确定性映射：
+  - worker_run -> `skill_update`
+  - agent_execution -> `prompt_update`
+  - task -> `workflow_template_update`
+  - tool_approval -> `tool_policy_update`
+- Evolution Proposal 页面持续进化队列显示已生成提案，并支持从队列项直接跳转到 proposal。
+- 当前边界：P7a 只生成候选，不自动评估、审批或发布；P7b/P7c 继续增强运营视图和重复问题聚合。
+
 ### P8：Agent / Workflow 管理台产品化
 
 目标：

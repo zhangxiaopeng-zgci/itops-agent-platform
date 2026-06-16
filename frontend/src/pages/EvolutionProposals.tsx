@@ -1,6 +1,6 @@
 import { type ReactNode, useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Archive, CheckCircle2, Clock, FileText, Gauge, PlayCircle, RefreshCw, ShieldCheck, Sparkles, XCircle } from 'lucide-react';
 import clsx from 'clsx';
 import api from '../lib/api';
@@ -153,6 +153,7 @@ interface EvolutionQueueItem {
   priority: string;
   status: string;
   correlation_id?: string | null;
+  generated_proposal_id?: string | null;
   created_at: string;
 }
 
@@ -184,6 +185,7 @@ const statusOptions = [
 
 export default function EvolutionProposals() {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const { user } = useAuth();
   const { t } = useLocale();
   const toast = useToast();
@@ -265,7 +267,7 @@ export default function EvolutionProposals() {
   const { data: reviewQueue } = useQuery({
     queryKey: ['evolution-review-queue'],
     queryFn: async () => {
-      const res = await api.get('/api/evolution-tasks/queue?status=queued&limit=6');
+      const res = await api.get('/api/evolution-tasks/queue?limit=6');
       return res.data.data as EvolutionQueueItem[];
     },
     refetchInterval: 30000
@@ -404,6 +406,10 @@ export default function EvolutionProposals() {
             tasks={evolutionTasks || []}
             runs={taskRuns || []}
             queue={reviewQueue || []}
+            onOpenProposal={(proposalId) => {
+              setSelectedId(proposalId);
+              navigate(`/evolution-proposals?proposalId=${encodeURIComponent(proposalId)}`);
+            }}
             canRun={canGenerate}
             runningTaskId={runTaskMutation.variables}
             isRunning={runTaskMutation.isPending}
@@ -950,6 +956,7 @@ function ContinuousEvolutionPanel({
   tasks,
   runs,
   queue,
+  onOpenProposal,
   canRun,
   runningTaskId,
   isRunning,
@@ -958,6 +965,7 @@ function ContinuousEvolutionPanel({
   tasks: EvolutionTask[];
   runs: EvolutionTaskRun[];
   queue: EvolutionQueueItem[];
+  onOpenProposal: (proposalId: string) => void;
   canRun: boolean;
   runningTaskId?: string;
   isRunning: boolean;
@@ -1022,9 +1030,17 @@ function ContinuousEvolutionPanel({
               <div key={item.id} className="text-xs">
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-text-secondary truncate">{item.source_type}</span>
-                  <span className="text-text-tertiary">{item.priority}</span>
+                  <span className="text-text-tertiary">{item.generated_proposal_id ? t('evolution.continuous.generated') : item.priority}</span>
                 </div>
                 {item.reason && <div className="text-text-tertiary truncate mt-0.5">{item.reason}</div>}
+                {item.generated_proposal_id && (
+                  <button
+                    onClick={() => onOpenProposal(item.generated_proposal_id!)}
+                    className="mt-1 text-primary hover:text-primary/80 transition-colors"
+                  >
+                    {t('evolution.continuous.openProposal', { id: shortId(item.generated_proposal_id) })}
+                  </button>
+                )}
               </div>
             ))}
             {queue.length === 0 && <div className="text-xs text-text-tertiary">{t('evolution.continuous.noQueue')}</div>}
@@ -1095,6 +1111,10 @@ function formatTime(value?: string | null): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
   return date.toLocaleString();
+}
+
+function shortId(value: string): string {
+  return value.length > 12 ? `${value.slice(0, 8)}...` : value;
 }
 
 function getStructuredPatch(proposal: EvolutionProposal): StructuredPatch | null {

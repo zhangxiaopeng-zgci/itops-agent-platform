@@ -76,6 +76,16 @@ export interface VerificationFailureCandidateInput {
   createdBy?: string | null;
 }
 
+export interface FeedbackDrivenProposalInput {
+  sourceType: string;
+  sourceId: string;
+  reason: string;
+  priority?: string;
+  correlationId?: string | null;
+  evidence?: Record<string, unknown>;
+  createdBy?: string | null;
+}
+
 const PROPOSAL_TYPES = new Set<EvolutionProposalType>([
   'skill_update',
   'workflow_template_update',
@@ -258,6 +268,52 @@ export function createOrGetVerificationFailureProposal(
     proposalBody: buildVerificationFailureProposalBody(input),
     evidenceRefs,
     riskNotes: 'Generated from a failed verify_remediation result. This candidate is not applied automatically and must pass review, evaluation, and approval.',
+    correlationId: input.correlationId || null,
+    createdBy: input.createdBy || null
+  });
+}
+
+export function createOrGetFeedbackDrivenProposal(
+  input: FeedbackDrivenProposalInput
+): EvolutionProposalRecord {
+  const sourceRef = `${input.sourceType}:${input.sourceId}`;
+  const existing = db.prepare(`
+    SELECT *
+    FROM evolution_proposals
+    WHERE source = 'feedback_failure'
+      AND source_ref = ?
+      AND status NOT IN ('rejected', 'archived', 'published')
+    ORDER BY created_at DESC
+    LIMIT 1
+  `).get(sourceRef) as Record<string, unknown> | undefined;
+
+  if (existing) {
+    return parseProposal(existing);
+  }
+
+  const proposalType = inferFeedbackProposalType(input.sourceType);
+  const priority = normalizePriority(input.priority);
+  const evidenceRefs = buildFeedbackEvidence(input);
+
+  return createEvolutionProposal({
+    title: buildFeedbackProposalTitle(input),
+    type: proposalType,
+    priority,
+    source: 'feedback_failure',
+    sourceRef,
+    targetDescriptor: {
+      targetType: inferFeedbackTargetType(proposalType),
+      targetId: null,
+      applyMode: 'proposal_only',
+      selector: {
+        sourceType: input.sourceType,
+        sourceId: input.sourceId,
+        reason: 'feedback_failure'
+      }
+    },
+    proposalBody: buildFeedbackProposalBody(input, proposalType),
+    evidenceRefs,
+    riskNotes: 'Generated from real execution feedback. This candidate is proposal-only and must pass evaluation, review, approval, and release governance before any runtime effect.',
     correlationId: input.correlationId || null,
     createdBy: input.createdBy || null
   });
@@ -449,6 +505,87 @@ export async function generateEvolutionProposal(input: {
   }
 
   return proposal;
+}
+
+function inferFeedbackProposalType(sourceType: string): EvolutionProposalType {
+  if (sourceType === 'tool_approval') return 'tool_policy_update';
+  if (sourceType === 'task' || sourceType === 'workflow_task') return 'workflow_template_update';
+  if (sourceType === 'agent_execution') return 'prompt_update';
+  if (sourceType === 'worker_run') return 'skill_update';
+  return 'skill_update';
+}
+
+function inferFeedbackTargetType(type: EvolutionProposalType): string {
+  const targetTypeMap: Record<EvolutionProposalType, string> = {
+    skill_update: 'skill',
+    workflow_template_update: 'workflow_template',
+    tool_policy_update: 'tool_policy',
+    knowledge_update: 'knowledge',
+    mcp_binding_update: 'mcp_binding',
+    prompt_update: 'agent_prompt'
+  };
+  return targetTypeMap[type];
+}
+
+function buildFeedbackEvidence(input: FeedbackDrivenProposalInput): Record<string, unknown> {
+  return sanitizeValue({
+    schemaVersion: 'feedback.failure.evidence.v1',
+    source: 'continuous_evolution',
+    sourceType: input.sourceType,
+    sourceId: input.sourceId,
+    reason: input.reason,
+    priority: input.priority || 'P2',
+    correlationId: input.correlationId || null,
+    evidence: input.evidence || {},
+    generatedAt: new Date().toISOString()
+  }) as Record<string, unknown>;
+}
+
+function buildFeedbackProposalTitle(input: FeedbackDrivenProposalInput): string {
+  return `Improve ${input.sourceType.replace(/_/g, ' ')} feedback ${shortId(input.sourceId)}`;
+}
+
+function buildFeedbackProposalBody(input: FeedbackDrivenProposalInput, type: EvolutionProposalType): string {
+  return [
+    '# Feedback-driven evolution candidate',
+    '',
+    '## Source feedback',
+    `- Source type: ${input.sourceType}`,
+    `- Source id: ${input.sourceId}`,
+    `- Correlation id: ${input.correlationId || '-'}`,
+    `- Reason: ${input.reason}`,
+    '',
+    '## Proposed improvement direction',
+    buildFeedbackImprovementDirection(type, input.sourceType),
+    '',
+    '## Evidence to review',
+    'Use the linked worker run, agent execution, task, approval, and correlation trace before accepting this proposal.',
+    '',
+    '## Evaluation plan',
+    '- Confirm the source failure is reproducible or materially important.',
+    '- Confirm the proposed change is scoped to the smallest affected skill, prompt, workflow, or policy.',
+    '- Run proposal evaluation before moving to approval_pending.',
+    '',
+    '## Risk and rollback',
+    '- This candidate is proposal-only and does not change runtime behavior.',
+    '- Roll back by archiving this proposal or rolling back a later release overlay if published.'
+  ].join('\n');
+}
+
+function buildFeedbackImprovementDirection(type: EvolutionProposalType, sourceType: string): string {
+  if (type === 'workflow_template_update') {
+    return '- Review workflow node ordering, evidence capture, approval gate, rollback plan, and verification steps for this failed task.';
+  }
+  if (type === 'tool_policy_update') {
+    return '- Review tool policy, approval criteria, safety review wording, and operator guidance that led to the rejected approval.';
+  }
+  if (type === 'prompt_update') {
+    return '- Review the agent system prompt and tool-use instructions so similar execution failures produce safer, more useful next steps.';
+  }
+  if (type === 'skill_update') {
+    return `- Review the related skill guidance for ${sourceType.replace(/_/g, ' ')} and add evidence, fallback, or verification instructions.`;
+  }
+  return '- Review the relevant runtime capability and propose a minimal controlled improvement.';
 }
 
 function buildVerificationFailureEvidence(input: VerificationFailureCandidateInput): Record<string, unknown> {
