@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { randomUUID } from 'crypto';
 import db from '../models/database';
 import { executeAgentRun } from '../services/agentExecutor';
+import { buildExecutionEvidenceSummary } from '../services/executionEvidenceService';
 import { testHermesConnection } from '../services/agentRuntime/hermesRuntime';
 import { inferLegacyRuntimeType } from '../services/agentRuntime/registry';
 import { requireRole } from '../middleware/auth';
@@ -302,6 +303,18 @@ router.post('/:id/test', async (req: Request, res: Response) => {
     
     const executionTime = Date.now() - startTime;
     
+    const executionEvidence = buildExecutionEvidenceSummary({
+      inputText: input,
+      outputText: output,
+      errorMessage,
+      status,
+      context: executionContext,
+      trace: runResult?.trace || [],
+      runtimeMetadata: runResult?.metadata || {},
+      agentId: req.params.id,
+      agentName
+    });
+
     // 保存执行记录
     db.prepare(`
       INSERT INTO agent_executions (id, agent_id, agent_name, input_text, output_text, status, error_message, execution_time_ms, metadata, created_at)
@@ -323,6 +336,7 @@ router.post('/:id/test', async (req: Request, res: Response) => {
         serverIds,
         runtime: runResult?.metadata?.runtime || (agent as { runtime?: string }).runtime || null,
         runtimeMetadata: runResult?.metadata || {},
+        executionEvidence,
         trace: runResult?.trace || []
       })
     );
@@ -378,6 +392,7 @@ router.post('/:id/test', async (req: Request, res: Response) => {
           correlationId,
           runtime: runResult?.metadata?.runtime || (agent as { runtime?: string }).runtime || null,
           runtimeMetadata: runResult?.metadata || {},
+          executionEvidence,
           trace: runResult?.trace || []
         },
         trace: runResult?.trace || []

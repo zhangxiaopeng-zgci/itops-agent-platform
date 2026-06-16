@@ -2,6 +2,7 @@ import { randomUUID } from 'crypto';
 import db, { getIOInstance } from '../models/database';
 import { logger } from '../utils/logger';
 import { executeAgentRun, getThinkingSteps } from './agentExecutor';
+import { buildExecutionEvidenceSummary } from './executionEvidenceService';
 import { reportService } from './reportService';
 import {
   WorkflowNode,
@@ -120,9 +121,11 @@ export async function executeWorkflow(
         nodeName: node.data.label
       });
       
+      let nodeInput = initialInput || '请开始执行任务';
       try {
         const previousResults = Object.values(nodeResults).map((r) => r.output).filter(Boolean).join('\n\n');
         const input = previousResults || initialInput || '请开始执行任务';
+        nodeInput = input;
         
         executionContext.metadata.currentNodeId = nodeId;
         executionContext.metadata.executionDepth = executionDepth;
@@ -145,6 +148,7 @@ export async function executeWorkflow(
           addTaskLog(taskId, { type: 'thinking', content: step, nodeId });
         }
         
+        const runbookContext = buildRunbookNodeContext(node);
         const nodeContext = {
           ...(context || {}),
           taskId,
@@ -152,7 +156,7 @@ export async function executeWorkflow(
           workflowName: workflow.name,
           nodeId,
           nodeName: node.data.label,
-          runbook: buildRunbookNodeContext(node)
+          runbook: runbookContext
         };
         logger.info(`🤖 Calling executeAgentRun with agentId: ${node.data.agentId} context:`, nodeContext);
         const runResult = await executeAgentRun(node.data.agentId, input, nodeContext);
@@ -172,7 +176,20 @@ export async function executeWorkflow(
             riskGate: node.data.riskGate,
             approvalRequired: Boolean(node.data.approvalRequired),
             verificationRequired: Boolean(node.data.verificationRequired),
-            recommendedSkillIds: getRecommendedSkillIds(node)
+            recommendedSkillIds: getRecommendedSkillIds(node),
+            executionEvidence: buildExecutionEvidenceSummary({
+              inputText: input,
+              outputText: output,
+              status: 'success',
+              context: nodeContext,
+              trace: runResult.trace || [],
+              runtimeMetadata: runResult.metadata || {},
+              runbook: runbookContext,
+              agentId: node.data.agentId,
+              agentName: node.data.label,
+              taskId,
+              nodeId
+            })
           }
         };
         
@@ -202,9 +219,38 @@ export async function executeWorkflow(
         
       } catch (error: unknown) {
         const errorMessage = error instanceof Error ? error.message : String(error);
+        const runbookContext = buildRunbookNodeContext(node);
+        const failedNodeContext = {
+          ...(context || {}),
+          taskId,
+          workflowId: workflow.id,
+          workflowName: workflow.name,
+          nodeId,
+          nodeName: node.data.label,
+          runbook: runbookContext
+        };
         nodeResults[nodeId] = {
           status: 'failed',
-          error: errorMessage
+          error: errorMessage,
+          metadata: {
+            runbookPhase: node.data.runbookPhase,
+            evidenceRequired: node.data.evidenceRequired || [],
+            riskGate: node.data.riskGate,
+            approvalRequired: Boolean(node.data.approvalRequired),
+            verificationRequired: Boolean(node.data.verificationRequired),
+            recommendedSkillIds: getRecommendedSkillIds(node),
+            executionEvidence: buildExecutionEvidenceSummary({
+              inputText: nodeInput,
+              errorMessage,
+              status: 'failed',
+              context: failedNodeContext,
+              runbook: runbookContext,
+              agentId: node.data.agentId,
+              agentName: node.data.label,
+              taskId,
+              nodeId
+            })
+          }
         };
         
         io?.to(`task:${taskId}`).emit('task:node:completed', {

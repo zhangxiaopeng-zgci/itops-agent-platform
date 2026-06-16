@@ -2,6 +2,7 @@ import { randomUUID } from 'crypto';
 import db from '../models/database';
 import { executeAgentRun } from './agentExecutor';
 import { AgentRunResult } from './agentRuntime/types';
+import { buildExecutionEvidenceSummary } from './executionEvidenceService';
 import { createHermesSession } from './hermesSessionService';
 import { ensureStructuredPatchDescriptor } from './evolutionPatchService';
 
@@ -282,19 +283,20 @@ export async function generateEvolutionProposal(input: {
   let status = 'success';
   let output = '';
   let errorMessage: string | null = null;
+  const executionContext = {
+    source: 'evolution_proposal',
+    mode: 'review',
+    userId: input.createdBy || undefined,
+    userRole: input.userRole || 'operator',
+    ipAddress: input.ipAddress,
+    correlationId,
+    agentExecutionId: executionId,
+    evidenceWindowHours,
+    proposalType: type
+  };
 
   try {
-    runResult = await executeAgentRun(agent.id, evolutionPrompt, {
-      source: 'evolution_proposal',
-      mode: 'review',
-      userId: input.createdBy || undefined,
-      userRole: input.userRole || 'operator',
-      ipAddress: input.ipAddress,
-      correlationId,
-      agentExecutionId: executionId,
-      evidenceWindowHours,
-      proposalType: type
-    });
+    runResult = await executeAgentRun(agent.id, evolutionPrompt, executionContext);
     output = runResult.output;
   } catch (error) {
     status = 'error';
@@ -324,6 +326,17 @@ export async function generateEvolutionProposal(input: {
       evidenceWindowHours,
       runtime: runResult?.metadata?.runtime || 'hermes',
       runtimeMetadata: runResult?.metadata || {},
+      executionEvidence: buildExecutionEvidenceSummary({
+        inputText: evolutionPrompt,
+        outputText: output,
+        errorMessage,
+        status,
+        context: executionContext,
+        trace: runResult?.trace || [],
+        runtimeMetadata: runResult?.metadata || {},
+        agentId: agent.id,
+        agentName: agent.name
+      }),
       trace: runResult?.trace || []
     })
   );

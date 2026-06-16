@@ -6,6 +6,7 @@ import { getApiKey, getModelId, getApiBase, buildApiEndpoint } from '../utils/ap
 import { qanythingService } from './qanythingService';
 import * as aiModelService from './aiModelService';
 import type { AIModel } from './aiModelService';
+import { buildExecutionEvidenceSummary } from './executionEvidenceService';
 
 interface ChatMessage {
   role: 'system' | 'user' | 'assistant';
@@ -231,7 +232,18 @@ function recordAgentExecution(
       status,
       errorMessage || null,
       executionTimeMs || null,
-      metadata ? JSON.stringify(metadata) : null
+      JSON.stringify({
+        ...(metadata || {}),
+        executionEvidence: buildExecutionEvidenceSummary({
+          inputText,
+          outputText,
+          errorMessage,
+          status,
+          runtimeMetadata: metadata || {},
+          agentId,
+          agentName
+        })
+      })
     );
   } catch (error) {
     logger.error('Failed to record agent execution:', error);

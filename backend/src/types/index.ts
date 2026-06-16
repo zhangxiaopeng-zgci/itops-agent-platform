@@ -69,6 +69,7 @@ export interface NodeResult {
     approvalRequired?: boolean;
     verificationRequired?: boolean;
     recommendedSkillIds?: string[];
+    executionEvidence?: unknown;
     trace?: Array<{
       type?: string;
       content?: string;

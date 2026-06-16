@@ -446,6 +446,37 @@ P4 当前边界：
 - 任意一次执行能回答“为什么这么判断、做了什么、结果如何”。
 - 证据链能支撑复盘和 Evolution Proposal。
 
+P5 实施切片：
+
+- [x] P5a：标准化 `executionEvidence` 摘要，不改表结构，写入 Agent execution metadata 与 Workflow node result metadata。
+- [ ] P5b：Correlation Trace 页面聚合 executionEvidence，串联 Agent / Workflow / Team / Approval / Task。
+- [ ] P5c：Evolution Proposal evidence snapshot 优先消费 executionEvidence，而不是只扫 trace 文本。
+- [ ] P5d：Team Run 视图补充 Hermes worker、Channel、Skill、MCP、Release overlay 的证据链。
+
+P5a 收敛结果：
+
+- 新增 `execution.evidence.v1` 摘要结构：
+  - `input`
+  - `context`
+  - `evidence`
+  - `hypothesis`
+  - `riskLevel`
+  - `plannedActions`
+  - `approvalId`
+  - `taskId`
+  - `verificationResult`
+  - `traceId`
+- Workflow 节点执行成功/失败都会把 `executionEvidence` 写入 node result metadata。
+- Agent 测试执行、Evolution proposal 生成、旧 LLM Agent 执行记录都会把 `executionEvidence` 写入 agent execution metadata。
+- Tasks 节点结果页展示执行证据链摘要。
+- Agents 执行历史展示证据和风险摘要。
+
+P5a 当前边界：
+
+- 不新增 evidence 表，先复用现有 JSON metadata。
+- `hypothesis`、`plannedActions`、`verificationResult` 先用确定性文本/trace 提取，后续 P5c 再让 Hermes/Evolution 消费并校正。
+- 旧历史记录不会自动回填，只有新执行产生标准化 evidence。
+
 ### P6：Approval & Verification 闭环增强
 
 目标：

@@ -709,6 +709,7 @@ export default function Tasks() {
                           const runbook = getRunbookMetadata(node, result);
                           const refs = extractExecutionRefs(node, result);
                           const closure = buildNodeClosure(refs, toolApprovals || [], tasks || [], selectedTask.id);
+                          const evidence = getExecutionEvidence(result);
 
                           return (
                             <div
@@ -888,6 +889,10 @@ export default function Tasks() {
                                     </ClosurePanel>
                                   </div>
                                 </div>
+                              )}
+
+                              {evidence && (
+                                <ExecutionEvidencePanel evidence={evidence} />
                               )}
 
                               {/* Node result */}
@@ -1125,6 +1130,106 @@ interface ExecutionRefs {
   correlationIds: string[];
 }
 
+function ExecutionEvidencePanel({ evidence }: { evidence: Record<string, unknown> }) {
+  const { t } = useLocale();
+  const context = asRecord(evidence.context);
+  const evidenceBody = asRecord(evidence.evidence);
+  const observedRefs = asRecord(evidenceBody.observedRefs);
+  const required = normalizeStringList(evidenceBody.required);
+  const toolCalls = normalizeStringList(evidenceBody.toolCalls);
+  const releaseOverlayVersionIds = normalizeStringList(evidenceBody.releaseOverlayVersionIds);
+  const skillIds = normalizeStringList(evidence.skillIds);
+  const mcpServerIds = normalizeStringList(evidence.mcpServerIds);
+  const approvalId = readString(evidence.approvalId);
+  const taskId = readString(evidence.taskId);
+  const traceId = readString(evidence.traceId);
+  const correlationId = readString(evidence.correlationId);
+  const riskLevel = readString(evidence.riskLevel);
+  const runtime = readString(evidence.runtime);
+  const verificationResult = readString(evidence.verificationResult);
+  const plannedActions = normalizeStringList(evidence.plannedActions);
+  const traceEventCount = typeof evidenceBody.traceEventCount === 'number' ? evidenceBody.traceEventCount : 0;
+
+  return (
+    <div className="px-4 py-3 border-b border-border bg-surface/30">
+      <div className="flex items-center justify-between gap-3 mb-3">
+        <div>
+          <h5 className="text-sm font-medium text-text-primary">{t('tasks.evidence.title')}</h5>
+          <p className="text-xs text-text-tertiary">{t('tasks.evidence.subtitle')}</p>
+        </div>
+        {traceId && (
+          <span className="inline-flex px-2.5 py-1.5 rounded-lg border border-primary/20 bg-primary/10 text-xs text-primary">
+            trace {shortId(traceId)}
+          </span>
+        )}
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
+        <RunbookMetaItem label={t('tasks.evidence.status')} value={readString(evidence.status) || '-'} />
+        <RunbookMetaItem label={t('tasks.evidence.riskLevel')} value={riskLevel || '-'} tone={riskLevel?.includes('approval') ? 'warning' : 'normal'} />
+        <RunbookMetaItem label={t('common.runtime')} value={runtime || '-'} />
+        <RunbookMetaItem label={t('tasks.evidence.traceEvents')} value={String(traceEventCount)} />
+      </div>
+
+      <div className="mt-3 grid grid-cols-1 lg:grid-cols-3 gap-3">
+        <EvidenceList label={t('tasks.evidence.refs')} values={[
+          approvalId ? `approval ${shortId(approvalId)}` : '',
+          taskId ? `task ${shortId(taskId)}` : '',
+          correlationId ? `corr ${shortId(correlationId)}` : '',
+          ...normalizeStringList(observedRefs.approvalIds).map(id => `approval ${shortId(id)}`),
+          ...normalizeStringList(observedRefs.taskIds).map(id => `task ${shortId(id)}`)
+        ]} />
+        <EvidenceList label={t('tasks.evidence.required')} values={required.map(item => formatEvidenceName(item, t))} />
+        <EvidenceList label={t('tasks.evidence.tools')} values={toolCalls} />
+      </div>
+
+      {(plannedActions.length > 0 || verificationResult || skillIds.length > 0 || mcpServerIds.length > 0 || releaseOverlayVersionIds.length > 0) && (
+        <div className="mt-3 grid grid-cols-1 lg:grid-cols-2 gap-3">
+          <EvidenceList label={t('tasks.evidence.plannedActions')} values={plannedActions} />
+          <EvidenceList
+            label={t('tasks.evidence.capabilities')}
+            values={[
+              ...skillIds.map(id => `skill:${id}`),
+              ...mcpServerIds.map(id => `mcp:${id}`),
+              ...releaseOverlayVersionIds.map(id => `release:${shortId(id)}`),
+              verificationResult ? `${t('tasks.evidence.verification')}: ${verificationResult}` : ''
+            ]}
+          />
+        </div>
+      )}
+
+      {readString(evidence.hypothesis) && (
+        <div className="mt-3 rounded-lg border border-border bg-background px-3 py-2">
+          <div className="text-xs text-text-tertiary mb-1">{t('tasks.evidence.hypothesis')}</div>
+          <div className="text-sm text-text-secondary">{readString(evidence.hypothesis)}</div>
+        </div>
+      )}
+
+      <div className="mt-3 text-xs text-text-tertiary">
+        {t('tasks.evidence.context')}: {normalizeStringList(context.keys).slice(0, 12).join(', ') || '-'}
+      </div>
+    </div>
+  );
+}
+
+function EvidenceList({ label, values }: { label: string; values: string[] }) {
+  const { t } = useLocale();
+  const normalized = Array.from(new Set(values.filter(Boolean))).slice(0, 10);
+  return (
+    <div className="rounded-lg border border-border bg-background px-3 py-2 min-w-0">
+      <div className="text-xs text-text-tertiary mb-2">{label}</div>
+      <div className="flex flex-wrap gap-1.5">
+        {normalized.length === 0 && <span className="text-xs text-text-tertiary">{t('tasks.evidence.empty')}</span>}
+        {normalized.map((value) => (
+          <span key={value} className="max-w-full truncate rounded-md border border-border bg-surface px-2 py-0.5 text-xs text-text-secondary">
+            {value}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function extractExecutionRefs(node: any, result: any): ExecutionRefs {
   const refs = {
     approvalIds: new Set<string>(),
@@ -1143,6 +1248,22 @@ function extractExecutionRefs(node: any, result: any): ExecutionRefs {
     taskIds: Array.from(refs.taskIds),
     correlationIds: Array.from(refs.correlationIds)
   };
+}
+
+function getExecutionEvidence(result: any): Record<string, unknown> | null {
+  const evidence = result?.metadata?.executionEvidence;
+  if (!evidence || typeof evidence !== 'object' || Array.isArray(evidence)) {
+    return null;
+  }
+  return evidence as Record<string, unknown>;
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function readString(value: unknown): string | null {
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
 }
 
 function collectExecutionRefs(

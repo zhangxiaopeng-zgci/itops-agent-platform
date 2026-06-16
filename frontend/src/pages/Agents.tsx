@@ -321,6 +321,21 @@ function shortTraceId(value: string): string {
   return value.length > 12 ? `${value.slice(0, 8)}...` : value;
 }
 
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function normalizeStringList(value: unknown): string[] {
+  if (typeof value === 'string' && value.trim()) return [value.trim()];
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0).map(item => item.trim());
+}
+
+function getAgentExecutionEvidence(exec: AgentExecution): Record<string, unknown> | null {
+  const evidence = exec.metadata?.executionEvidence;
+  return evidence && typeof evidence === 'object' && !Array.isArray(evidence) ? evidence as Record<string, unknown> : null;
+}
+
 export default function Agents() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
@@ -1011,6 +1026,7 @@ function AgentDetailInner({ agentId, onBack, deleteMutation }: AgentDetailInnerP
                   )}
                   {exec.metadata && Object.keys(exec.metadata).length > 0 && (
                     <div className="mt-3 pt-3 border-t border-border">
+                      <AgentExecutionEvidence evidence={getAgentExecutionEvidence(exec)} />
                       <div className="flex flex-wrap gap-2 text-xs">
                         {typeof exec.metadata.runtime === 'string' && (
                           <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-primary/10 text-primary border border-primary/20">
@@ -1158,6 +1174,40 @@ function AgentDetailInner({ agentId, onBack, deleteMutation }: AgentDetailInnerP
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+function AgentExecutionEvidence({ evidence }: { evidence: Record<string, unknown> | null }) {
+  const { t } = useLocale();
+  if (!evidence) return null;
+
+  const evidenceBody = asRecord(evidence.evidence);
+  const observedRefs = asRecord(evidenceBody.observedRefs);
+  const toolCalls = normalizeStringList(evidenceBody.toolCalls);
+  const riskLevel = readString(evidence.riskLevel);
+  const traceId = readString(evidence.traceId);
+  const approvalId = readString(evidence.approvalId) || normalizeStringList(observedRefs.approvalIds)[0];
+  const taskId = readString(evidence.taskId) || normalizeStringList(observedRefs.taskIds)[0];
+  const hypothesis = readString(evidence.hypothesis);
+  const traceEventCount = typeof evidenceBody.traceEventCount === 'number' ? evidenceBody.traceEventCount : 0;
+
+  return (
+    <div className="mb-3 rounded-lg border border-border bg-surface px-3 py-2">
+      <div className="flex items-center justify-between gap-3 mb-2">
+        <div className="text-xs font-medium text-text-primary">{t('tasks.evidence.title')}</div>
+        {traceId && <span className="text-xs text-primary">trace {shortTraceId(traceId)}</span>}
+      </div>
+      <div className="flex flex-wrap gap-2 text-xs">
+        {riskLevel && <span className="px-2 py-1 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">{t('tasks.evidence.riskLevel')}: {riskLevel}</span>}
+        <span className="px-2 py-1 rounded bg-background text-text-secondary border border-border">{t('tasks.evidence.traceEvents')}: {traceEventCount}</span>
+        {approvalId && <span className="px-2 py-1 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">approval {shortTraceId(approvalId)}</span>}
+        {taskId && <span className="px-2 py-1 rounded bg-green-500/10 text-green-400 border border-green-500/20">task {shortTraceId(taskId)}</span>}
+        {toolCalls.slice(0, 4).map(tool => (
+          <span key={tool} className="px-2 py-1 rounded bg-primary/10 text-primary border border-primary/20">{tool}</span>
+        ))}
+      </div>
+      {hypothesis && <div className="mt-2 text-xs text-text-secondary line-clamp-2">{hypothesis}</div>}
     </div>
   );
 }
