@@ -263,8 +263,43 @@ interface AgentTeamRun {
   input: string;
   status: string;
   correlation_id?: string | null;
+  output?: Record<string, unknown> | null;
+  metadata?: Record<string, unknown>;
   created_at: string;
   completed_at?: string | null;
+  steps?: AgentTeamRunStep[];
+}
+
+interface AgentTeamRunStep {
+  id: string;
+  role: string;
+  agent_name?: string | null;
+  channel_name?: string | null;
+  worker_role?: string | null;
+  status: string;
+  metadata?: Record<string, unknown>;
+}
+
+interface TeamEvidenceChain {
+  schemaVersion?: string;
+  correlationId?: string;
+  counts?: Record<string, unknown>;
+  steps?: TeamStepEvidence[];
+}
+
+interface TeamStepEvidence {
+  role?: string;
+  displayName?: string;
+  agentName?: string | null;
+  channelName?: string | null;
+  channelType?: string | null;
+  workerRole?: string | null;
+  workerHealthy?: boolean;
+  workerLastRun?: Record<string, unknown> | null;
+  skills?: unknown[];
+  mcpServers?: unknown[];
+  tools?: unknown[];
+  releaseOverlays?: unknown[];
 }
 
 interface ChannelFormState {
@@ -308,6 +343,7 @@ interface DigitalOpsTeam {
   source: 'derived' | 'api';
   mode: string;
   recentRunStatus?: string | null;
+  recentRun?: AgentTeamRun | null;
 }
 
 const panelClass = 'bg-surface/95 rounded-xl border border-border shadow-sm';
@@ -797,6 +833,7 @@ function DigitalOpsTeamOverview({
                   {t('hermesChannels.team.lastRun', { status: team.recentRunStatus })}
                 </div>
               )}
+              {team.recentRun && <TeamRunEvidenceSummary run={team.recentRun} />}
             </div>
           </div>
         ))}
@@ -1014,6 +1051,68 @@ function TeamReadinessBadge({ ready }: { ready: boolean }) {
   );
 }
 
+function TeamRunEvidenceSummary({ run }: { run: AgentTeamRun }) {
+  const { t } = useLocale();
+  const chain = getTeamEvidenceChain(run);
+  if (!chain) {
+    return null;
+  }
+
+  const counts = chain.counts || {};
+  const steps = (chain.steps || []).filter((step) => step.role !== 'leader').slice(0, 2);
+
+  return (
+    <div className="mt-3 rounded-lg bg-surface border border-border p-3">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 text-xs font-semibold text-text-primary">
+            <BookOpenCheck className="w-3.5 h-3.5 text-primary" />
+            {t('hermesChannels.team.evidenceChain')}
+          </div>
+          <div className="mt-1 text-[11px] text-text-tertiary truncate">
+            {t('hermesChannels.team.correlation', { id: shortId(chain.correlationId || run.correlation_id || run.id) })}
+          </div>
+        </div>
+        <span className="text-[11px] text-text-tertiary">{formatDateTime(run.completed_at || run.created_at)}</span>
+      </div>
+
+      <div className="mt-3 grid grid-cols-4 gap-1.5">
+        <MetricChip label={t('hermesChannels.team.evidence.workers')} value={String(readCount(counts, 'workers'))} />
+        <MetricChip label={t('hermesChannels.team.evidence.skills')} value={String(readCount(counts, 'skills'))} />
+        <MetricChip label={t('hermesChannels.team.evidence.mcp')} value={String(readCount(counts, 'mcpServers'))} />
+        <MetricChip label={t('hermesChannels.team.evidence.releases')} value={String(readCount(counts, 'releaseOverlays'))} />
+      </div>
+
+      {steps.length > 0 && (
+        <div className="mt-3 space-y-2">
+          {steps.map((step) => (
+            <div key={`${step.role}-${step.workerRole}-${step.channelName}`} className="rounded-md bg-background border border-border px-2 py-2">
+              <div className="flex items-center justify-between gap-2">
+                <div className="min-w-0 text-xs font-medium text-text-primary truncate">{step.displayName || step.role || '-'}</div>
+                <HealthDot status={step.workerHealthy ? 'healthy' : 'failed'} />
+              </div>
+              <div className="mt-1 text-[11px] text-text-tertiary truncate">
+                {step.channelName || step.channelType || '-'} / {step.workerRole || '-'}
+              </div>
+              <div className="mt-2 flex flex-wrap gap-1.5 text-[11px]">
+                <span className="px-1.5 py-0.5 rounded bg-primary/10 text-primary border border-primary/20">
+                  {t('hermesChannels.team.evidence.skills')}: {step.skills?.length || 0}
+                </span>
+                <span className="px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-300 border border-emerald-500/20">
+                  {t('hermesChannels.team.evidence.mcp')}: {step.mcpServers?.length || 0}
+                </span>
+                <span className="px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-300 border border-amber-500/20">
+                  {t('hermesChannels.team.evidence.releases')}: {step.releaseOverlays?.length || 0}
+                </span>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function riskText(
   item: HermesControlPlaneOverview['riskSummary']['items'][number],
   t: ReturnType<typeof useLocale>['t']
@@ -1066,6 +1165,48 @@ function riskActionText(action: string, t: ReturnType<typeof useLocale>['t']) {
 
 function sumRecord(record: Record<string, number>) {
   return Object.values(record).reduce((sum, value) => sum + Number(value || 0), 0);
+}
+
+function readCount(counts: Record<string, unknown>, key: string) {
+  const value = counts[key];
+  return typeof value === 'number' && Number.isFinite(value) ? value : 0;
+}
+
+function getTeamEvidenceChain(run: AgentTeamRun): TeamEvidenceChain | null {
+  const outputChain = asRecord(run.output)?.evidenceChain;
+  const metadataChain = asRecord(run.metadata)?.evidenceChain;
+  const chain = asRecord(outputChain) || asRecord(metadataChain);
+  if (!chain) return null;
+  return {
+    schemaVersion: typeof chain.schemaVersion === 'string' ? chain.schemaVersion : undefined,
+    correlationId: typeof chain.correlationId === 'string' ? chain.correlationId : undefined,
+    counts: asRecord(chain.counts) || {},
+    steps: Array.isArray(chain.steps)
+      ? chain.steps.map((step) => asRecord(step)).filter((step): step is Record<string, unknown> => Boolean(step)).map((step) => ({
+        role: typeof step.role === 'string' ? step.role : undefined,
+        displayName: typeof step.displayName === 'string' ? step.displayName : undefined,
+        agentName: typeof step.agentName === 'string' ? step.agentName : null,
+        channelName: typeof step.channelName === 'string' ? step.channelName : null,
+        channelType: typeof step.channelType === 'string' ? step.channelType : null,
+        workerRole: typeof step.workerRole === 'string' ? step.workerRole : null,
+        workerHealthy: step.workerHealthy === true,
+        workerLastRun: asRecord(step.workerLastRun),
+        skills: Array.isArray(step.skills) ? step.skills : [],
+        mcpServers: Array.isArray(step.mcpServers) ? step.mcpServers : [],
+        tools: Array.isArray(step.tools) ? step.tools : [],
+        releaseOverlays: Array.isArray(step.releaseOverlays) ? step.releaseOverlays : []
+      }))
+      : []
+  };
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null;
+}
+
+function shortId(value?: string | null) {
+  if (!value) return '-';
+  return value.length <= 12 ? value : `${value.slice(0, 8)}...${value.slice(-4)}`;
 }
 
 function buildDigitalOpsTeams(overview: HermesControlPlaneOverview, agentTeams: AgentTeam[]): DigitalOpsTeam[] {
@@ -1135,7 +1276,8 @@ function buildDigitalOpsTeams(overview: HermesControlPlaneOverview, agentTeams: 
         ready: apiTeam.readiness.ready,
         source: 'api' as const,
         mode: apiTeam.collaboration_mode,
-        recentRunStatus: apiTeam.recentRuns?.[0]?.status || null
+        recentRunStatus: apiTeam.recentRuns?.[0]?.status || null,
+        recentRun: apiTeam.recentRuns?.[0] || null
       };
     }
 
@@ -1155,7 +1297,8 @@ function buildDigitalOpsTeams(overview: HermesControlPlaneOverview, agentTeams: 
         && agents.length > 0,
       source: 'derived' as const,
       mode: spec.mode,
-      recentRunStatus: null
+      recentRunStatus: null,
+      recentRun: null
     };
   });
 }

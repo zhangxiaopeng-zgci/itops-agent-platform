@@ -3,6 +3,7 @@ import db from '../models/database';
 import { listHermesChannels } from './hermesChannelService';
 import { getHermesWorkerStatuses, HermesWorkerStatus } from './hermesWorkerService';
 import { listEvolutionReleaseVersions } from './evolutionReleaseService';
+import { resolveEvolutionRuntimeOverlay } from './evolutionOverlayService';
 
 export interface AgentTeamRecord {
   id: string;
@@ -190,6 +191,7 @@ export async function createAgentTeamRun(teamId: string, input: CreateAgentTeamR
   const startedAt = new Date().toISOString();
   const context = input.context || {};
   const leaderPlan = buildLeaderPlan(team, mode, request, context);
+  const evidenceChain = buildTeamRunEvidenceChain(team, correlationId);
 
   db.prepare(`
     INSERT INTO agent_team_runs (
@@ -223,13 +225,15 @@ export async function createAgentTeamRun(teamId: string, input: CreateAgentTeamR
     .forEach((member) => {
       const stepId = randomUUID();
       const output = buildStepOutput(member, mode);
+      const stepEvidenceChain = buildStepEvidenceChain(team, member, correlationId);
       const metadata = {
         teamType: team.team_type,
         collaborationMode: mode,
         channelType: member.channel_type,
         workerHealthy: member.worker_healthy,
         dryRun: true,
-        executionBoundary: 'P2 baseline records orchestration steps without invoking production tools'
+        executionBoundary: 'P2 baseline records orchestration steps without invoking production tools',
+        evidenceChain: stepEvidenceChain
       };
       insertStep.run(
         stepId,
@@ -254,7 +258,8 @@ export async function createAgentTeamRun(teamId: string, input: CreateAgentTeamR
     boundary: 'This P2 baseline records Leader-Worker orchestration and evidence links; worker execution integration comes next.',
     teamId: team.id,
     correlationId,
-    readiness: team.readiness
+    readiness: team.readiness,
+    evidenceChain
   };
 
   db.prepare(`
@@ -354,7 +359,8 @@ function parseRun(row: Record<string, unknown>, includeSteps: boolean): AgentTea
       dryRun: true,
       executionBoundary: typeof output?.boundary === 'string'
         ? output.boundary
-        : 'P2 baseline records orchestration steps without invoking production tools'
+        : 'P2 baseline records orchestration steps without invoking production tools',
+      evidenceChain: output?.evidenceChain || null
     },
     error: nullableString(row.error),
     created_by: nullableString(row.created_by),
@@ -469,6 +475,140 @@ function buildStepOutput(member: AgentTeamMemberRecord, mode: string): string {
     return `${member.display_name} skipped because no channel is bound yet.`;
   }
   return `${member.display_name} bound to channel ${member.channel_name || member.channel_id}; execution handoff is recorded for the next P2 slice.`;
+}
+
+function buildTeamRunEvidenceChain(team: AgentTeamRecord, correlationId: string): Record<string, unknown> {
+  const stepEvidence = team.members
+    .filter((member) => member.enabled === 1)
+    .sort((a, b) => a.step_order - b.step_order)
+    .map((member) => buildStepEvidenceChain(team, member, correlationId));
+
+  return {
+    schemaVersion: 'team.executionEvidenceChain.v1',
+    teamId: team.id,
+    teamName: team.name,
+    teamType: team.team_type,
+    correlationId,
+    generatedAt: new Date().toISOString(),
+    counts: {
+      steps: stepEvidence.length,
+      channels: new Set(stepEvidence.map((item) => item.channelId).filter(Boolean)).size,
+      workers: new Set(stepEvidence.map((item) => item.workerRole).filter(Boolean)).size,
+      skills: sumNestedCounts(stepEvidence, 'skills'),
+      mcpServers: sumNestedCounts(stepEvidence, 'mcpServers'),
+      tools: sumNestedCounts(stepEvidence, 'tools'),
+      releaseOverlays: sumNestedCounts(stepEvidence, 'releaseOverlays')
+    },
+    steps: stepEvidence
+  };
+}
+
+function buildStepEvidenceChain(
+  team: AgentTeamRecord,
+  member: AgentTeamMemberRecord,
+  correlationId: string
+): Record<string, unknown> {
+  const channel = member.channel_id
+    ? listHermesChannels().find((item) => item.id === member.channel_id) || null
+    : null;
+  const skills = channel
+    ? channel.skills
+      .filter((skill) => skill.enabled === 1 && skill.binding_enabled === 1)
+      .map((skill) => ({
+        id: skill.skill_id || skill.id,
+        name: skill.name,
+        category: skill.category,
+        version: skill.version,
+        riskLevel: skill.risk_level,
+        approvalPolicy: skill.approval_policy,
+        evidenceRequirements: skill.evidence_requirements
+      }))
+    : [];
+  const mcpServers = channel
+    ? channel.mcpServers
+      .filter((server) => server.enabled === 1 && server.binding_enabled === 1)
+      .map((server) => ({
+        id: server.mcp_server_id || server.id,
+        name: server.name,
+        transport: server.transport,
+        healthStatus: server.health_status,
+        toolImportMode: server.tool_import_mode
+      }))
+    : [];
+  const tools = channel
+    ? channel.tools
+      .filter((tool) => tool.enabled === 1)
+      .map((tool) => ({
+        name: tool.tool_name,
+        riskLevel: tool.risk_level_override || 'default'
+      }))
+    : [];
+  const releaseOverlays = channel
+    ? resolveEvolutionRuntimeOverlay({
+      agentId: member.agent_id || '',
+      agentName: member.agent_name || member.display_name,
+      channelId: channel.id,
+      channelType: channel.type,
+      policyId: channel.policy_id,
+      skillIds: skills.map((skill) => String(skill.id)),
+      mcpServerIds: mcpServers.map((server) => String(server.id))
+    }).map((overlay) => ({
+      versionId: overlay.versionId,
+      proposalId: overlay.proposalId,
+      versionLabel: overlay.versionLabel,
+      objectType: overlay.objectType,
+      targetId: overlay.targetId,
+      patchKind: overlay.patchKind,
+      operationCount: overlay.operationCount,
+      publishedAt: overlay.publishedAt
+    }))
+    : [];
+
+  return {
+    schemaVersion: 'team.stepEvidence.v1',
+    teamId: team.id,
+    teamType: team.team_type,
+    correlationId,
+    role: member.role,
+    displayName: member.display_name,
+    agentId: member.agent_id,
+    agentName: member.agent_name,
+    channelId: member.channel_id,
+    channelName: member.channel_name,
+    channelType: member.channel_type,
+    workerRole: member.worker_role,
+    workerHealthy: member.worker_healthy,
+    workerLastRun: member.worker_role ? getLastWorkerRun(member.worker_role) : null,
+    skills,
+    mcpServers,
+    tools,
+    releaseOverlays,
+    evidenceRequirements: Array.from(new Set(skills.flatMap((skill) => skill.evidenceRequirements || [])))
+  };
+}
+
+function getLastWorkerRun(workerRole: string): Record<string, unknown> | null {
+  const row = db.prepare(`
+    SELECT id, status, latency_ms, fallback_used, error, created_at
+    FROM hermes_worker_runs
+    WHERE worker_role = ?
+    ORDER BY created_at DESC
+    LIMIT 1
+  `).get(workerRole) as Record<string, unknown> | undefined;
+
+  if (!row) return null;
+  return {
+    id: String(row.id),
+    status: String(row.status || 'unknown'),
+    latencyMs: row.latency_ms === null || row.latency_ms === undefined ? null : Number(row.latency_ms),
+    fallbackUsed: Number(row.fallback_used || 0),
+    error: nullableString(row.error),
+    createdAt: String(row.created_at || '')
+  };
+}
+
+function sumNestedCounts(items: Array<Record<string, unknown>>, key: string): number {
+  return items.reduce((sum, item) => sum + (Array.isArray(item[key]) ? item[key].length : 0), 0);
 }
 
 function listHermesAgentBindings(): AgentBinding[] {

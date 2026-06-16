@@ -451,7 +451,7 @@ P5 实施切片：
 - [x] P5a：标准化 `executionEvidence` 摘要，不改表结构，写入 Agent execution metadata 与 Workflow node result metadata。
 - [x] P5b：Correlation Trace 页面聚合 executionEvidence，串联 Agent / Workflow / Team / Approval / Task。
 - [x] P5c：Evolution Proposal evidence snapshot 优先消费 executionEvidence，而不是只扫 trace 文本。
-- [ ] P5d：Team Run 视图补充 Hermes worker、Channel、Skill、MCP、Release overlay 的证据链。
+- [x] P5d：Team Run 视图补充 Hermes worker、Channel、Skill、MCP、Release overlay 的证据链。
 
 P5a 收敛结果：
 
@@ -522,6 +522,25 @@ P5c 当前边界：
 - 仍然复用 `evidence_refs` JSON 字段，不新增独立 evidence 表。
 - Proposal 生成质量仍取决于 Hermes Evolve 对 evidence snapshot 的理解，后续可以补 deterministic evidence-to-proposal scaffold。
 - 旧 proposal 不自动回填 `evolution.evidence.v2`。
+
+P5d 收敛结果：
+
+- Team Run 输出中固化 `team.executionEvidenceChain.v1`。
+- 每个 Team Run step 的 metadata 写入 `team.stepEvidence.v1`。
+- Evidence chain 覆盖：
+  - Hermes Worker 健康状态与最近运行
+  - Channel 绑定
+  - Skill Pack
+  - MCP Server
+  - Tool allowlist
+  - active Release overlay
+- Team Console 最近运行卡片展示 Team Run evidence chain 摘要。
+
+P5d 当前边界：
+
+- 当前 Team Run 仍是 dry-run 编排记录，Worker 真实执行结果会在后续 P6/P7 类阶段接入。
+- 旧 Team Run 不自动回填 evidence chain。
+- Release overlay 展示为运行态快照，不在 Team Run 页面执行发布或回滚操作。
 
 ### P6：Approval & Verification 闭环增强
 
