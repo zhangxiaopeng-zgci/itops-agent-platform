@@ -248,6 +248,70 @@ describe('toolRegistry', () => {
     expect(approvalCount).toBe(0);
   });
 
+  it('creates one retrospective proposal candidate when remediation verification fails', async () => {
+    db.prepare(`
+      INSERT OR REPLACE INTO tasks (
+        id, workflow_id, name, status, node_results, logs, context, execution_order, created_at, updated_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+    `).run(
+      'task-verification-failure-test',
+      'workflow-verification-failure-test',
+      'Verification Failure Test',
+      'failed',
+      JSON.stringify({
+        node_1: { status: 'success' },
+        node_2: { status: 'failed', error: 'service still unhealthy after remediation' }
+      }),
+      JSON.stringify([{ message: 'verification failed', correlationId: 'corr-verification-failure-test' }]),
+      JSON.stringify({ correlationId: 'corr-verification-failure-test' }),
+      JSON.stringify(['node_1', 'node_2'])
+    );
+
+    const first = await invokeTool(
+      'verify_remediation',
+      { taskId: 'task-verification-failure-test', expectedStatus: 'completed' },
+      { userId: 'test-operator', userRole: 'operator', source: 'api', correlationId: 'corr-verification-failure-test' }
+    );
+    const second = await invokeTool(
+      'verify_remediation',
+      { taskId: 'task-verification-failure-test', expectedStatus: 'completed' },
+      { userId: 'test-operator', userRole: 'operator', source: 'api', correlationId: 'corr-verification-failure-test' }
+    );
+
+    expect(first.success).toBe(true);
+    const firstData = first.data as {
+      verified: boolean;
+      retrospectiveCandidate?: { proposalId?: string; route?: string };
+    };
+    const secondData = second.data as {
+      retrospectiveCandidate?: { proposalId?: string };
+    };
+    expect(firstData.verified).toBe(false);
+    expect(firstData.retrospectiveCandidate?.proposalId).toBeTruthy();
+    expect(firstData.retrospectiveCandidate?.route).toContain('/evolution-proposals?proposalId=');
+    expect(secondData.retrospectiveCandidate?.proposalId).toBe(firstData.retrospectiveCandidate?.proposalId);
+
+    const proposal = db.prepare(`
+      SELECT source, source_ref, status, type, priority, evidence_refs
+      FROM evolution_proposals
+      WHERE id = ?
+    `).get(firstData.retrospectiveCandidate?.proposalId) as
+      | { source: string; source_ref: string; status: string; type: string; priority: string; evidence_refs: string }
+      | undefined;
+
+    expect(proposal).toEqual(expect.objectContaining({
+      source: 'verification_failure',
+      source_ref: 'verify_remediation:task-verification-failure-test',
+      status: 'draft',
+      type: 'workflow_template_update',
+      priority: 'P1'
+    }));
+    const evidence = JSON.parse(proposal?.evidence_refs || '{}') as { schemaVersion?: string; verificationResult?: { failedNodes?: unknown[] } };
+    expect(evidence.schemaVersion).toBe('verification.failure.evidence.v1');
+    expect(evidence.verificationResult?.failedNodes).toHaveLength(1);
+  });
+
   it('does not let skipApproval bypass denied policy decisions', async () => {
     const result = await invokeTool(
       'run_readonly_command',

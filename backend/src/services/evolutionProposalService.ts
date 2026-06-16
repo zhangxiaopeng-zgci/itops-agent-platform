@@ -61,6 +61,21 @@ export interface EvolutionProposalEventRecord {
   created_at: string;
 }
 
+export interface VerificationFailureCandidateInput {
+  task: Record<string, unknown>;
+  verificationResult: {
+    taskId: string;
+    verified: boolean;
+    expectedStatus: string;
+    actualStatus: string;
+    failedNodes: Array<{ nodeId: string; error: string }>;
+    completedAt: unknown;
+    message: string;
+  };
+  correlationId?: string | null;
+  createdBy?: string | null;
+}
+
 const PROPOSAL_TYPES = new Set<EvolutionProposalType>([
   'skill_update',
   'workflow_template_update',
@@ -199,6 +214,53 @@ export function createEvolutionProposal(input: {
   });
 
   return getEvolutionProposal(id)!;
+}
+
+export function createOrGetVerificationFailureProposal(
+  input: VerificationFailureCandidateInput
+): EvolutionProposalRecord {
+  const taskId = input.verificationResult.taskId;
+  const sourceRef = `verify_remediation:${taskId}`;
+  const existing = db.prepare(`
+    SELECT *
+    FROM evolution_proposals
+    WHERE source = 'verification_failure'
+      AND source_ref = ?
+      AND status NOT IN ('rejected', 'archived', 'published')
+    ORDER BY created_at DESC
+    LIMIT 1
+  `).get(sourceRef) as Record<string, unknown> | undefined;
+
+  if (existing) {
+    return parseProposal(existing);
+  }
+
+  const workflowId = nullableString(input.task.workflow_id);
+  const evidenceRefs = buildVerificationFailureEvidence(input);
+  const failedNodes = input.verificationResult.failedNodes;
+
+  return createEvolutionProposal({
+    title: `Verification failed for task ${shortId(taskId)}`,
+    type: 'workflow_template_update',
+    priority: failedNodes.length > 0 ? 'P1' : 'P2',
+    source: 'verification_failure',
+    sourceRef,
+    targetDescriptor: {
+      targetType: 'workflow_template',
+      targetId: workflowId,
+      applyMode: 'proposal_only',
+      selector: {
+        taskId,
+        workflowId,
+        reason: 'verification_failed'
+      }
+    },
+    proposalBody: buildVerificationFailureProposalBody(input),
+    evidenceRefs,
+    riskNotes: 'Generated from a failed verify_remediation result. This candidate is not applied automatically and must pass review, evaluation, and approval.',
+    correlationId: input.correlationId || null,
+    createdBy: input.createdBy || null
+  });
 }
 
 export function updateEvolutionProposalStatus(input: {
@@ -387,6 +449,64 @@ export async function generateEvolutionProposal(input: {
   }
 
   return proposal;
+}
+
+function buildVerificationFailureEvidence(input: VerificationFailureCandidateInput): Record<string, unknown> {
+  const task = input.task;
+  const nodeResults = objectOrEmpty(task.node_results);
+
+  return sanitizeValue({
+    schemaVersion: 'verification.failure.evidence.v1',
+    source: 'verify_remediation',
+    taskId: input.verificationResult.taskId,
+    workflowId: task.workflow_id || null,
+    taskName: task.name || null,
+    correlationId: input.correlationId || null,
+    verificationResult: input.verificationResult,
+    taskSnapshot: {
+      status: task.status || null,
+      currentNodeId: task.current_node_id || null,
+      startTime: task.start_time || null,
+      endTime: task.end_time || null,
+      failedNodeCount: input.verificationResult.failedNodes.length,
+      nodeResultKeys: Object.keys(nodeResults).slice(0, 50)
+    },
+    generatedAt: new Date().toISOString()
+  }) as Record<string, unknown>;
+}
+
+function buildVerificationFailureProposalBody(input: VerificationFailureCandidateInput): string {
+  const result = input.verificationResult;
+  const failedNodeLines = result.failedNodes.length > 0
+    ? result.failedNodes.map((node) => `- ${node.nodeId}: ${node.error}`).join('\n')
+    : '- No failed node was reported, but task status did not match the expected status.';
+
+  return [
+    '# Verification failure retrospective candidate',
+    '',
+    '## Problem evidence',
+    `- Task: ${result.taskId}`,
+    `- Expected status: ${result.expectedStatus}`,
+    `- Actual status: ${result.actualStatus}`,
+    `- Verification message: ${result.message}`,
+    '',
+    '## Failed nodes',
+    failedNodeLines,
+    '',
+    '## Proposed change',
+    '- Review the workflow template, validation criteria, and rollback guidance for this remediation path.',
+    '- Add or refine verification steps so the workflow can prove remediation success before it is reported as complete.',
+    '- If the failure is caused by a missing operational precondition, encode that precheck into the workflow or related skill.',
+    '',
+    '## Evaluation plan',
+    '- Re-run the affected workflow in a controlled environment.',
+    '- Confirm verify_remediation returns verified=true for the same expected status.',
+    '- Confirm failed node evidence is visible in task details and correlation trace.',
+    '',
+    '## Risk and rollback',
+    '- This is a proposal-only candidate. No runtime behavior changes until evaluation, approval, and release publication.',
+    '- Roll back by archiving this proposal or rolling back the published release version if it is later applied.'
+  ].join('\n');
 }
 
 function collectEvolutionEvidence(input: {
@@ -873,4 +993,8 @@ function sanitizeValue(value: unknown): unknown {
 
 function escapeLike(value: string): string {
   return value.replace(/[\\%_]/g, (match) => `\\${match}`);
+}
+
+function shortId(value: string): string {
+  return value.length > 12 ? `${value.slice(0, 8)}...` : value;
 }

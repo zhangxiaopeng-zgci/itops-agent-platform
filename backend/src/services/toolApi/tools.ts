@@ -6,6 +6,7 @@ import { evaluateReadOnlyCommand } from './policyGuard';
 import { ToolContext, ToolDefinition, ToolInvocationResult } from './types';
 import { WorkflowParsed } from '../../types';
 import { getCorrelationTrace } from '../correlationTraceService';
+import { createOrGetVerificationFailureProposal } from '../evolutionProposalService';
 
 const VALID_ALERT_STATUSES = new Set(['new', 'acknowledged', 'resolved']);
 const VALID_ALERT_SEVERITIES = new Set(['critical', 'high', 'medium', 'low']);
@@ -89,6 +90,41 @@ function parseAuditLog(row: Record<string, unknown>): Record<string, unknown> {
     ...row,
     details: parseJsonField(row.details, null)
   };
+}
+
+function extractCorrelationIdFromTask(task: ParsedTaskRow): string | null {
+  const fromContext = findStringField(task.context, 'correlationId');
+  if (fromContext) return fromContext;
+  const fromNodeResults = findStringField(task.node_results, 'correlationId');
+  if (fromNodeResults) return fromNodeResults;
+  return findStringField(task.logs, 'correlationId');
+}
+
+function findStringField(value: unknown, key: string, depth = 0): string | null {
+  if (depth > 8 || !value || typeof value !== 'object') {
+    return null;
+  }
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = findStringField(item, key, depth + 1);
+      if (found) return found;
+    }
+    return null;
+  }
+
+  const record = value as Record<string, unknown>;
+  const direct = record[key];
+  if (typeof direct === 'string' && direct.trim().length > 0) {
+    return direct.trim();
+  }
+
+  for (const child of Object.values(record)) {
+    const found = findStringField(child, key, depth + 1);
+    if (found) return found;
+  }
+
+  return null;
 }
 
 function toWorkflowParsed(row: Record<string, unknown>): WorkflowParsed {
@@ -467,7 +503,7 @@ export const verifyRemediationTool: ToolDefinition = {
       expectedStatus: { type: 'string' }
     }
   },
-  execute(input: Record<string, unknown>) {
+  execute(input: Record<string, unknown>, context: ToolContext) {
     const taskId = requireString(input, 'taskId');
     const expectedStatus = typeof input.expectedStatus === 'string' ? input.expectedStatus : 'completed';
     const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(taskId) as { [key: string]: unknown } | undefined;
@@ -483,17 +519,37 @@ export const verifyRemediationTool: ToolDefinition = {
       .filter(([, result]) => result.status === 'failed')
       .map(([nodeId, result]) => ({ nodeId, error: result.error || 'Node failed' }));
     const actualStatus = String(parsedTask.status || '');
-
-    return {
+    const verified = actualStatus === expectedStatus && failedNodes.length === 0;
+    const verificationResult = {
       taskId,
-      verified: actualStatus === expectedStatus && failedNodes.length === 0,
+      verified,
       expectedStatus,
       actualStatus,
       failedNodes,
       completedAt: parsedTask.end_time || null,
-      message: actualStatus === expectedStatus && failedNodes.length === 0
+      message: verified
         ? 'Remediation task verification passed'
         : 'Remediation task verification did not pass'
+    };
+    const retrospectiveCandidate = verified
+      ? null
+      : createOrGetVerificationFailureProposal({
+        task: parsedTask,
+        verificationResult,
+        correlationId: context.correlationId || extractCorrelationIdFromTask(parsedTask),
+        createdBy: context.userId || null
+      });
+
+    return {
+      ...verificationResult,
+      retrospectiveCandidate: retrospectiveCandidate ? {
+        proposalId: retrospectiveCandidate.id,
+        status: retrospectiveCandidate.status,
+        type: retrospectiveCandidate.type,
+        priority: retrospectiveCandidate.priority,
+        source: retrospectiveCandidate.source,
+        route: `/evolution-proposals?proposalId=${encodeURIComponent(retrospectiveCandidate.id)}`
+      } : null
     };
   }
 };

@@ -111,6 +111,7 @@ export default function ToolApprovals() {
 
   const approvals = data?.approvals || [];
   const selectedTaskId = selectedApproval ? extractTaskId(selectedApproval) : null;
+  const selectedProposalId = selectedApproval ? extractProposalId(selectedApproval) : null;
   const selectedSafetyPlan = selectedApproval ? getSafetyPlan(selectedApproval) : null;
   const selectedVerificationRequirement = selectedApproval ? getVerificationRequirement(selectedApproval) : null;
 
@@ -246,6 +247,21 @@ export default function ToolApprovals() {
 	                    </div>
 	                  </div>
 	                )}
+                {selectedProposalId && (
+                  <div className="rounded-lg border border-violet-500/20 bg-violet-500/5 p-3">
+                    <p className="text-xs text-text-secondary mb-1">{t('toolApprovals.relatedProposal')}</p>
+                    <div className="flex items-center justify-between gap-3">
+                      <code className="text-sm text-text-primary break-all">{selectedProposalId}</code>
+                      <button
+                        onClick={() => navigate(`/evolution-proposals?proposalId=${encodeURIComponent(selectedProposalId)}`)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-violet-500/10 text-violet-400 border border-violet-500/20 hover:bg-violet-500/20 transition-colors whitespace-nowrap"
+                      >
+                        <ExternalLink className="w-4 h-4" />
+                        {t('toolApprovals.openProposal')}
+                      </button>
+                    </div>
+                  </div>
+                )}
 
                 {selectedSafetyPlan && (
                   <div className="rounded-lg border border-amber-500/25 bg-amber-500/5 p-3">
@@ -412,6 +428,10 @@ function extractTaskId(approval: ToolApproval): string | null {
   const directTaskId = readStringField(approval.input, 'taskId');
   if (directTaskId) return directTaskId;
   return findStringField(approval.execution_result, 'taskId');
+}
+
+function extractProposalId(approval: ToolApproval): string | null {
+  return findStringField(approval.execution_result, 'proposalId');
 }
 
 function getSafetyPlan(approval: ToolApproval): ApprovalSafetyPlan | null {

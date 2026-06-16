@@ -576,7 +576,7 @@ P6 实施切片：
 
 - [x] P6a：审批请求标准化 `approval.safetyPlan.v1`，展示 impact / rollback / validation。
 - [x] P6b：审批执行后自动生成或关联 verification requirement。
-- [ ] P6c：验证失败自动进入复盘入口和 Evolution Proposal 候选。
+- [x] P6c：验证失败自动进入复盘入口和 Evolution Proposal 候选。
 - [ ] P6d：高风险/破坏性 prompt 增强拦截和审计说明。
 
 P6a 收敛结果：
@@ -607,6 +607,25 @@ P6b 收敛结果：
 - 如果未关联任务，验证方式为 `manual_confirmation`，用于承接命令输出、指标、日志和人工确认。
 - 工具审批页在执行结果旁展示验证要求卡片，审批人可以直接看到后续验证动作。
 - 当前不新增独立 verification 表；P6c 再把验证失败接入复盘入口和 Evolution Proposal 候选。
+
+P6c 收敛结果：
+
+- `verify_remediation` 返回 `verified=false` 时，自动创建或复用一条 Evolution Proposal 候选：
+  - `source=verification_failure`
+  - `source_ref=verify_remediation:{taskId}`
+  - `status=draft`
+  - `type=workflow_template_update`
+  - `evidence_refs.schemaVersion=verification.failure.evidence.v1`
+- 候选提案包含：
+  - taskId / workflowId / correlationId
+  - expectedStatus / actualStatus
+  - failedNodes
+  - task snapshot
+  - 建议的工作流、验证策略和回滚说明改进方向
+- `verify_remediation` 工具结果会回写 `retrospectiveCandidate.proposalId` 和跳转 route。
+- 工具审批详情页能从执行结果中识别 `proposalId`，提供“查看提案”快捷入口。
+- Evolution Proposal 页面支持 `?proposalId=` 深链，便于从验证失败直接进入复盘候选。
+- 当前边界：P6c 只创建候选，不自动评估、不自动审批、不自动发布；后续由 Evaluation / Review / Release 闭环处理。
 
 ### P7：Evolution 反馈驱动进化
 

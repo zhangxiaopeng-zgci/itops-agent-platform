@@ -1,5 +1,6 @@
-import { type ReactNode, useMemo, useState } from 'react';
+import { type ReactNode, useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useSearchParams } from 'react-router-dom';
 import { Archive, CheckCircle2, Clock, FileText, Gauge, PlayCircle, RefreshCw, ShieldCheck, Sparkles, XCircle } from 'lucide-react';
 import clsx from 'clsx';
 import api from '../lib/api';
@@ -186,6 +187,7 @@ export default function EvolutionProposals() {
   const { user } = useAuth();
   const { t } = useLocale();
   const toast = useToast();
+  const [searchParams] = useSearchParams();
   const [statusFilter, setStatusFilter] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [form, setForm] = useState({
@@ -200,6 +202,15 @@ export default function EvolutionProposals() {
   const canGenerate = user?.role === 'admin' || user?.role === 'operator';
   const canApprove = user?.role === 'admin';
 
+  useEffect(() => {
+    const proposalId = searchParams.get('proposalId');
+    if (!proposalId) {
+      return;
+    }
+    setStatusFilter('');
+    setSelectedId(proposalId);
+  }, [searchParams]);
+
   const { data, isLoading, refetch } = useQuery({
     queryKey: ['evolution-proposals', statusFilter],
     queryFn: async () => {
@@ -213,14 +224,15 @@ export default function EvolutionProposals() {
   const proposals = data?.proposals || [];
   const selectedProposal = useMemo(() => {
     if (proposals.length === 0) return null;
-    return proposals.find((proposal) => proposal.id === selectedId) || proposals[0];
+    return proposals.find((proposal) => proposal.id === selectedId) || (selectedId ? null : proposals[0]);
   }, [proposals, selectedId]);
+  const activeProposalId = selectedProposal?.id || selectedId;
 
   const { data: detail } = useQuery({
-    queryKey: ['evolution-proposal-detail', selectedProposal?.id],
-    enabled: Boolean(selectedProposal?.id),
+    queryKey: ['evolution-proposal-detail', activeProposalId],
+    enabled: Boolean(activeProposalId),
     queryFn: async () => {
-      const res = await api.get(`/api/evolution-proposals/${selectedProposal!.id}`);
+      const res = await api.get(`/api/evolution-proposals/${activeProposalId!}`);
       return res.data.data as {
         proposal: EvolutionProposal;
         events: ProposalEvent[];
