@@ -5,7 +5,7 @@ import { Archive, CheckCircle2, Clock, FileText, Gauge, PlayCircle, RefreshCw, S
 import clsx from 'clsx';
 import api from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
-import { useLocale } from '../contexts/LocaleContext';
+import { useLocale, type MessageKey } from '../contexts/LocaleContext';
 import { useToast } from '../contexts/ToastContext';
 
 type ProposalStatus =
@@ -155,6 +155,31 @@ interface EvolutionQueueItem {
   correlation_id?: string | null;
   generated_proposal_id?: string | null;
   created_at: string;
+  proposal?: {
+    id: string;
+    title: string;
+    type: string;
+    status: ProposalStatus;
+    priority: string;
+    evaluation?: {
+      id: string;
+      status: string;
+      passed: number;
+      score: number;
+      finding_counts?: {
+        critical: number;
+        warning: number;
+        info: number;
+      } | null;
+      created_at: string;
+    } | null;
+  } | null;
+  review_value?: {
+    label: 'queued' | 'candidate' | 'needs_evaluation' | 'needs_work' | 'review' | 'promote';
+    score?: number | null;
+    should_promote: boolean;
+    reason: string;
+  };
 }
 
 const panelClass = 'bg-surface/95 rounded-xl border border-border shadow-sm';
@@ -1025,21 +1050,72 @@ function ContinuousEvolutionPanel({
         </div>
         <div className="rounded-lg bg-background border border-border p-3">
           <div className="text-xs font-medium text-text-tertiary mb-2">{t('evolution.continuous.queue')}</div>
-          <div className="space-y-1.5">
+          <div className="space-y-2">
             {queue.slice(0, 3).map((item) => (
-              <div key={item.id} className="text-xs">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-text-secondary truncate">{item.source_type}</span>
-                  <span className="text-text-tertiary">{item.generated_proposal_id ? t('evolution.continuous.generated') : item.priority}</span>
+              <div key={item.id} className="rounded-md border border-border/80 bg-surface/70 p-2.5 text-xs">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <span className="font-medium text-text-primary truncate">{sourceTypeLabel(item.source_type, t)}</span>
+                      <span className={clsx(
+                        'shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium',
+                        item.priority === 'P0' || item.priority === 'P1'
+                          ? 'bg-status-failed/10 text-status-failed'
+                          : 'bg-status-warning/10 text-status-warning'
+                      )}>
+                        {item.priority}
+                      </span>
+                    </div>
+                    {item.reason && <div className="text-text-tertiary truncate mt-1">{item.reason}</div>}
+                  </div>
+                  <span className="shrink-0 text-text-tertiary">{item.status}</span>
                 </div>
-                {item.reason && <div className="text-text-tertiary truncate mt-0.5">{item.reason}</div>}
-                {item.generated_proposal_id && (
-                  <button
-                    onClick={() => onOpenProposal(item.generated_proposal_id!)}
-                    className="mt-1 text-primary hover:text-primary/80 transition-colors"
-                  >
-                    {t('evolution.continuous.openProposal', { id: shortId(item.generated_proposal_id) })}
-                  </button>
+
+                {item.proposal && (
+                  <div className="mt-2 rounded-md bg-background border border-border px-2 py-1.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="min-w-0 text-text-secondary truncate">{item.proposal.title}</span>
+                      <span className="shrink-0 text-text-tertiary">{item.proposal.status}</span>
+                    </div>
+                    <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-text-tertiary">
+                      <span>{item.proposal.type}</span>
+                      <span>·</span>
+                      <span>
+                        {item.proposal.evaluation
+                          ? t('evolution.continuous.evaluationScore', { score: item.proposal.evaluation.score })
+                          : t('evolution.continuous.noEvaluation')}
+                      </span>
+                      {item.review_value && (
+                        <>
+                          <span>·</span>
+                          <span className={clsx(
+                            'font-medium',
+                            item.review_value.label === 'promote' && 'text-status-success',
+                            item.review_value.label === 'needs_work' && 'text-status-failed',
+                            item.review_value.label === 'needs_evaluation' && 'text-status-warning'
+                          )}>
+                            {t(`evolution.continuous.reviewValue.${item.review_value.label}` as MessageKey)}
+                          </span>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {(item.generated_proposal_id || item.review_value) && (
+                  <div className="mt-2 flex items-center justify-between gap-2">
+                    <div className="min-w-0 text-text-tertiary truncate">
+                      {item.review_value?.reason || t('evolution.continuous.generated')}
+                    </div>
+                    {item.generated_proposal_id && (
+                      <button
+                        onClick={() => onOpenProposal(item.generated_proposal_id!)}
+                        className="shrink-0 text-primary hover:text-primary/80 transition-colors"
+                      >
+                        {t('evolution.continuous.openProposal', { id: shortId(item.generated_proposal_id) })}
+                      </button>
+                    )}
+                  </div>
                 )}
               </div>
             ))}
@@ -1104,6 +1180,21 @@ function typeLabel(type: string): string {
 
 function statusLabel(status: ProposalStatus): string {
   return status.replace(/_/g, ' ');
+}
+
+const queueSourceTypeLabels: Record<string, MessageKey> = {
+  worker_run: 'evolution.continuous.source.workerRun',
+  agent_execution: 'evolution.continuous.source.agentExecution',
+  task: 'evolution.continuous.source.task',
+  tool_approval: 'evolution.continuous.source.toolApproval'
+};
+
+function sourceTypeLabel(
+  sourceType: string,
+  t: (key: MessageKey, values?: Record<string, string | number>) => string
+): string {
+  const key = queueSourceTypeLabels[sourceType];
+  return key ? t(key) : sourceType.replace(/_/g, ' ');
 }
 
 function formatTime(value?: string | null): string {

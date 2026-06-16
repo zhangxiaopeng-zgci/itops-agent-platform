@@ -2,10 +2,16 @@ import { randomUUID } from 'crypto';
 import { scheduleJob, Job } from 'node-schedule';
 import db from '../models/database';
 import { logger } from '../utils/logger';
-import { evaluateEvolutionProposal } from './evolutionEvaluationService';
+import {
+  evaluateEvolutionProposal,
+  getLatestEvolutionProposalEvaluation,
+  type EvolutionProposalEvaluationRecord
+} from './evolutionEvaluationService';
 import {
   createOrGetFeedbackDrivenProposal,
   generateEvolutionProposal,
+  getEvolutionProposal,
+  type EvolutionProposalRecord,
   updateEvolutionProposalStatus
 } from './evolutionProposalService';
 
@@ -54,6 +60,39 @@ export interface EvolutionReviewQueueRecord {
   generated_proposal_id: string | null;
   created_at: string;
   reviewed_at: string | null;
+  proposal?: EvolutionReviewQueueProposalSummary | null;
+  review_value?: EvolutionReviewQueueValueSummary;
+}
+
+export interface EvolutionReviewQueueProposalSummary {
+  id: string;
+  title: string;
+  type: string;
+  status: string;
+  priority: string;
+  created_at: string;
+  updated_at: string;
+  evaluation: EvolutionReviewQueueEvaluationSummary | null;
+}
+
+export interface EvolutionReviewQueueEvaluationSummary {
+  id: string;
+  status: string;
+  passed: number;
+  score: number;
+  finding_counts: {
+    critical: number;
+    warning: number;
+    info: number;
+  } | null;
+  created_at: string;
+}
+
+export interface EvolutionReviewQueueValueSummary {
+  label: 'queued' | 'candidate' | 'needs_evaluation' | 'needs_work' | 'review' | 'promote';
+  score: number | null;
+  should_promote: boolean;
+  reason: string;
 }
 
 class EvolutionContinuousService {
@@ -326,7 +365,7 @@ export function listEvolutionReviewQueue(filters: {
   params.push(clampLimit(filters.limit, 50, 200));
 
   const rows = db.prepare(query).all(...params) as Array<Record<string, unknown>>;
-  return rows.map(parseQueueItem);
+  return rows.map(parseQueueItem).map(hydrateQueueItem);
 }
 
 function queueFailureEvidence(): Record<string, unknown> {
@@ -599,6 +638,105 @@ function parseQueueItem(row: Record<string, unknown>): EvolutionReviewQueueRecor
     generated_proposal_id: nullableString(row.generated_proposal_id),
     created_at: String(row.created_at || ''),
     reviewed_at: nullableString(row.reviewed_at)
+  };
+}
+
+function hydrateQueueItem(item: EvolutionReviewQueueRecord): EvolutionReviewQueueRecord {
+  if (!item.generated_proposal_id) {
+    return {
+      ...item,
+      proposal: null,
+      review_value: buildReviewValue(item, null, null)
+    };
+  }
+
+  const proposal = getEvolutionProposal(item.generated_proposal_id);
+  const evaluation = proposal ? getLatestEvolutionProposalEvaluation(proposal.id) : null;
+  return {
+    ...item,
+    proposal: proposal ? summarizeQueueProposal(proposal, evaluation) : null,
+    review_value: buildReviewValue(item, proposal, evaluation)
+  };
+}
+
+function summarizeQueueProposal(
+  proposal: EvolutionProposalRecord,
+  evaluation: EvolutionProposalEvaluationRecord | null
+): EvolutionReviewQueueProposalSummary {
+  return {
+    id: proposal.id,
+    title: proposal.title,
+    type: proposal.type,
+    status: proposal.status,
+    priority: proposal.priority,
+    created_at: proposal.created_at,
+    updated_at: proposal.updated_at,
+    evaluation: evaluation ? {
+      id: evaluation.id,
+      status: evaluation.status,
+      passed: evaluation.passed,
+      score: evaluation.score,
+      finding_counts: extractFindingCounts(evaluation.result_summary),
+      created_at: evaluation.created_at
+    } : null
+  };
+}
+
+function buildReviewValue(
+  item: EvolutionReviewQueueRecord,
+  proposal: EvolutionProposalRecord | null,
+  evaluation: EvolutionProposalEvaluationRecord | null
+): EvolutionReviewQueueValueSummary {
+  if (!proposal) {
+    return {
+      label: 'queued',
+      score: null,
+      should_promote: false,
+      reason: 'Waiting for a generated evolution proposal.'
+    };
+  }
+
+  if (!evaluation) {
+    const urgent = item.priority === 'P0' || item.priority === 'P1' || proposal.priority === 'P0' || proposal.priority === 'P1';
+    return {
+      label: urgent ? 'needs_evaluation' : 'candidate',
+      score: null,
+      should_promote: false,
+      reason: urgent
+        ? 'High priority feedback has a generated proposal and should be evaluated before promotion.'
+        : 'Generated proposal is ready for evaluation and operator review.'
+    };
+  }
+
+  if (!evaluation.passed) {
+    return {
+      label: 'needs_work',
+      score: evaluation.score,
+      should_promote: false,
+      reason: 'Latest deterministic evaluation failed; improve evidence, patch structure, or rollback notes.'
+    };
+  }
+
+  const shouldPromote = evaluation.score >= 90 || proposal.priority === 'P0' || proposal.priority === 'P1';
+  return {
+    label: shouldPromote ? 'promote' : 'review',
+    score: evaluation.score,
+    should_promote: shouldPromote,
+    reason: shouldPromote
+      ? 'Evaluation passed with high score or high priority; suitable for approval review.'
+      : 'Evaluation passed; keep in operator review before approval.'
+  };
+}
+
+function extractFindingCounts(summary: Record<string, unknown> | null): EvolutionReviewQueueEvaluationSummary['finding_counts'] {
+  const counts = objectOrEmpty(summary?.findingCounts);
+  if (!counts || Object.keys(counts).length === 0) {
+    return null;
+  }
+  return {
+    critical: Number(counts.critical || 0),
+    warning: Number(counts.warning || 0),
+    info: Number(counts.info || 0)
   };
 }
 

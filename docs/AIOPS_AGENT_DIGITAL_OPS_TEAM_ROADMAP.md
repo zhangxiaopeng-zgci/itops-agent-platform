@@ -692,7 +692,7 @@ P6d 收敛结果：
 P7 实施切片：
 
 - [x] P7a：失败反馈确定性生成 Evolution Proposal 候选。
-- [ ] P7b：Review Queue 运营视图增强，展示来源、失败原因、生成提案、评估状态和发布价值。
+- [x] P7b：Review Queue 运营视图增强，展示来源、失败原因、生成提案、评估状态和发布价值。
 - [ ] P7c：同类问题聚合和重复发生识别，避免一事一提案的噪声。
 - [ ] P7d：复盘 Agent 消费候选证据，补充结构化 patch、评估计划和风险说明。
 - [ ] P7e：Proposal -> Evaluation -> Approval -> Release 的运营仪表盘收口。
@@ -721,6 +721,19 @@ P7a 收敛结果：
   - tool_approval -> `tool_policy_update`
 - Evolution Proposal 页面持续进化队列显示已生成提案，并支持从队列项直接跳转到 proposal。
 - 当前边界：P7a 只生成候选，不自动评估、审批或发布；P7b/P7c 继续增强运营视图和重复问题聚合。
+
+P7b 收敛结果：
+
+- Review Queue API 返回运营摘要：
+  - 原始来源、失败原因、优先级和队列状态。
+  - 生成的 Evolution Proposal 摘要，包括 title/type/status/priority。
+  - 最新 deterministic evaluation 摘要，包括 status/score/passed/finding counts。
+  - `review_value` 只读推荐，包括 queued/candidate/needs_evaluation/needs_work/review/promote。
+- Evolution Proposal 页面持续进化队列增强为运营卡片：
+  - 显示来源类型、失败原因、队列状态和优先级。
+  - 展示生成提案标题、类型、状态、评估分和推荐动作。
+  - 保留 “打开提案” 跳转，便于从反馈来源进入 proposal 详情。
+- 当前边界：P7b 不做自动评估、自动审批、自动发布；`promote` 只是运营建议，真正进入审批仍由后续任务或管理员触发。
 
 ### P8：Agent / Workflow 管理台产品化
 
