@@ -450,7 +450,7 @@ P5 实施切片：
 
 - [x] P5a：标准化 `executionEvidence` 摘要，不改表结构，写入 Agent execution metadata 与 Workflow node result metadata。
 - [x] P5b：Correlation Trace 页面聚合 executionEvidence，串联 Agent / Workflow / Team / Approval / Task。
-- [ ] P5c：Evolution Proposal evidence snapshot 优先消费 executionEvidence，而不是只扫 trace 文本。
+- [x] P5c：Evolution Proposal evidence snapshot 优先消费 executionEvidence，而不是只扫 trace 文本。
 - [ ] P5d：Team Run 视图补充 Hermes worker、Channel、Skill、MCP、Release overlay 的证据链。
 
 P5a 收敛结果：
@@ -504,6 +504,24 @@ P5b 当前边界：
 - 仍不新增独立 evidence 表，查询依赖现有 JSON metadata 与 correlationId 模糊匹配。
 - Team Run / Worker Run 当前先纳入链路计数和关联展示，详细证据展开留给 P5d。
 - Evolution Proposal 尚未改为优先消费结构化 evidence，留给 P5c。
+
+P5c 收敛结果：
+
+- Evolution Proposal 的 `evidence_refs` 升级为 `evolution.evidence.v2`。
+- Evidence snapshot 优先包含：
+  - `executionEvidence`
+  - `executionEvidenceSummary`
+  - `correlationTraceSummary`
+- 生成 proposal 时，如果传入 `correlationId`，优先复用 P5b 的 Correlation Trace 聚合结果。
+- 未传入 `correlationId` 时，按时间窗口从 Agent execution metadata 与 Workflow task node result 中抽取 `execution.evidence.v1`。
+- Hermes Evolve prompt 明确要求优先引用结构化 evidence，而不是自由文本 trace。
+- Evaluation evidence score 识别 `executionEvidence`，并把结构化 evidence 纳入 replay samples。
+
+P5c 当前边界：
+
+- 仍然复用 `evidence_refs` JSON 字段，不新增独立 evidence 表。
+- Proposal 生成质量仍取决于 Hermes Evolve 对 evidence snapshot 的理解，后续可以补 deterministic evidence-to-proposal scaffold。
+- 旧 proposal 不自动回填 `evolution.evidence.v2`。
 
 ### P6：Approval & Verification 闭环增强
 

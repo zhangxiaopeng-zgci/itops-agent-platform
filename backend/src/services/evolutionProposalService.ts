@@ -5,6 +5,7 @@ import { AgentRunResult } from './agentRuntime/types';
 import { buildExecutionEvidenceSummary } from './executionEvidenceService';
 import { createHermesSession } from './hermesSessionService';
 import { ensureStructuredPatchDescriptor } from './evolutionPatchService';
+import { getCorrelationTrace } from './correlationTraceService';
 
 export type EvolutionProposalType =
   | 'skill_update'
@@ -395,6 +396,7 @@ function collectEvolutionEvidence(input: {
   const params: unknown[] = [`-${input.windowHours} hours`];
   const correlationFilter = input.correlationId ? 'AND correlation_id = ?' : '';
   const correlationParams = input.correlationId ? [input.correlationId] : [];
+  const escapedCorrelationPattern = input.correlationId ? `%${escapeLike(input.correlationId)}%` : null;
 
   const workerRuns = db.prepare(`
     SELECT id, worker_role, status, fallback_used, correlation_id, latency_ms, error, created_at
@@ -414,14 +416,26 @@ function collectEvolutionEvidence(input: {
     LIMIT 20
   `).all(...params, ...correlationParams);
 
-  const agentExecutions = db.prepare(`
+  const agentExecutionRows = db.prepare(`
     SELECT id, agent_name, status, execution_time_ms, metadata, created_at
     FROM agent_executions
     WHERE created_at >= datetime('now', ?)
       ${input.correlationId ? "AND IFNULL(metadata, '') LIKE ?" : ''}
     ORDER BY created_at DESC
     LIMIT 20
-  `).all(...params, ...(input.correlationId ? [`%${escapeLike(input.correlationId)}%`] : []));
+  `).all(...params, ...(escapedCorrelationPattern ? [escapedCorrelationPattern] : [])) as Array<Record<string, unknown>>;
+
+  const taskRows = db.prepare(`
+    SELECT id, name, status, context, node_results, logs, created_at
+    FROM tasks
+    WHERE created_at >= datetime('now', ?)
+      ${input.correlationId ? "AND (IFNULL(context, '') LIKE ? OR IFNULL(node_results, '') LIKE ? OR IFNULL(logs, '') LIKE ?)" : ''}
+    ORDER BY created_at DESC
+    LIMIT 20
+  `).all(
+    ...params,
+    ...(escapedCorrelationPattern ? [escapedCorrelationPattern, escapedCorrelationPattern, escapedCorrelationPattern] : [])
+  ) as Array<Record<string, unknown>>;
 
   const approvals = db.prepare(`
     SELECT id, tool_name, status, risk_level, reason, correlation_id, requested_at, reviewed_at
@@ -432,24 +446,183 @@ function collectEvolutionEvidence(input: {
     LIMIT 20
   `).all(...params, ...correlationParams);
 
+  const parsedAgentExecutions = agentExecutionRows.map((execution) => {
+    const metadata = parseJsonField<Record<string, unknown>>(execution.metadata, {});
+    const executionEvidence = objectOrEmpty(metadata.executionEvidence);
+    return {
+      id: execution.id,
+      agent_name: execution.agent_name,
+      status: execution.status,
+      execution_time_ms: execution.execution_time_ms,
+      correlationId: typeof metadata.correlationId === 'string' ? metadata.correlationId : extractCorrelationId(execution.metadata),
+      hasExecutionEvidence: executionEvidence.schemaVersion === 'execution.evidence.v1',
+      riskLevel: nullableString(executionEvidence.riskLevel),
+      traceId: nullableString(executionEvidence.traceId),
+      hypothesis: nullableString(executionEvidence.hypothesis),
+      created_at: execution.created_at
+    };
+  });
+  const agentExecutionEvidence = collectAgentExecutionEvidence(agentExecutionRows);
+  const taskExecutionEvidence = collectTaskExecutionEvidence(taskRows);
+  const windowExecutionEvidence = [...agentExecutionEvidence, ...taskExecutionEvidence].slice(0, 50);
+  const correlationTrace = input.correlationId ? safeGetCorrelationTrace(input.correlationId) : null;
+  const structuredExecutionEvidence = (
+    correlationTrace?.executionEvidence?.length
+      ? correlationTrace.executionEvidence
+      : windowExecutionEvidence
+  ).map(compactExecutionEvidence).slice(0, 50);
+
   return sanitizeValue({
+    schemaVersion: 'evolution.evidence.v2',
     windowHours: input.windowHours,
     correlationId: input.correlationId || null,
+    evidencePriority: [
+      'executionEvidence',
+      'correlationTrace',
+      'workerRuns',
+      'hermesSessions',
+      'agentExecutions',
+      'approvals'
+    ],
+    executionEvidence: structuredExecutionEvidence,
+    executionEvidenceSummary: correlationTrace?.executionEvidenceSummary || buildEvolutionEvidenceSummary(structuredExecutionEvidence),
+    correlationTraceSummary: correlationTrace ? {
+      schemaVersion: correlationTrace.executionEvidenceSummary?.schemaVersion || null,
+      counts: correlationTrace.executionEvidenceSummary?.counts || {},
+      riskLevels: correlationTrace.executionEvidenceSummary?.riskLevels || [],
+      toolCalls: correlationTrace.executionEvidenceSummary?.toolCalls || [],
+      traceIds: correlationTrace.executionEvidenceSummary?.traceIds || [],
+      releaseOverlayVersionIds: correlationTrace.executionEvidenceSummary?.releaseOverlayVersionIds || [],
+      latestEvidenceAt: correlationTrace.executionEvidenceSummary?.latestEvidenceAt || null
+    } : null,
     workerRuns,
     hermesSessions: (hermesSessions as Array<Record<string, unknown>>).map((session) => ({
       ...session,
       extracted_refs: parseJsonField(session.extracted_refs, {})
     })),
-    agentExecutions: (agentExecutions as Array<Record<string, unknown>>).map((execution) => ({
-      id: execution.id,
-      agent_name: execution.agent_name,
-      status: execution.status,
-      execution_time_ms: execution.execution_time_ms,
-      correlationId: extractCorrelationId(execution.metadata),
-      created_at: execution.created_at
+    agentExecutions: parsedAgentExecutions,
+    tasks: taskRows.map((task) => ({
+      id: task.id,
+      name: task.name,
+      status: task.status,
+      hasExecutionEvidence: collectTaskExecutionEvidence([task]).length > 0,
+      created_at: task.created_at
     })),
     approvals
   }) as Record<string, unknown>;
+}
+
+function collectAgentExecutionEvidence(agentExecutions: Array<Record<string, unknown>>): Array<Record<string, unknown>> {
+  return agentExecutions.flatMap((execution) => {
+    const metadata = parseJsonField<Record<string, unknown>>(execution.metadata, {});
+    const evidence = objectOrEmpty(metadata.executionEvidence);
+    if (evidence.schemaVersion !== 'execution.evidence.v1') {
+      return [];
+    }
+
+    return [{
+      sourceType: 'agent_execution',
+      sourceId: String(execution.id || ''),
+      agentName: execution.agent_name || null,
+      createdAt: execution.created_at || null,
+      ...evidence
+    }];
+  });
+}
+
+function collectTaskExecutionEvidence(tasks: Array<Record<string, unknown>>): Array<Record<string, unknown>> {
+  return tasks.flatMap((task) => {
+    const nodeResults = parseJsonField<Record<string, unknown>>(task.node_results, {});
+    return Object.entries(objectOrEmpty(nodeResults)).flatMap(([nodeId, rawResult]) => {
+      const result = objectOrEmpty(rawResult);
+      const metadata = objectOrEmpty(result.metadata);
+      const evidence = objectOrEmpty(metadata.executionEvidence);
+      if (evidence.schemaVersion !== 'execution.evidence.v1') {
+        return [];
+      }
+
+      return [{
+        sourceType: 'workflow_node',
+        sourceId: `${task.id || ''}:${nodeId}`,
+        taskId: task.id || null,
+        taskName: task.name || null,
+        nodeId,
+        createdAt: task.created_at || null,
+        ...evidence
+      }];
+    });
+  });
+}
+
+function compactExecutionEvidence(item: Record<string, unknown>): Record<string, unknown> {
+  return {
+    schemaVersion: item.schemaVersion,
+    sourceType: item.sourceType,
+    sourceId: item.sourceId,
+    agentName: item.agentName,
+    taskId: item.taskId,
+    taskName: item.taskName,
+    nodeId: item.nodeId,
+    status: item.status,
+    riskLevel: item.riskLevel,
+    hypothesis: item.hypothesis,
+    plannedActions: item.plannedActions,
+    approvalId: item.approvalId,
+    taskRefId: item.taskId,
+    verificationResult: item.verificationResult,
+    traceId: item.traceId,
+    generatedAt: item.generatedAt,
+    createdAt: item.createdAt,
+    evidence: compactEvidenceDetails(objectOrEmpty(item.evidence))
+  };
+}
+
+function compactEvidenceDetails(evidence: Record<string, unknown>): Record<string, unknown> {
+  const observedRefs = objectOrEmpty(evidence.observedRefs);
+  return {
+    summary: evidence.summary,
+    toolCalls: normalizeStringList(evidence.toolCalls).slice(0, 20),
+    releaseOverlayVersionIds: normalizeStringList(evidence.releaseOverlayVersionIds).slice(0, 10),
+    observedRefs: {
+      approvalIds: normalizeStringList(observedRefs.approvalIds).slice(0, 20),
+      taskIds: normalizeStringList(observedRefs.taskIds).slice(0, 20),
+      correlationIds: normalizeStringList(observedRefs.correlationIds).slice(0, 20)
+    }
+  };
+}
+
+function buildEvolutionEvidenceSummary(executionEvidence: Array<Record<string, unknown>>): Record<string, unknown> {
+  const riskLevels = new Set<string>();
+  const toolCalls = new Set<string>();
+  const traceIds = new Set<string>();
+  const approvalIds = new Set<string>();
+  const taskIds = new Set<string>();
+
+  executionEvidence.forEach((item) => {
+    addString(item.riskLevel, riskLevels);
+    addString(item.traceId, traceIds);
+    addString(item.approvalId, approvalIds);
+    addString(item.taskId, taskIds);
+    const evidence = objectOrEmpty(item.evidence);
+    normalizeStringList(evidence.toolCalls).forEach(tool => toolCalls.add(tool));
+    const observedRefs = objectOrEmpty(evidence.observedRefs);
+    normalizeStringList(observedRefs.approvalIds).forEach(id => approvalIds.add(id));
+    normalizeStringList(observedRefs.taskIds).forEach(id => taskIds.add(id));
+  });
+
+  return {
+    schemaVersion: 'evolution.executionEvidenceSummary.v1',
+    counts: {
+      executionEvidence: executionEvidence.length,
+      agentExecutions: executionEvidence.filter(item => item.sourceType === 'agent_execution').length,
+      workflowNodes: executionEvidence.filter(item => item.sourceType === 'workflow_node').length
+    },
+    riskLevels: Array.from(riskLevels),
+    toolCalls: Array.from(toolCalls),
+    traceIds: Array.from(traceIds),
+    approvalIds: Array.from(approvalIds),
+    taskIds: Array.from(taskIds)
+  };
 }
 
 function buildEvolutionPrompt(input: {
@@ -487,7 +660,11 @@ function buildEvolutionPrompt(input: {
     'The patch must remain proposal_only and must require human approval before any runtime effect.',
     '',
     'Evidence snapshot:',
-    JSON.stringify(input.evidence, null, 2)
+    JSON.stringify(input.evidence, null, 2),
+    '',
+    'Evidence usage rule:',
+    '- Prioritize evidence_refs.executionEvidence and evidence_refs.executionEvidenceSummary over free-form trace text.',
+    '- Cite sourceType/sourceId, riskLevel, hypothesis, approvalId, taskId, traceId, and verificationResult when available.'
   ].filter(Boolean).join('\n');
 }
 
@@ -646,6 +823,36 @@ function inferTargetDescriptor(type: EvolutionProposalType): Record<string, stri
 function extractCorrelationId(metadata: unknown): string | null {
   const parsed = parseJsonField<Record<string, unknown> | null>(metadata, null);
   return typeof parsed?.correlationId === 'string' ? parsed.correlationId : null;
+}
+
+function safeGetCorrelationTrace(correlationId: string): ReturnType<typeof getCorrelationTrace> | null {
+  try {
+    return getCorrelationTrace(correlationId);
+  } catch {
+    return null;
+  }
+}
+
+function objectOrEmpty(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function normalizeStringList(value: unknown): string[] {
+  if (typeof value === 'string' && value.trim()) {
+    return [value.trim()];
+  }
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value
+    .filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+    .map(item => item.trim());
+}
+
+function addString(value: unknown, target: Set<string>): void {
+  if (typeof value === 'string' && value.trim()) {
+    target.add(value.trim());
+  }
 }
 
 function sanitizeValue(value: unknown): unknown {

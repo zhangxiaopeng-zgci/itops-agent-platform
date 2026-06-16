@@ -17,7 +17,7 @@ export interface EvolutionEvaluationFinding {
 }
 
 export interface EvolutionReplaySample {
-  source: 'worker_run' | 'hermes_session' | 'agent_execution' | 'tool_approval';
+  source: 'execution_evidence' | 'worker_run' | 'hermes_session' | 'agent_execution' | 'tool_approval';
   id: string;
   status?: string | null;
   correlationId?: string | null;
@@ -303,8 +303,20 @@ function evaluateEvidence(proposal: EvolutionProposalRecord, findings: Evolution
   const hermesSessions = arrayLength(evidence.hermesSessions);
   const agentExecutions = arrayLength(evidence.agentExecutions);
   const approvals = arrayLength(evidence.approvals);
-  const total = workerRuns + hermesSessions + agentExecutions + approvals;
-  let score = Math.min(100, total * 12);
+  const executionEvidence = arrayLength(evidence.executionEvidence);
+  const total = workerRuns + hermesSessions + agentExecutions + approvals + executionEvidence;
+  let score = executionEvidence > 0
+    ? Math.min(100, 45 + (executionEvidence * 18) + ((total - executionEvidence) * 8))
+    : Math.min(100, total * 12);
+
+  if (executionEvidence === 0) {
+    findings.push({
+      severity: 'warning',
+      code: 'no_structured_execution_evidence',
+      message: 'Evidence snapshot contains no structured executionEvidence.'
+    });
+    score -= 20;
+  }
 
   if (workerRuns === 0) {
     findings.push({
@@ -312,7 +324,7 @@ function evaluateEvidence(proposal: EvolutionProposalRecord, findings: Evolution
       code: 'no_worker_run_evidence',
       message: 'Evidence snapshot contains no Hermes worker run.'
     });
-    score -= 20;
+    score -= executionEvidence > 0 ? 5 : 20;
   }
   if (hermesSessions === 0) {
     findings.push({
@@ -320,9 +332,9 @@ function evaluateEvidence(proposal: EvolutionProposalRecord, findings: Evolution
       code: 'no_session_evidence',
       message: 'Evidence snapshot contains no Hermes session.'
     });
-    score -= 15;
+    score -= executionEvidence > 0 ? 5 : 15;
   }
-  if (agentExecutions === 0) {
+  if (agentExecutions === 0 && executionEvidence === 0) {
     findings.push({
       severity: 'warning',
       code: 'no_agent_execution_evidence',
@@ -541,6 +553,7 @@ function collectReplaySamples(proposal: EvolutionProposalRecord): EvolutionRepla
 
   if (samples.length === 0) {
     const evidence = proposal.evidence_refs as Record<string, unknown> | null;
+    appendEvidenceSamples(samples, evidence?.executionEvidence, 'execution_evidence');
     appendEvidenceSamples(samples, evidence?.workerRuns, 'worker_run');
     appendEvidenceSamples(samples, evidence?.hermesSessions, 'hermes_session');
     appendEvidenceSamples(samples, evidence?.agentExecutions, 'agent_execution');
@@ -588,12 +601,16 @@ function appendEvidenceSamples(
       return;
     }
     const record = item as Record<string, unknown>;
+    const sampleId = String(record.id || record.sourceId || `${source}-${samples.length + 1}`);
+    const summary = source === 'execution_evidence'
+      ? `${record.sourceType || 'execution'} ${record.status || 'unknown'} ${record.riskLevel ? `risk=${record.riskLevel}` : ''} ${record.traceId ? `trace=${record.traceId}` : ''}`.trim()
+      : `${source} ${record.status || 'unknown'}`;
     samples.push({
       source,
-      id: String(record.id || `${source}-${samples.length + 1}`),
+      id: sampleId,
       status: nullableString(record.status),
       correlationId: nullableString(record.correlation_id) || nullableString(record.correlationId),
-      summary: `${source} ${record.status || 'unknown'}`
+      summary
     });
   });
 }
