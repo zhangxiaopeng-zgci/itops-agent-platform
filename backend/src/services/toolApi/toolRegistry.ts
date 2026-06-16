@@ -37,6 +37,7 @@ function auditToolInvocation(
       agentExecutionId: context.agentExecutionId,
       input,
       decision: result.decision,
+      safetyReview: result.decision.safetyReview || extractSafetyReview(result.data),
       success: result.success,
       error: result.error
     }
@@ -67,7 +68,7 @@ export async function invokeTool(
     };
   }
 
-  const decision = evaluateToolPolicy(tool, context);
+  const decision = evaluateToolPolicy(tool, context, input);
   if (decision.status === 'approval_required' && !options.skipApproval) {
     const approval = createToolApproval({
       toolName: name,
@@ -81,7 +82,8 @@ export async function invokeTool(
       tool: name,
       decision,
       data: {
-        approval
+        approval,
+        safetyReview: decision.safetyReview
       },
       error: decision.reason || 'Tool execution requires approval',
       approvalId: approval.id
@@ -94,6 +96,7 @@ export async function invokeTool(
       success: false,
       tool: name,
       decision,
+      data: decision.safetyReview ? { safetyReview: decision.safetyReview } : undefined,
       error: decision.reason || 'Tool execution was not allowed'
     };
     return { ...result, auditId: auditToolInvocation(context, name, result, input) };
@@ -140,4 +143,22 @@ function isToolInvocationResult(value: unknown): value is ToolInvocationResult {
     'tool' in value &&
     'decision' in value
   );
+}
+
+function extractSafetyReview(value: unknown): unknown {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+
+  const record = value as Record<string, unknown>;
+  const direct = record.safetyReview;
+  if (
+    direct &&
+    typeof direct === 'object' &&
+    (direct as Record<string, unknown>).schemaVersion === 'tool.safetyReview.v1'
+  ) {
+    return direct;
+  }
+
+  return null;
 }

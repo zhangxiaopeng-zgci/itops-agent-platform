@@ -2,10 +2,26 @@ export type ToolRiskLevel = 'read_only' | 'low_risk' | 'medium_risk' | 'high_ris
 
 export type ToolDecisionStatus = 'allowed' | 'approval_required' | 'denied';
 
+export interface ToolSafetyReview {
+  schemaVersion: 'tool.safetyReview.v1';
+  status: 'safe' | 'requires_approval' | 'blocked';
+  riskClass: ToolRiskLevel;
+  matchedPolicies: Array<{
+    policy: string;
+    severity: 'high_risk' | 'destructive';
+    field: string;
+    excerpt: string;
+  }>;
+  explanation: string;
+  operatorGuidance: string;
+  generatedAt: string;
+}
+
 export interface ToolDecision {
   status: ToolDecisionStatus;
   reason?: string;
   riskLevel: ToolRiskLevel;
+  safetyReview?: ToolSafetyReview;
 }
 
 export interface ToolContext {

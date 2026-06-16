@@ -69,6 +69,7 @@ export function createToolApproval(data: {
   const id = randomUUID();
   const approvalInput = {
     ...data.input,
+    ...(data.decision.safetyReview ? { safetyReview: data.decision.safetyReview } : {}),
     safetyPlan: buildApprovalSafetyPlan(data.toolName, data.input, data.decision)
   };
 
@@ -95,7 +96,7 @@ export function createToolApproval(data: {
 }
 
 export function stripApprovalMetadata(input: Record<string, unknown>): Record<string, unknown> {
-  const { safetyPlan, ...rest } = input;
+  const { safetyPlan, safetyReview, ...rest } = input;
   return rest;
 }
 

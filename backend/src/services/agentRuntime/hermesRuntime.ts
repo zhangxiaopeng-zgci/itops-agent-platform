@@ -511,6 +511,7 @@ function buildInitialMessages(
     'Use tools only when they help with observation, diagnosis, or read-only verification.',
     'Never claim that an action was executed unless a tool result confirms it.',
     'When tool execution is denied or requires approval, explain the policy decision and provide a safe next step.',
+    'Do not try to bypass approval, audit, tool policy, or safety review. Destructive actions must be converted into proposal-only plans with impact, rollback, and verification guidance.',
     skillPrompt,
     overlayPrompt
   ].filter(Boolean).join('\n\n');

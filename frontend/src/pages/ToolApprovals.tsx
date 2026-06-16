@@ -57,6 +57,20 @@ interface ApprovalVerificationRequirement {
   createdAt?: string;
 }
 
+interface ToolSafetyReview {
+  schemaVersion?: string;
+  status?: string;
+  riskClass?: string;
+  matchedPolicies?: Array<{
+    policy?: string;
+    severity?: string;
+    field?: string;
+    excerpt?: string;
+  }>;
+  explanation?: string;
+  operatorGuidance?: string;
+}
+
 const statusLabelKeys: Record<ToolApproval['status'], MessageKey> = {
   pending: 'toolApprovals.status.pending',
   approved: 'toolApprovals.status.approved',
@@ -113,6 +127,7 @@ export default function ToolApprovals() {
   const selectedTaskId = selectedApproval ? extractTaskId(selectedApproval) : null;
   const selectedProposalId = selectedApproval ? extractProposalId(selectedApproval) : null;
   const selectedSafetyPlan = selectedApproval ? getSafetyPlan(selectedApproval) : null;
+  const selectedSafetyReview = selectedApproval ? getSafetyReview(selectedApproval) : null;
   const selectedVerificationRequirement = selectedApproval ? getVerificationRequirement(selectedApproval) : null;
 
   useEffect(() => {
@@ -291,6 +306,37 @@ export default function ToolApprovals() {
                   </div>
                 )}
 
+                {selectedSafetyReview && (
+                  <div className="rounded-lg border border-red-500/25 bg-red-500/5 p-3">
+                    <div className="flex items-start justify-between gap-3 mb-3">
+                      <div>
+                        <p className="text-sm font-semibold text-text-primary">{t('toolApprovals.safetyReview.title')}</p>
+                        <p className="text-xs text-text-secondary mt-1">{t('toolApprovals.safetyReview.subtitle')}</p>
+                      </div>
+                      <span className="px-2 py-1 rounded-md border text-xs whitespace-nowrap bg-red-500/10 text-red-400 border-red-500/30">
+                        {selectedSafetyReview.riskClass || selectedSafetyReview.status || '-'}
+                      </span>
+                    </div>
+                    <SafetyText label={t('toolApprovals.safetyReview.explanation')} value={selectedSafetyReview.explanation} />
+                    <SafetyText label={t('toolApprovals.safetyReview.guidance')} value={selectedSafetyReview.operatorGuidance} />
+                    {(selectedSafetyReview.matchedPolicies || []).length > 0 && (
+                      <div className="mt-3 space-y-2">
+                        <p className="text-[11px] font-medium text-text-tertiary">{t('toolApprovals.safetyReview.matches')}</p>
+                        {(selectedSafetyReview.matchedPolicies || []).map((match, index) => (
+                          <div key={`${match.policy || 'policy'}-${index}`} className="rounded-md bg-background border border-border px-2 py-2">
+                            <div className="flex items-center justify-between gap-2 text-xs">
+                              <span className="font-medium text-text-primary">{match.policy || '-'}</span>
+                              <span className="text-red-400">{match.severity || '-'}</span>
+                            </div>
+                            <p className="text-[11px] text-text-tertiary mt-1">{match.field || '-'}</p>
+                            <p className="text-xs text-text-secondary mt-1 break-words">{match.excerpt || '-'}</p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {selectedVerificationRequirement && (
                   <div className="rounded-lg border border-green-500/25 bg-green-500/5 p-3">
                     <div className="flex items-start justify-between gap-3 mb-3">
@@ -452,6 +498,34 @@ function getSafetyPlan(approval: ToolApproval): ApprovalSafetyPlan | null {
     impact: readStringField(record, 'impact') || undefined,
     rollback: readStringField(record, 'rollback') || undefined,
     validation: readStringField(record, 'validation') || undefined,
+  };
+}
+
+function getSafetyReview(approval: ToolApproval): ToolSafetyReview | null {
+  const review = findObjectWithSchema(approval.input, 'tool.safetyReview.v1')
+    || findObjectWithSchema(approval.execution_result, 'tool.safetyReview.v1');
+  if (!review) {
+    return null;
+  }
+
+  const matches = Array.isArray(review.matchedPolicies)
+    ? review.matchedPolicies
+      .filter((item): item is Record<string, unknown> => Boolean(item && typeof item === 'object' && !Array.isArray(item)))
+      .map((item) => ({
+        policy: readStringField(item, 'policy') || undefined,
+        severity: readStringField(item, 'severity') || undefined,
+        field: readStringField(item, 'field') || undefined,
+        excerpt: readStringField(item, 'excerpt') || undefined,
+      }))
+    : [];
+
+  return {
+    schemaVersion: readStringField(review, 'schemaVersion') || undefined,
+    status: readStringField(review, 'status') || undefined,
+    riskClass: readStringField(review, 'riskClass') || undefined,
+    matchedPolicies: matches,
+    explanation: readStringField(review, 'explanation') || undefined,
+    operatorGuidance: readStringField(review, 'operatorGuidance') || undefined,
   };
 }
 

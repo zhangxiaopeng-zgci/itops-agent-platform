@@ -577,7 +577,7 @@ P6 实施切片：
 - [x] P6a：审批请求标准化 `approval.safetyPlan.v1`，展示 impact / rollback / validation。
 - [x] P6b：审批执行后自动生成或关联 verification requirement。
 - [x] P6c：验证失败自动进入复盘入口和 Evolution Proposal 候选。
-- [ ] P6d：高风险/破坏性 prompt 增强拦截和审计说明。
+- [x] P6d：高风险/破坏性 prompt 增强拦截和审计说明。
 
 P6a 收敛结果：
 
@@ -626,6 +626,26 @@ P6c 收敛结果：
 - 工具审批详情页能从执行结果中识别 `proposalId`，提供“查看提案”快捷入口。
 - Evolution Proposal 页面支持 `?proposalId=` 深链，便于从验证失败直接进入复盘候选。
 - 当前边界：P6c 只创建候选，不自动评估、不自动审批、不自动发布；后续由 Evaluation / Review / Release 闭环处理。
+
+P6d 收敛结果：
+
+- Tool API 增加 `tool.safetyReview.v1` 输入安全扫描：
+  - 破坏性文件系统/磁盘/数据库/集群批量删除。
+  - 绕过审批、绕过审计、绕过策略的 prompt。
+  - 服务中断、集群变更、网络变更、远程脚本执行等高风险动作。
+- 命中破坏性或策略绕过：
+  - 直接 `denied`。
+  - `riskLevel=destructive`。
+  - 不创建审批单。
+  - 返回和审计日志写入 `safetyReview`。
+- 命中高风险但非破坏性：
+  - 自动升级为 `approval_required`。
+  - `riskLevel=high_risk`。
+  - 审批单 input 固化 `safetyReview`。
+  - 执行审批时剥离 `safetyReview`，不污染工具业务参数。
+- 工具审批详情页展示“安全审查说明”，包括命中策略、字段、摘录、处置原因和操作建议。
+- Hermes Runtime system prompt 明确禁止绕过审批、审计、工具策略和 safety review；破坏性动作必须转成 proposal-only plan。
+- 当前边界：这是确定性规则扫描，不替代后续更细粒度的 Tool Policy DSL、环境级变更窗口和 CMDB 影响面计算。
 
 ### P7：Evolution 反馈驱动进化
 
