@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { requireRole } from '../middleware/auth';
 import {
+  attachApprovalVerificationRequirement,
   getToolApproval,
   listToolApprovals,
   markToolApprovalApproved,
@@ -71,7 +72,10 @@ router.post('/:id/approve', requireRole('admin', 'operator'), async (req: Authen
       correlationId: approval.correlation_id || undefined
     };
 
-    const result = await invokeTool(approval.tool_name, stripApprovalMetadata(approval.input), context, { skipApproval: true });
+    const result = attachApprovalVerificationRequirement(
+      approval,
+      await invokeTool(approval.tool_name, stripApprovalMetadata(approval.input), context, { skipApproval: true })
+    );
     const updated = markToolApprovalExecuted(
       req.params.id,
       reviewerId,

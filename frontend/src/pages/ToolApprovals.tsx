@@ -41,6 +41,22 @@ interface ApprovalSafetyPlan {
   validation?: string;
 }
 
+interface ApprovalVerificationRequirement {
+  schemaVersion?: string;
+  required?: boolean;
+  status?: string;
+  source?: string;
+  approvalId?: string;
+  toolName?: string;
+  riskLevel?: string;
+  correlationId?: string | null;
+  taskId?: string | null;
+  method?: string;
+  expectedStatus?: string;
+  validationPlan?: string | null;
+  createdAt?: string;
+}
+
 const statusLabelKeys: Record<ToolApproval['status'], MessageKey> = {
   pending: 'toolApprovals.status.pending',
   approved: 'toolApprovals.status.approved',
@@ -96,6 +112,7 @@ export default function ToolApprovals() {
   const approvals = data?.approvals || [];
   const selectedTaskId = selectedApproval ? extractTaskId(selectedApproval) : null;
   const selectedSafetyPlan = selectedApproval ? getSafetyPlan(selectedApproval) : null;
+  const selectedVerificationRequirement = selectedApproval ? getVerificationRequirement(selectedApproval) : null;
 
   useEffect(() => {
     const approvalId = searchParams.get('approvalId');
@@ -258,6 +275,44 @@ export default function ToolApprovals() {
                   </div>
                 )}
 
+                {selectedVerificationRequirement && (
+                  <div className="rounded-lg border border-green-500/25 bg-green-500/5 p-3">
+                    <div className="flex items-start justify-between gap-3 mb-3">
+                      <div>
+                        <p className="text-sm font-semibold text-text-primary">{t('toolApprovals.verification.title')}</p>
+                        <p className="text-xs text-text-secondary mt-1">{t('toolApprovals.verification.subtitle')}</p>
+                      </div>
+                      <span className="px-2 py-1 rounded-md border text-xs whitespace-nowrap bg-green-500/10 text-green-400 border-green-500/30">
+                        {selectedVerificationRequirement.status || 'pending'}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 mb-3">
+                      <SafetyMetric label={t('toolApprovals.verification.method')} value={selectedVerificationRequirement.method || '-'} />
+                      <SafetyMetric label={t('toolApprovals.verification.expectedStatus')} value={selectedVerificationRequirement.expectedStatus || '-'} />
+                    </div>
+                    {selectedVerificationRequirement.taskId ? (
+                      <div className="rounded-md bg-background border border-border px-2 py-2 mb-3">
+                        <p className="text-[11px] text-text-tertiary mb-1">{t('toolApprovals.verification.task')}</p>
+                        <div className="flex items-center justify-between gap-3">
+                          <code className="text-xs text-text-primary break-all">{selectedVerificationRequirement.taskId}</code>
+                          <button
+                            onClick={() => navigate(`/tasks?taskId=${encodeURIComponent(selectedVerificationRequirement.taskId!)}`)}
+                            className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md bg-primary/10 text-primary border border-primary/20 hover:bg-primary/20 transition-colors whitespace-nowrap text-xs"
+                          >
+                            <ExternalLink className="w-3.5 h-3.5" />
+                            {t('common.details')}
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="rounded-md bg-background border border-border px-2 py-2 mb-3 text-xs text-text-secondary">
+                        {t('toolApprovals.verification.manual')}
+                      </p>
+                    )}
+                    <SafetyText label={t('toolApprovals.verification.plan')} value={selectedVerificationRequirement.validationPlan || undefined} />
+                  </div>
+                )}
+
 	                <div>
                   <p className="text-xs text-text-secondary mb-2">{t('toolApprovals.inputParams')}</p>
                   <pre className="max-h-64 overflow-auto rounded-lg bg-background border border-border p-3 text-xs text-text-primary whitespace-pre-wrap">
@@ -378,6 +433,58 @@ function getSafetyPlan(approval: ToolApproval): ApprovalSafetyPlan | null {
     rollback: readStringField(record, 'rollback') || undefined,
     validation: readStringField(record, 'validation') || undefined,
   };
+}
+
+function getVerificationRequirement(approval: ToolApproval): ApprovalVerificationRequirement | null {
+  const requirement = findObjectWithSchema(
+    approval.execution_result,
+    'approval.verificationRequirement.v1'
+  );
+  if (!requirement) {
+    return null;
+  }
+
+  return {
+    schemaVersion: readStringField(requirement, 'schemaVersion') || undefined,
+    required: requirement.required === true,
+    status: readStringField(requirement, 'status') || undefined,
+    source: readStringField(requirement, 'source') || undefined,
+    approvalId: readStringField(requirement, 'approvalId') || undefined,
+    toolName: readStringField(requirement, 'toolName') || undefined,
+    riskLevel: readStringField(requirement, 'riskLevel') || undefined,
+    correlationId: readStringField(requirement, 'correlationId'),
+    taskId: readStringField(requirement, 'taskId'),
+    method: readStringField(requirement, 'method') || undefined,
+    expectedStatus: readStringField(requirement, 'expectedStatus') || undefined,
+    validationPlan: readStringField(requirement, 'validationPlan'),
+    createdAt: readStringField(requirement, 'createdAt') || undefined,
+  };
+}
+
+function findObjectWithSchema(value: unknown, schemaVersion: string): Record<string, unknown> | null {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = findObjectWithSchema(item, schemaVersion);
+      if (found) return found;
+    }
+    return null;
+  }
+
+  const record = value as Record<string, unknown>;
+  if (readStringField(record, 'schemaVersion') === schemaVersion) {
+    return record;
+  }
+
+  for (const child of Object.values(record)) {
+    const found = findObjectWithSchema(child, schemaVersion);
+    if (found) return found;
+  }
+
+  return null;
 }
 
 function findStringField(value: unknown, key: string): string | null {

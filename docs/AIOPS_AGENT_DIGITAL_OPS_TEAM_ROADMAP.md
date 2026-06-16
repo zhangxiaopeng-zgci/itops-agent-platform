@@ -575,7 +575,7 @@ P5d 当前边界：
 P6 实施切片：
 
 - [x] P6a：审批请求标准化 `approval.safetyPlan.v1`，展示 impact / rollback / validation。
-- [ ] P6b：审批执行后自动生成或关联 verification requirement。
+- [x] P6b：审批执行后自动生成或关联 verification requirement。
 - [ ] P6c：验证失败自动进入复盘入口和 Evolution Proposal 候选。
 - [ ] P6d：高风险/破坏性 prompt 增强拦截和审计说明。
 
@@ -590,6 +590,23 @@ P6a 收敛结果：
   - `validation`
 - 审批执行时会剥离 `safetyPlan`，避免影响工具业务参数。
 - 工具审批页展示安全计划，审批人可以在批准前确认影响、回滚和验证要求。
+
+P6b 收敛结果：
+
+- 审批执行成功后，如果 `safetyPlan.verificationRequired=true`，会在 `execution_result.data.verificationRequirement` 中写入：
+  - `schemaVersion=approval.verificationRequirement.v1`
+  - `approvalId`
+  - `toolName`
+  - `riskLevel`
+  - `correlationId`
+  - `taskId`
+  - `method`
+  - `expectedStatus`
+  - `validationPlan`
+- 如果执行结果或输入中能识别 `taskId`，验证方式为 `verify_remediation`。
+- 如果未关联任务，验证方式为 `manual_confirmation`，用于承接命令输出、指标、日志和人工确认。
+- 工具审批页在执行结果旁展示验证要求卡片，审批人可以直接看到后续验证动作。
+- 当前不新增独立 verification 表；P6c 再把验证失败接入复盘入口和 Evolution Proposal 候选。
 
 ### P7：Evolution 反馈驱动进化
 

@@ -24,6 +24,22 @@ export interface ToolApprovalRecord {
   ip_address?: string | null;
 }
 
+export interface ApprovalVerificationRequirement {
+  schemaVersion: 'approval.verificationRequirement.v1';
+  required: true;
+  status: 'pending';
+  source: 'tool_approval';
+  approvalId: string;
+  toolName: string;
+  riskLevel: string;
+  correlationId: string | null;
+  taskId: string | null;
+  method: 'verify_remediation' | 'manual_confirmation';
+  expectedStatus: 'completed';
+  validationPlan: string | null;
+  createdAt: string;
+}
+
 interface RawToolApprovalRecord {
   id: string;
   tool_name: string;
@@ -81,6 +97,26 @@ export function createToolApproval(data: {
 export function stripApprovalMetadata(input: Record<string, unknown>): Record<string, unknown> {
   const { safetyPlan, ...rest } = input;
   return rest;
+}
+
+export function attachApprovalVerificationRequirement(
+  approval: ToolApprovalRecord,
+  result: ToolInvocationResult
+): ToolInvocationResult {
+  const requirement = buildApprovalVerificationRequirement(approval, result);
+  if (!requirement) {
+    return result;
+  }
+
+  const resultData = result.data;
+  const data = resultData && typeof resultData === 'object' && !Array.isArray(resultData)
+    ? { ...(resultData as Record<string, unknown>), verificationRequirement: requirement }
+    : { value: resultData ?? null, verificationRequirement: requirement };
+
+  return {
+    ...result,
+    data
+  };
 }
 
 export function listToolApprovals(filters: {
@@ -237,6 +273,39 @@ function buildApprovalSafetyPlan(
   };
 }
 
+function buildApprovalVerificationRequirement(
+  approval: ToolApprovalRecord,
+  result: ToolInvocationResult
+): ApprovalVerificationRequirement | null {
+  if (!result.success) {
+    return null;
+  }
+
+  const safetyPlan = readRecord(approval.input.safetyPlan);
+  if (!safetyPlan || safetyPlan.verificationRequired !== true) {
+    return null;
+  }
+
+  const taskId = findStringField(result.data, 'taskId') || findStringField(approval.input, 'taskId');
+  const validationPlan = readString(safetyPlan.validation);
+
+  return {
+    schemaVersion: 'approval.verificationRequirement.v1',
+    required: true,
+    status: 'pending',
+    source: 'tool_approval',
+    approvalId: approval.id,
+    toolName: approval.tool_name,
+    riskLevel: approval.risk_level,
+    correlationId: approval.correlation_id || null,
+    taskId,
+    method: taskId ? 'verify_remediation' : 'manual_confirmation',
+    expectedStatus: 'completed',
+    validationPlan,
+    createdAt: new Date().toISOString()
+  };
+}
+
 function normalizeRiskClass(riskLevel: string): string {
   if (riskLevel === 'read_only') return 'read_only';
   if (riskLevel === 'low_risk') return 'low_risk';
@@ -276,4 +345,37 @@ function buildDefaultValidation(toolName: string, input: Record<string, unknown>
 
 function readString(value: unknown): string | null {
   return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
+}
+
+function readRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
+function findStringField(value: unknown, key: string, depth = 0): string | null {
+  if (depth > 8 || !value || typeof value !== 'object') {
+    return null;
+  }
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = findStringField(item, key, depth + 1);
+      if (found) return found;
+    }
+    return null;
+  }
+
+  const record = value as Record<string, unknown>;
+  const direct = readString(record[key]);
+  if (direct) {
+    return direct;
+  }
+
+  for (const child of Object.values(record)) {
+    const found = findStringField(child, key, depth + 1);
+    if (found) return found;
+  }
+
+  return null;
 }
