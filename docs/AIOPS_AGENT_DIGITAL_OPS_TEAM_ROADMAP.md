@@ -1280,7 +1280,7 @@ P10e 收敛结果：
 P11 实施切片：
 
 - [x] P11a：验收清单和测试矩阵，固化角色、页面、API、部署、数据、发布治理检查项。
-- [ ] P11b：远端测试机真实验收，按矩阵执行并记录通过/失败证据。
+- [x] P11b：远端测试机真实验收，按矩阵执行并记录通过/失败证据。
 - [ ] P11c：补齐验收中发现的小缺口，只做稳定化修复，不扩展大功能。
 - [ ] P11d：运维交付手册，覆盖部署、备份恢复、容器重建、Hermes 配置、发布治理和回滚。
 - [ ] P11e：验收报告和版本标识，固化当前 commit、部署状态、已知边界和下一阶段建议。
@@ -1313,6 +1313,29 @@ P11a 收敛结果：
   - UI、主题和 i18n。
   - 运维手册和移交。
 - 当前边界：P11a 只固化验收矩阵，不执行真实验收；P11b 开始按矩阵在测试机记录证据。
+
+P11b 收敛结果：
+
+- 新增验收证据文档：
+  - `docs/AGENT_RUNTIME_STAGE_31_ACCEPTANCE_EVIDENCE.md`。
+- 在 `10.1.132.58` 完成第一轮真实验收：
+  - backend / frontend / 3 Hermes Worker 全部 running + healthy。
+  - `/health` 返回 healthy。
+  - `/ops-readiness` 无 blocked，score=93。
+  - backup restore drill 已存在并通过。
+  - 执行一次保留 volume 的 force-recreate，新增 container rebuild drill：`528a0cb7-b55c-4123-863e-da3b385444e0`，状态 passed。
+  - `/api/hermes-workers` 返回 diagnose / remediate / evolve 三个 worker，全部 healthy。
+  - 核心页面 `/ops-readiness`、`/hermes`、`/agents`、`/hermes-channels`、`/workflows`、`/evolution-proposals`、`/big-screen`、`/settings` 均可加载且无 console error。
+  - release audit JSON / Markdown 导出通过。
+  - 高风险同人审批发布场景被 `high_risk_dual_approval` 阻断。
+  - 中英文切换通过，英文按钮显示 `中`，点击后可恢复中文。
+- 第一轮 warning：
+  - `active_release_tracking`：当前没有 active release version。
+  - 测试机当前只有 admin 用户，viewer/operator 完整角色验收缺少前置账号。
+  - 本轮未执行新的 evaluation / staging replay / rollback 演练，仅验证已有 release audit 和高风险治理。
+  - 主题仅验证入口和文案，未做截图对比。
+  - 运维交付手册等待 P11d。
+- 当前边界：P11b 已完成第一轮真实验收并记录证据；warning 项进入 P11c/P11d 收口，不在 P11b 内扩展新能力。
 
 验收：
 
