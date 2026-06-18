@@ -1,0 +1,308 @@
+import db from '../models/database';
+import { WorkflowNode } from '../types';
+import { listHermesChannels } from './hermesChannelService';
+
+export interface WorkflowCapabilitySummary {
+  hermesEnhanced: boolean;
+  runbookDriven: boolean;
+  collaborationMode: string | null;
+  runbookPattern: string | null;
+  agentTeams: Array<{
+    id: string;
+    name: string;
+    team_type: string;
+  }>;
+  agents: Array<{
+    id: string;
+    name: string;
+    runtime: string | null;
+    channel_id: string | null;
+    channel_name: string | null;
+    channel_type: string | null;
+  }>;
+  skills: {
+    count: number;
+    ids: string[];
+    names: string[];
+  };
+  mcpServers: {
+    count: number;
+    unhealthy: number;
+    ids: string[];
+    names: string[];
+  };
+  gates: {
+    approvalRequired: boolean;
+    approvalCount: number;
+    verificationRequired: boolean;
+    verificationCount: number;
+  };
+  executionQuality: {
+    recentTotal: number;
+    recentSuccess: number;
+    recentFailure: number;
+    recentRunning: number;
+    successRate: number | null;
+    lastStatus: string | null;
+    lastExecutedAt: string | null;
+    averageDurationMs: number | null;
+  };
+}
+
+interface WorkflowCapabilityInput {
+  id?: unknown;
+  name?: string;
+  nodes?: unknown;
+  edges?: unknown;
+  agent_configs?: unknown;
+}
+
+interface AgentBinding {
+  id: string;
+  name: string;
+  runtime: string | null;
+  channel_id: string | null;
+  channel_name: string | null;
+  channel_type: string | null;
+}
+
+export function summarizeWorkflowCapability(workflow: WorkflowCapabilityInput): WorkflowCapabilitySummary {
+  const workflowId = String(workflow.id || '');
+  const nodes = normalizeNodes(workflow.nodes);
+  const config = objectOrEmpty(workflow.agent_configs);
+  const agents = listWorkflowAgents(nodes);
+  const channels = listHermesChannels();
+  const agentChannelIds = new Set(agents.map((agent) => agent.channel_id).filter((id): id is string => Boolean(id)));
+  const boundChannels = channels.filter((channel) => agentChannelIds.has(channel.id));
+  const explicitSkillIds = collectConfiguredIds(nodes, config, ['recommendedSkillId', 'recommendedSkillIds', 'requiredSkillId', 'requiredSkillIds']);
+  const explicitMcpIds = collectConfiguredIds(nodes, config, ['recommendedMcpServerId', 'recommendedMcpServerIds', 'requiredMcpServerId', 'requiredMcpServerIds']);
+  const channelSkillIds = boundChannels.flatMap((channel) => (
+    channel.skills
+      .filter((skill) => skill.enabled === 1 && skill.binding_enabled === 1)
+      .map((skill) => skill.id)
+  ));
+  const channelMcpIds = boundChannels.flatMap((channel) => (
+    channel.mcpServers
+      .filter((server) => server.enabled === 1 && server.binding_enabled === 1)
+      .map((server) => server.id)
+  ));
+  const skillIds = uniqueStrings([...explicitSkillIds, ...channelSkillIds]);
+  const mcpIds = uniqueStrings([...explicitMcpIds, ...channelMcpIds]);
+  const mcpRecords = listMcpServerRecords(mcpIds);
+  const gates = summarizeGates(nodes, config);
+
+  return {
+    hermesEnhanced: Boolean(
+      config.hermesEnhanced ||
+      config.runbookDriven ||
+      nodes.some((node) => Boolean(objectOrEmpty(node.data).runbookPhase)) ||
+      agents.some((agent) => agent.runtime === 'hermes' || Boolean(agent.channel_id))
+    ),
+    runbookDriven: Boolean(config.runbookDriven || nodes.some((node) => Boolean(objectOrEmpty(node.data).runbookPhase))),
+    collaborationMode: stringOrNull(config.collaborationMode),
+    runbookPattern: stringOrNull(config.runbookPattern),
+    agentTeams: listWorkflowTeams(agents),
+    agents,
+    skills: {
+      count: skillIds.length,
+      ids: skillIds,
+      names: listSkillNames(skillIds)
+    },
+    mcpServers: {
+      count: mcpIds.length,
+      unhealthy: mcpRecords.filter((server) => !['healthy', 'unknown'].includes(server.health_status)).length,
+      ids: mcpIds,
+      names: mcpRecords.map((server) => server.name)
+    },
+    gates,
+    executionQuality: summarizeExecutionQuality(workflowId)
+  };
+}
+
+export function attachWorkflowCapabilitySummaries<T extends WorkflowCapabilityInput>(workflows: T[]): Array<T & { capability_summary: WorkflowCapabilitySummary }> {
+  return workflows.map((workflow) => ({
+    ...workflow,
+    capability_summary: summarizeWorkflowCapability(workflow)
+  }));
+}
+
+function normalizeNodes(value: unknown): WorkflowNode[] {
+  if (Array.isArray(value)) return value as WorkflowNode[];
+  if (typeof value !== 'string' || !value.trim()) return [];
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return Array.isArray(parsed) ? parsed as WorkflowNode[] : [];
+  } catch {
+    return [];
+  }
+}
+
+function listWorkflowAgents(nodes: WorkflowNode[]): AgentBinding[] {
+  const agentIds = uniqueStrings(nodes.map((node) => stringOrNull(objectOrEmpty(node.data).agentId)).filter((id): id is string => Boolean(id)));
+  if (agentIds.length === 0) return [];
+
+  const placeholders = agentIds.map(() => '?').join(',');
+  const rows = db.prepare(`
+    SELECT
+      a.id,
+      a.name,
+      a.runtime,
+      a.channel_id,
+      hc.name AS channel_name,
+      hc.type AS channel_type
+    FROM agents a
+    LEFT JOIN hermes_channels hc ON hc.id = a.channel_id
+    WHERE a.id IN (${placeholders})
+    ORDER BY a.name ASC
+  `).all(...agentIds) as Array<Record<string, unknown>>;
+
+  return rows.map((row) => ({
+    id: String(row.id),
+    name: String(row.name || ''),
+    runtime: stringOrNull(row.runtime),
+    channel_id: stringOrNull(row.channel_id),
+    channel_name: stringOrNull(row.channel_name),
+    channel_type: stringOrNull(row.channel_type)
+  }));
+}
+
+function listWorkflowTeams(agents: AgentBinding[]): WorkflowCapabilitySummary['agentTeams'] {
+  const agentIds = agents.map((agent) => agent.id);
+  const channelTypes = uniqueStrings(agents.map((agent) => agent.channel_type).filter((value): value is string => Boolean(value)));
+  const conditions: string[] = [];
+  const params: unknown[] = [];
+
+  if (agentIds.length > 0) {
+    conditions.push(`m.agent_id IN (${agentIds.map(() => '?').join(',')})`);
+    params.push(...agentIds);
+  }
+
+  if (channelTypes.length > 0) {
+    conditions.push(`(m.agent_id IS NULL AND m.channel_type IN (${channelTypes.map(() => '?').join(',')}))`);
+    params.push(...channelTypes);
+  }
+
+  if (conditions.length === 0) return [];
+
+  const rows = db.prepare(`
+    SELECT DISTINCT t.id, t.name, t.team_type
+    FROM agent_team_members m
+    JOIN agent_teams t ON t.id = m.team_id
+    WHERE m.enabled = 1 AND (${conditions.join(' OR ')})
+    ORDER BY t.name ASC
+  `).all(...params) as Array<Record<string, unknown>>;
+
+  return rows.map((row) => ({
+    id: String(row.id),
+    name: String(row.name || ''),
+    team_type: String(row.team_type || '')
+  }));
+}
+
+function collectConfiguredIds(nodes: WorkflowNode[], config: Record<string, unknown>, keys: string[]): string[] {
+  const ids = new Set<string>();
+  collectIdsFromRecord(config, keys, ids);
+  const stages = Array.isArray(config.stages) ? config.stages : [];
+  stages.forEach((stage) => collectIdsFromRecord(objectOrEmpty(stage), keys, ids));
+  nodes.forEach((node) => collectIdsFromRecord(objectOrEmpty(node.data), keys, ids));
+  return Array.from(ids);
+}
+
+function collectIdsFromRecord(record: Record<string, unknown>, keys: string[], ids: Set<string>): void {
+  keys.forEach((key) => {
+    const value = record[key];
+    if (typeof value === 'string' && value.trim()) {
+      ids.add(value.trim());
+    }
+    if (Array.isArray(value)) {
+      value.forEach((item) => {
+        if (typeof item === 'string' && item.trim()) ids.add(item.trim());
+      });
+    }
+  });
+}
+
+function listSkillNames(skillIds: string[]): string[] {
+  if (skillIds.length === 0) return [];
+  const placeholders = skillIds.map(() => '?').join(',');
+  const rows = db.prepare(`SELECT id, name FROM skills WHERE id IN (${placeholders}) ORDER BY name ASC`).all(...skillIds) as Array<Record<string, unknown>>;
+  const byId = new Map(rows.map((row) => [String(row.id), String(row.name || row.id)]));
+  return skillIds.map((id) => byId.get(id) || id);
+}
+
+function listMcpServerRecords(mcpIds: string[]): Array<{ id: string; name: string; health_status: string }> {
+  if (mcpIds.length === 0) return [];
+  const placeholders = mcpIds.map(() => '?').join(',');
+  const rows = db.prepare(`SELECT id, name, health_status FROM mcp_servers WHERE id IN (${placeholders}) ORDER BY name ASC`).all(...mcpIds) as Array<Record<string, unknown>>;
+  const byId = new Map(rows.map((row) => [String(row.id), {
+    id: String(row.id),
+    name: String(row.name || row.id),
+    health_status: String(row.health_status || 'unknown')
+  }]));
+  return mcpIds.map((id) => byId.get(id) || { id, name: id, health_status: 'unknown' });
+}
+
+function summarizeGates(nodes: WorkflowNode[], config: Record<string, unknown>): WorkflowCapabilitySummary['gates'] {
+  const stages = Array.isArray(config.stages) ? config.stages.map((stage) => objectOrEmpty(stage)) : [];
+  const approvalCount = [
+    ...stages.map((stage) => stage.approvalRequired),
+    ...nodes.map((node) => objectOrEmpty(node.data).approvalRequired)
+  ].filter(Boolean).length;
+  const verificationCount = [
+    ...stages.map((stage) => stage.verificationRequired),
+    ...nodes.map((node) => objectOrEmpty(node.data).verificationRequired)
+  ].filter(Boolean).length;
+
+  return {
+    approvalRequired: approvalCount > 0,
+    approvalCount,
+    verificationRequired: verificationCount > 0,
+    verificationCount
+  };
+}
+
+function summarizeExecutionQuality(workflowId: string): WorkflowCapabilitySummary['executionQuality'] {
+  const rows = db.prepare(`
+    SELECT status, start_time, end_time, created_at
+    FROM tasks
+    WHERE workflow_id = ?
+    ORDER BY created_at DESC
+    LIMIT 20
+  `).all(workflowId) as Array<Record<string, unknown>>;
+
+  const successCount = rows.filter((row) => ['completed', 'success'].includes(String(row.status))).length;
+  const failureCount = rows.filter((row) => ['failed', 'error', 'cancelled'].includes(String(row.status))).length;
+  const runningCount = rows.filter((row) => ['pending', 'running'].includes(String(row.status))).length;
+  const durations = rows
+    .map((row) => {
+      const start = Date.parse(String(row.start_time || ''));
+      const end = Date.parse(String(row.end_time || ''));
+      return Number.isFinite(start) && Number.isFinite(end) && end >= start ? end - start : 0;
+    })
+    .filter((duration) => duration > 0);
+
+  return {
+    recentTotal: rows.length,
+    recentSuccess: successCount,
+    recentFailure: failureCount,
+    recentRunning: runningCount,
+    successRate: rows.length > 0 ? Math.round((successCount / rows.length) * 100) : null,
+    lastStatus: rows.length > 0 ? String(rows[0].status || 'unknown') : null,
+    lastExecutedAt: rows.length > 0 ? String(rows[0].created_at || '') : null,
+    averageDurationMs: durations.length > 0
+      ? Math.round(durations.reduce((sum, duration) => sum + duration, 0) / durations.length)
+      : null
+  };
+}
+
+function objectOrEmpty(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function stringOrNull(value: unknown): string | null {
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+function uniqueStrings(values: string[]): string[] {
+  return Array.from(new Set(values.filter(Boolean)));
+}

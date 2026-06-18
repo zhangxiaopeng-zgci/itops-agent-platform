@@ -3,6 +3,7 @@ import { randomUUID } from 'crypto';
 import db from '../models/database';
 import { WorkflowParsed } from '../types';
 import { requireRole } from '../middleware/auth';
+import { attachWorkflowCapabilitySummaries, summarizeWorkflowCapability } from '../services/workflowCapabilityService';
 
 const router = Router();
 
@@ -14,7 +15,7 @@ router.get('/', (_req: Request, res: Response) => {
       if (w.edges) w.edges = JSON.parse(w.edges);
       if (w.agent_configs) w.agent_configs = JSON.parse(w.agent_configs);
     });
-    res.json({ success: true, data: workflows });
+    res.json({ success: true, data: attachWorkflowCapabilitySummaries(workflows) });
   } catch {
     res.status(500).json({ success: false, error: 'Failed to fetch workflows' });
   }
@@ -30,7 +31,7 @@ router.get('/:id', (req: Request, res: Response) => {
     if (w.nodes) w.nodes = JSON.parse(w.nodes as string);
     if (w.edges) w.edges = JSON.parse(w.edges as string);
     if (w.agent_configs) w.agent_configs = JSON.parse(w.agent_configs as string);
-    res.json({ success: true, data: workflow });
+    res.json({ success: true, data: { ...w, capability_summary: summarizeWorkflowCapability(w) } });
   } catch {
     res.status(500).json({ success: false, error: 'Failed to fetch workflow' });
   }

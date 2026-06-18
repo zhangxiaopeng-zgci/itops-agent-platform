@@ -832,7 +832,7 @@ P7e 收敛结果：
 P8 实施切片：
 
 - [x] P8a：Agent 管理页能力摘要，展示 Team、Channel、Skill、MCP、Tool、风险边界和最近执行质量。
-- [ ] P8b：Workflow 管理页增强，展示 Hermes-enhanced、Agent Team、Skill/MCP 依赖、审批/验证和最近成功率。
+- [x] P8b：Workflow 管理页增强，展示 Hermes-enhanced、Agent Team、Skill/MCP 依赖、审批/验证和最近成功率。
 - [ ] P8c：Hermes 控制台产品化汇总，把 Team 拓扑、Channel 健康、Skill 覆盖、MCP 健康、执行质量和 Evolution 反馈组织成统一管理视图。
 
 P8a 收敛结果：
@@ -848,6 +848,21 @@ P8a 收敛结果：
 - `/api/agents` 列表和 `/api/agents/:id` 详情都返回 `capability_summary`，前端无需重复推断。
 - Agent 管理页卡片增加紧凑能力摘要，详情页增加完整能力摘要面板。
 - 当前边界：P8a 只做只读管理可视化，不新增 Skill/MCP/Tool 绑定操作，不改变 Agent 执行逻辑或权限策略。
+
+P8b 收敛结果：
+
+- 新增 Workflow capability summary：
+  - hermesEnhanced / runbookDriven：统一识别 Hermes 增强工作流和 Runbook 驱动工作流。
+  - collaborationMode / runbookPattern：展示协作模式和 Runbook 模式。
+  - agentTeams：根据节点 Agent 和 Channel type 推断参与的 Team。
+  - agents：列出工作流节点使用的 Agent，以及对应 runtime、Channel 和 Channel type。
+  - skills：合并节点/阶段显式推荐 Skill 与 Agent Channel 绑定 Skill。
+  - mcpServers：合并节点/阶段显式推荐 MCP 与 Agent Channel 绑定 MCP，并标记异常数量。
+  - gates：统计审批门禁和验证门禁。
+  - executionQuality：最近 20 次任务成功率、失败/运行中数量、最后状态、最后执行时间和平均耗时。
+- `/api/workflows` 列表和 `/api/workflows/:id` 详情都返回 `capability_summary`。
+- Workflow 管理页卡片增加能力摘要，展示模式、Team、Agent、Skill、MCP、执行质量、门禁和最近状态。
+- 当前边界：P8b 只做只读管理可视化，不新增 Workflow 编排规则，不自动改变审批/验证策略，不改变执行器。
 
 ### P9：评估与回归测试体系
 

@@ -32,12 +32,134 @@ interface Workflow {
   is_template: number;
   created_at: string;
   updated_at?: string;
+  capability_summary?: WorkflowCapabilitySummary;
+}
+
+interface WorkflowCapabilitySummary {
+  hermesEnhanced: boolean;
+  runbookDriven: boolean;
+  collaborationMode: string | null;
+  runbookPattern: string | null;
+  agentTeams: Array<{ id: string; name: string; team_type: string }>;
+  agents: Array<{
+    id: string;
+    name: string;
+    runtime: string | null;
+    channel_id: string | null;
+    channel_name: string | null;
+    channel_type: string | null;
+  }>;
+  skills: {
+    count: number;
+    ids: string[];
+    names: string[];
+  };
+  mcpServers: {
+    count: number;
+    unhealthy: number;
+    ids: string[];
+    names: string[];
+  };
+  gates: {
+    approvalRequired: boolean;
+    approvalCount: number;
+    verificationRequired: boolean;
+    verificationCount: number;
+  };
+  executionQuality: {
+    recentTotal: number;
+    recentSuccess: number;
+    recentFailure: number;
+    recentRunning: number;
+    successRate: number | null;
+    lastStatus: string | null;
+    lastExecutedAt: string | null;
+    averageDurationMs: number | null;
+  };
 }
 
 interface Server {
   id: string;
   name: string;
   hostname: string;
+}
+
+function WorkflowCapabilitySummaryView({ summary }: { summary?: WorkflowCapabilitySummary }) {
+  const { t } = useLocale();
+  if (!summary) return null;
+
+  const successRate = summary.executionQuality.successRate === null ? '-' : `${summary.executionQuality.successRate}%`;
+  const gateText = summary.gates.approvalRequired || summary.gates.verificationRequired
+    ? t('workflows.capability.gateSummary', {
+      approval: summary.gates.approvalCount,
+      verification: summary.gates.verificationCount
+    })
+    : t('workflows.runbook.readOnly');
+  const items = [
+    {
+      label: t('workflows.capability.mode'),
+      value: summary.hermesEnhanced ? t('workflows.hermesEnhanced') : t('workflows.capability.standard'),
+      sub: summary.collaborationMode || summary.runbookPattern || '-'
+    },
+    {
+      label: t('workflows.capability.teams'),
+      value: String(summary.agentTeams.length),
+      sub: summary.agentTeams.map((team) => team.name).slice(0, 2).join(', ') || t('workflows.capability.none')
+    },
+    {
+      label: t('workflows.capability.agents'),
+      value: String(summary.agents.length),
+      sub: summary.agents.map((agent) => agent.name).slice(0, 2).join(', ') || t('workflows.capability.none')
+    },
+    {
+      label: t('workflows.capability.skills'),
+      value: String(summary.skills.count),
+      sub: summary.skills.names.slice(0, 2).join(', ') || t('workflows.capability.none')
+    },
+    {
+      label: t('workflows.capability.mcp'),
+      value: String(summary.mcpServers.count),
+      sub: summary.mcpServers.unhealthy > 0
+        ? t('workflows.capability.unhealthyMcp', { count: summary.mcpServers.unhealthy })
+        : t('workflows.capability.healthy')
+    },
+    {
+      label: t('workflows.capability.quality'),
+      value: successRate,
+      sub: summary.executionQuality.recentTotal > 0
+        ? t('workflows.capability.recentRuns', { count: summary.executionQuality.recentTotal })
+        : t('workflows.capability.noRuns')
+    }
+  ];
+
+  return (
+    <div className="mb-4 rounded-xl bg-background/70 border border-border p-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+        {items.map((item) => (
+          <div key={item.label} className="rounded-lg bg-surface border border-border px-3 py-2 min-w-0">
+            <div className="text-[11px] text-text-tertiary truncate">{item.label}</div>
+            <div className="mt-1 text-sm font-semibold text-text-primary truncate">{item.value}</div>
+            <div className="mt-0.5 text-xs text-text-tertiary truncate">{item.sub}</div>
+          </div>
+        ))}
+      </div>
+      <div className="mt-2 flex flex-wrap gap-1.5">
+        <span className="px-2 py-1 rounded-md bg-primary/10 text-primary border border-primary/20 text-xs">
+          {gateText}
+        </span>
+        {summary.runbookDriven && (
+          <span className="px-2 py-1 rounded-md bg-teal-500/10 text-teal-500 border border-teal-500/20 text-xs">
+            {t('workflows.capability.runbookDriven')}
+          </span>
+        )}
+        {summary.executionQuality.lastStatus && (
+          <span className="px-2 py-1 rounded-md bg-surface text-text-secondary border border-border text-xs">
+            {t('workflows.capability.lastStatus')}: {summary.executionQuality.lastStatus}
+          </span>
+        )}
+      </div>
+    </div>
+  );
 }
 
 export default function Workflows() {
@@ -550,6 +672,8 @@ export default function Workflows() {
                       </div>
                     )}
 
+                    <WorkflowCapabilitySummaryView summary={workflow.capability_summary} />
+
                     <div className="bg-gradient-to-br from-background/80 to-background/40 rounded-xl p-5 mb-4 border border-border/60">
                       <div className="flex items-center justify-between mb-4">
                         <span className="text-sm font-semibold text-text-primary flex items-center gap-2">
@@ -680,6 +804,7 @@ export default function Workflows() {
 
 function isHermesEnhancedWorkflow(workflow: Workflow) {
   return Boolean(
+    workflow.capability_summary?.hermesEnhanced ||
     workflow.agent_configs?.hermesEnhanced ||
     workflow.agent_configs?.runbookDriven ||
     workflow.nodes?.some((node) => node.data?.runbookPhase)
