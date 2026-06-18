@@ -1282,7 +1282,7 @@ P11 实施切片：
 - [x] P11a：验收清单和测试矩阵，固化角色、页面、API、部署、数据、发布治理检查项。
 - [x] P11b：远端测试机真实验收，按矩阵执行并记录通过/失败证据。
 - [x] P11c：补齐验收中发现的小缺口，只做稳定化修复，不扩展大功能。
-- [ ] P11d：运维交付手册，覆盖部署、备份恢复、容器重建、Hermes 配置、发布治理和回滚。
+- [x] P11d：运维交付手册，覆盖部署、备份恢复、容器重建、Hermes 配置、发布治理和回滚。
 - [ ] P11e：验收报告和版本标识，固化当前 commit、部署状态、已知边界和下一阶段建议。
 
 P11a 收敛结果：
@@ -1361,6 +1361,31 @@ P11c 收敛结果：
   - 原因是 P11c 只做稳定化，不临时改变 release ledger 运行态。
   - 该 warning 应通过一次完整 evaluation / staging replay / approval / publish 流程自然消除，或在 P11e 专项验收中记录为已知边界。
 - 当前边界：P11c 已收口 P11b 的账号、权限、主题 warning；运维交付手册进入 P11d，最终验收报告和版本标识进入 P11e。
+
+P11d 收敛结果：
+
+- 新增运维交付手册：
+  - `docs/AGENT_RUNTIME_STAGE_31_P11D_OPERATIONS_HANDOFF.md`。
+- 覆盖 P11-H01 到 P11-H05：
+  - 启动、停止、重启、日志、升级。
+  - 手动备份、备份下载、恢复演练、正式恢复。
+  - 容器 force-recreate、重建后验证、container rebuild drill 记录。
+  - Hermes API key 轮换、model / endpoint 配置、三 Worker 健康检查。
+  - Channel / Skill / MCP 管理原则和 capability bundle 导入导出。
+  - Hermes 操作者使用闭环、工具审批和任务验证。
+  - Release Guard blocked 处理、变更窗口、发布审计导出、release overlay 回滚。
+- 手册明确当前持久化路径：
+  - `/opt/itops-agent-platform/data`。
+  - `/opt/itops-agent-platform/backups`。
+  - `/opt/itops-agent-platform/secrets/hermes_api_key`。
+- 手册明确交付检查表：
+  - 核心容器 healthy。
+  - `/health` healthy。
+  - `/api/ops-readiness/summary` 无 blocker。
+  - backup / restore drill / container drill 有通过记录。
+  - 三个 Hermes Worker healthy。
+  - capability bundle、release audit、rollback 步骤可执行。
+- 当前边界：P11d 是文档和运维移交收口，不重新执行全量验收；P11e 负责把 P11a-P11d 的证据汇总成最终验收报告和版本标识。
 
 验收：
 
