@@ -1082,7 +1082,7 @@ P10 实施切片：
 
 - [x] P10a：生产治理就绪度只读清单，集中展示部署、运行、数据、发布和安全治理状态。
 - [x] P10b：备份恢复演练记录，保存演练时间、操作者、结果和恢复验证证据。
-- [ ] P10c：容器删除重建恢复演练，把 compose 网络 alias、volume、healthcheck 和 Hermes Worker 状态纳入验证。
+- [x] P10c：容器删除重建恢复演练，把 compose 网络 alias、volume、healthcheck 和 Hermes Worker 状态纳入验证。
 - [ ] P10d：发布审计导出，按 release version 汇总 proposal、evaluation、staging replay、release guard、rollback event。
 - [ ] P10e：高风险发布治理，接入 change window 和双人审批策略。
 
@@ -1137,6 +1137,37 @@ P10b 收敛结果：
   - 页面显示最近恢复演练记录、验证状态和结果。
   - readiness data 分组新增 `restore_drill_recorded` 检查项。
 - 当前边界：P10b 只做恢复演练证据记录，不执行真实数据库恢复；真实恢复仍使用现有 `/api/backups/restore/:id`，容器删除重建演练在 P10c 收敛。
+
+P10c 收敛结果：
+
+- 新增数据库表：
+  - `container_rebuild_drills`。
+- 新增容器重建恢复演练记录能力：
+  - 记录 passed / failed / warning。
+  - 记录 verification status。
+  - 记录操作者、创建时间、完成时间。
+  - 保存 evidence JSON。
+- 新增 API：
+  - `GET /api/ops-readiness/container-drills`。
+  - `POST /api/ops-readiness/container-drills`。
+- 演练验证项：
+  - backend health ready。
+  - 三个 Hermes Worker configured + healthy。
+  - `HERMES_WORKER_DIAGNOSE_URL` 指向 `hermes-diagnose` alias。
+  - `HERMES_WORKER_REMEDIATE_URL` 指向 `hermes-remediate` alias。
+  - `HERMES_WORKER_EVOLVE_URL` 指向 `hermes-evolve` alias。
+  - database path 位于持久化目录。
+  - backup dir 位于持久化目录。
+  - 已存在通过的 backup restore drill 作为恢复证据。
+- 生产就绪页面增强：
+  - deployment 分组新增 `container_rebuild_drill_recorded` 检查项。
+  - 新增“容器重建演练”卡片。
+  - admin 可记录当前重建恢复验证。
+  - 页面展示演练次数、最近演练时间、最近状态、最近记录。
+- 测试机演练方式：
+  - 在 `10.1.132.58` 使用 `docker compose -f docker-compose.hermes.yml up -d --force-recreate ...` 重建 backend / frontend / 3 Hermes Worker。
+  - 重建后由 API 记录验证证据。
+- 当前边界：P10c 不在 backend 容器内直接调用 Docker；真实容器重建由运维侧或部署脚本执行，平台负责记录和审计重建后的恢复验证证据。
 
 ## 最小可用版本
 

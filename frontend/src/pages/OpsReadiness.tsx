@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Activity, Archive, CheckCircle2, Database, PlayCircle, RefreshCw, ServerCog, ShieldCheck, XCircle } from 'lucide-react';
+import { Activity, Archive, CheckCircle2, Database, PlayCircle, RefreshCw, RotateCcw, ServerCog, ShieldCheck, XCircle } from 'lucide-react';
 import clsx from 'clsx';
 import api from '../lib/api';
 import { useLocale, type MessageKey } from '../contexts/LocaleContext';
@@ -49,6 +49,9 @@ interface OpsReadinessSummary {
     expectedHermesWorkers: number;
     configuredHermesWorkers: number;
     healthyHermesWorkers: number;
+    containerRebuildDrills: number;
+    lastContainerRebuildDrillAt?: string | null;
+    lastContainerRebuildDrillStatus?: string | null;
   };
   data: {
     backupEnabled: boolean;
@@ -95,6 +98,15 @@ interface BackupRestoreDrill {
   completed_at?: string | null;
 }
 
+interface ContainerRebuildDrill {
+  id: string;
+  status: 'passed' | 'failed' | 'warning';
+  verification_status: string;
+  notes?: string | null;
+  created_at: string;
+  completed_at?: string | null;
+}
+
 const panelClass = 'rounded-xl border border-border bg-surface/95 shadow-sm';
 const categories: CheckCategory[] = ['deployment', 'runtime', 'data', 'release', 'security'];
 
@@ -104,6 +116,7 @@ export default function OpsReadiness() {
   const toast = useToast();
   const queryClient = useQueryClient();
   const canRunRestoreDrill = user?.role === 'admin';
+  const canRunContainerDrill = user?.role === 'admin';
   const { data, isLoading, refetch, isFetching } = useQuery({
     queryKey: ['ops-readiness-summary'],
     queryFn: async () => {
@@ -129,6 +142,14 @@ export default function OpsReadiness() {
     },
     refetchInterval: 30000
   });
+  const { data: containerDrills } = useQuery({
+    queryKey: ['container-rebuild-drills'],
+    queryFn: async () => {
+      const res = await api.get('/api/ops-readiness/container-drills?limit=5');
+      return res.data.data as ContainerRebuildDrill[];
+    },
+    refetchInterval: 30000
+  });
   const restoreDrillMutation = useMutation({
     mutationFn: async () => {
       const backupId = backups?.[0]?.id;
@@ -149,6 +170,23 @@ export default function OpsReadiness() {
     },
     onError: (error: unknown) => {
       toast.error(error instanceof Error ? error.message : t('opsReadiness.drill.failed'));
+    }
+  });
+  const containerDrillMutation = useMutation({
+    mutationFn: async () => {
+      const res = await api.post('/api/ops-readiness/container-drills', {
+        externalRecreatePerformed: false,
+        notes: t('opsReadiness.containerDrill.defaultNotes')
+      });
+      return res.data.data as ContainerRebuildDrill;
+    },
+    onSuccess: () => {
+      toast.success(t('opsReadiness.containerDrill.created'));
+      queryClient.invalidateQueries({ queryKey: ['container-rebuild-drills'] });
+      queryClient.invalidateQueries({ queryKey: ['ops-readiness-summary'] });
+    },
+    onError: (error: unknown) => {
+      toast.error(error instanceof Error ? error.message : t('opsReadiness.containerDrill.failed'));
     }
   });
 
@@ -203,7 +241,7 @@ export default function OpsReadiness() {
             ))}
           </section>
 
-          <section className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+          <section className="grid grid-cols-1 xl:grid-cols-4 gap-4">
             <WorkersPanel workers={data.hermesWorkers} />
             <DataPanel
               summary={data}
@@ -212,6 +250,13 @@ export default function OpsReadiness() {
               canRunRestoreDrill={canRunRestoreDrill}
               isRunningRestoreDrill={restoreDrillMutation.isPending}
               onRunRestoreDrill={() => restoreDrillMutation.mutate()}
+            />
+            <ContainerDrillPanel
+              summary={data}
+              drills={containerDrills || []}
+              canRun={canRunContainerDrill}
+              isRunning={containerDrillMutation.isPending}
+              onRun={() => containerDrillMutation.mutate()}
             />
             <EnvironmentPanel summary={data} />
           </section>
@@ -360,6 +405,64 @@ function DataPanel({
                 <div className="text-xs text-text-tertiary mt-1 truncate">
                   {drill.verification_status} · {formatTime(drill.completed_at)}
                 </div>
+              </div>
+              <StatusPill status={drill.status === 'passed' ? 'ready' : drill.status === 'failed' ? 'blocked' : 'warning'} />
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function ContainerDrillPanel({
+  summary,
+  drills,
+  canRun,
+  isRunning,
+  onRun
+}: {
+  summary: OpsReadinessSummary;
+  drills: ContainerRebuildDrill[];
+  canRun: boolean;
+  isRunning: boolean;
+  onRun: () => void;
+}) {
+  const { t } = useLocale();
+  return (
+    <section className={`${panelClass} p-4`}>
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 mb-3">
+        <div className="flex items-center gap-2">
+          <RotateCcw className="w-4 h-4 text-primary" />
+          <h2 className="text-sm font-semibold text-text-primary">{t('opsReadiness.containerDrill.title')}</h2>
+        </div>
+        {canRun && (
+          <button
+            disabled={isRunning}
+            onClick={onRun}
+            className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-background border border-border text-xs text-text-secondary hover:text-text-primary hover:border-primary/40 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            <PlayCircle className="w-4 h-4" />
+            {isRunning ? t('opsReadiness.containerDrill.running') : t('opsReadiness.containerDrill.run')}
+          </button>
+        )}
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <Metric label={t('opsReadiness.containerDrill.count')} value={String(summary.deployment.containerRebuildDrills)} />
+        <Metric label={t('opsReadiness.containerDrill.last')} value={formatTime(summary.deployment.lastContainerRebuildDrillAt)} />
+        <Metric label={t('opsReadiness.containerDrill.status')} value={summary.deployment.lastContainerRebuildDrillStatus || '-'} />
+        <Metric label={t('opsReadiness.metric.workers')} value={`${summary.deployment.healthyHermesWorkers}/${summary.deployment.expectedHermesWorkers}`} />
+      </div>
+      <div className="mt-3 space-y-2">
+        <div className="text-xs font-medium text-text-tertiary">{t('opsReadiness.containerDrill.recent')}</div>
+        {drills.length === 0 ? (
+          <div className="text-sm text-text-tertiary">{t('opsReadiness.containerDrill.empty')}</div>
+        ) : drills.slice(0, 3).map((drill) => (
+          <div key={drill.id} className="rounded-lg bg-background border border-border px-3 py-2">
+            <div className="flex items-center justify-between gap-2">
+              <div className="min-w-0">
+                <div className="text-sm font-medium text-text-primary truncate">{drill.verification_status}</div>
+                <div className="text-xs text-text-tertiary mt-1 truncate">{formatTime(drill.completed_at)}</div>
               </div>
               <StatusPill status={drill.status === 'passed' ? 'ready' : drill.status === 'failed' ? 'blocked' : 'warning'} />
             </div>

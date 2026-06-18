@@ -22,6 +22,7 @@ import v020AddSkillOperationalSemantics from './v020_add_skill_operational_seman
 import v021AddEvolutionFeedbackClusters from './v021_add_evolution_feedback_clusters';
 import v022AddEvolutionProposalEnrichmentTask from './v022_add_evolution_proposal_enrichment_task';
 import v023AddBackupRestoreDrills from './v023_add_backup_restore_drills';
+import v024AddContainerRebuildDrills from './v024_add_container_rebuild_drills';
 
 export const ALL_MIGRATIONS: Migration[] = [
   v001InitialSchema,
@@ -47,6 +48,7 @@ export const ALL_MIGRATIONS: Migration[] = [
   v021AddEvolutionFeedbackClusters,
   v022AddEvolutionProposalEnrichmentTask,
   v023AddBackupRestoreDrills,
+  v024AddContainerRebuildDrills,
 ];
 
 export function createMigrationManager(db: any): MigrationManager {

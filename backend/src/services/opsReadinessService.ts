@@ -7,6 +7,7 @@ import { getHermesWorkerStatuses, HermesWorkerStatus } from './hermesWorkerServi
 import { listEvolutionReleaseVersions } from './evolutionReleaseService';
 import { listEvolutionProposals } from './evolutionProposalService';
 import { listBackupRestoreDrills } from './backupRestoreDrillService';
+import { listContainerRebuildDrills } from './containerRebuildDrillService';
 
 export type OpsReadinessStatus = 'ready' | 'warning' | 'blocked';
 
@@ -40,6 +41,9 @@ export interface OpsReadinessSummary {
     expectedHermesWorkers: number;
     configuredHermesWorkers: number;
     healthyHermesWorkers: number;
+    containerRebuildDrills: number;
+    lastContainerRebuildDrillAt: string | null;
+    lastContainerRebuildDrillStatus: string | null;
   };
   data: {
     backupEnabled: boolean;
@@ -76,6 +80,8 @@ export async function buildOpsReadinessSummary(): Promise<OpsReadinessSummary> {
   const pendingApprovalProposals = listEvolutionProposals({ status: 'approval_pending', limit: 1 }).total;
   const restoreDrills = listBackupRestoreDrills(20);
   const lastRestoreDrill = restoreDrills[0] || null;
+  const containerRebuildDrills = listContainerRebuildDrills(20);
+  const lastContainerRebuildDrill = containerRebuildDrills[0] || null;
   const checks: OpsReadinessCheck[] = [];
 
   const databasePersistent = isPersistentDatabasePath(env.DATABASE_PATH);
@@ -102,6 +108,15 @@ export async function buildOpsReadinessSummary(): Promise<OpsReadinessSummary> {
       : env.NODE_ENV === 'production'
         ? 'Frontend is expected to be served by a separated production container.'
         : 'Frontend production assets were not detected from this backend runtime.'
+  }));
+  checks.push(check({
+    key: 'container_rebuild_drill_recorded',
+    category: 'deployment',
+    status: lastContainerRebuildDrill?.status === 'passed' ? 'ready' : 'warning',
+    required: false,
+    message: lastContainerRebuildDrill
+      ? `Latest container rebuild drill status is ${lastContainerRebuildDrill.status}.`
+      : 'No container rebuild drill record has been created yet.'
   }));
   checks.push(check({
     key: 'database_persistent_path',
@@ -219,7 +234,10 @@ export async function buildOpsReadinessSummary(): Promise<OpsReadinessSummary> {
       frontendProductionAssetsDetected: frontendProductionReady,
       expectedHermesWorkers: 3,
       configuredHermesWorkers,
-      healthyHermesWorkers
+      healthyHermesWorkers,
+      containerRebuildDrills: containerRebuildDrills.length,
+      lastContainerRebuildDrillAt: lastContainerRebuildDrill?.completed_at || null,
+      lastContainerRebuildDrillStatus: lastContainerRebuildDrill?.status || null
     },
     data: {
       backupEnabled: backupStatus.config.enabled,
