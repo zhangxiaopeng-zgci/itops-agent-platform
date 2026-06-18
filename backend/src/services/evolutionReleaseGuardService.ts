@@ -4,6 +4,11 @@ import {
   getLatestEvolutionProposalEvaluation
 } from './evolutionEvaluationService';
 import { getStructuredPatchFromProposal, validateStructuredPatch } from './evolutionPatchService';
+import {
+  buildEvolutionReleaseGovernance,
+  EvolutionReleaseGovernanceContext,
+  EvolutionReleaseGovernanceSummary
+} from './evolutionReleaseGovernanceService';
 
 export type EvolutionReleaseGuardCheckStatus = 'passed' | 'failed' | 'warning';
 
@@ -45,10 +50,14 @@ export interface EvolutionReleaseGuardSummary {
     notes: string | null;
     triggers: string[];
   };
+  governance: EvolutionReleaseGovernanceSummary;
   generatedAt: string;
 }
 
-export function buildEvolutionReleaseGuard(proposalIdOrRecord: string | EvolutionProposalRecord): EvolutionReleaseGuardSummary {
+export function buildEvolutionReleaseGuard(
+  proposalIdOrRecord: string | EvolutionProposalRecord,
+  context: EvolutionReleaseGovernanceContext = {}
+): EvolutionReleaseGuardSummary {
   const proposal = typeof proposalIdOrRecord === 'string'
     ? getEvolutionProposal(proposalIdOrRecord)
     : proposalIdOrRecord;
@@ -57,7 +66,8 @@ export function buildEvolutionReleaseGuard(proposalIdOrRecord: string | Evolutio
   }
 
   const evaluation = getLatestEvolutionProposalEvaluation(proposal.id);
-  const patchValidation = validateStructuredPatch(getStructuredPatchFromProposal(proposal));
+  const structuredPatch = getStructuredPatchFromProposal(proposal);
+  const patchValidation = validateStructuredPatch(structuredPatch);
   const summary = objectOrEmpty(evaluation?.result_summary);
   const semanticGuard = objectOrEmpty(summary.semanticGuard);
   const rollbackBoundary = objectOrEmpty(semanticGuard.rollbackBoundary);
@@ -65,6 +75,7 @@ export function buildEvolutionReleaseGuard(proposalIdOrRecord: string | Evolutio
   const stagingReplay = normalizeStagingReplay(summary.stagingReplay);
   const stagingPreflight = objectOrEmpty(objectOrEmpty(summary.stagingReplay).preflight);
   const requiresSemanticGuard = isSkillOrWorkflowProposal(proposal.type);
+  const governance = buildEvolutionReleaseGovernance(proposal, structuredPatch, context);
   const checks: EvolutionReleaseGuardCheck[] = [];
 
   checks.push(check(
@@ -168,6 +179,30 @@ export function buildEvolutionReleaseGuard(proposalIdOrRecord: string | Evolutio
       ? `${stagingReplay.applyMode || 'unknown'} / noProductionMutation=${stagingReplay.noProductionMutation}.`
       : 'No staging replay safety boundary is recorded.'
   ));
+  checks.push(check(
+    'high_risk_change_window_open',
+    !governance.highRisk || governance.changeWindow.open,
+    governance.highRisk,
+    governance.highRisk
+      ? `Change window ${governance.changeWindow.open ? 'open' : 'closed'} at day=${governance.changeWindow.localDay} time=${governance.changeWindow.localTime} ${governance.changeWindow.timezone}; allowed days=${governance.changeWindow.days.join(',')} ${governance.changeWindow.start}-${governance.changeWindow.end}.`
+      : 'Change window is advisory for non-high-risk releases.'
+  ));
+  checks.push(check(
+    'high_risk_dual_approval',
+    governance.dualApproval.valid,
+    governance.dualApproval.required,
+    governance.dualApproval.required
+      ? `Reviewer=${governance.dualApproval.reviewerId || 'missing'}, publisher=${governance.dualApproval.publisherId || 'missing'}.`
+      : 'Dual approval is advisory for non-high-risk releases.'
+  ));
+  checks.push(check(
+    'high_risk_rollback_plan',
+    governance.rollbackPlan.valid,
+    governance.rollbackPlan.required,
+    governance.rollbackPlan.required
+      ? `Rollback plan ${governance.rollbackPlan.valid ? 'present' : 'missing'}; strategy=${governance.rollbackPlan.strategy || 'missing'}.`
+      : 'Rollback plan is advisory for non-high-risk releases.'
+  ));
 
   const blockers = checks
     .filter(item => item.required && item.status === 'failed')
@@ -196,12 +231,16 @@ export function buildEvolutionReleaseGuard(proposalIdOrRecord: string | Evolutio
       notes: typeof rollbackBoundary.notes === 'string' ? rollbackBoundary.notes : null,
       triggers: rollbackTriggers
     },
+    governance,
     generatedAt: new Date().toISOString()
   };
 }
 
-export function assertEvolutionReleaseGuard(proposal: EvolutionProposalRecord): EvolutionReleaseGuardSummary {
-  const guard = buildEvolutionReleaseGuard(proposal);
+export function assertEvolutionReleaseGuard(
+  proposal: EvolutionProposalRecord,
+  context: EvolutionReleaseGovernanceContext = {}
+): EvolutionReleaseGuardSummary {
+  const guard = buildEvolutionReleaseGuard(proposal, context);
   if (!guard.passed) {
     throw new Error(`Release guard blocked publish: ${guard.blockers.join(', ')}`);
   }

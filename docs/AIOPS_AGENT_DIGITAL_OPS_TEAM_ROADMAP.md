@@ -1084,7 +1084,7 @@ P10 实施切片：
 - [x] P10b：备份恢复演练记录，保存演练时间、操作者、结果和恢复验证证据。
 - [x] P10c：容器删除重建恢复演练，把 compose 网络 alias、volume、healthcheck 和 Hermes Worker 状态纳入验证。
 - [x] P10d：发布审计导出，按 release version 汇总 proposal、evaluation、staging replay、release guard、rollback event。
-- [ ] P10e：高风险发布治理，接入 change window 和双人审批策略。
+- [x] P10e：高风险发布治理，接入 change window 和双人审批策略。
 
 P10a 收敛结果：
 
@@ -1190,6 +1190,39 @@ P10d 收敛结果：
   - 进化提案详情的 Release Versions 面板新增 `导出 JSON` 和 `导出 Markdown`。
   - 导出使用现有鉴权 API，返回附件下载。
 - 当前边界：P10d 只做审计证据导出，不改变 release version 状态，不触发发布/回滚；发布前高风险治理和 change window 在 P10e 收敛。
+
+P10e 收敛结果：
+
+- 新增发布治理服务：
+  - `evolutionReleaseGovernanceService`。
+- 高风险识别来源：
+  - proposal priority：`P0/P1`。
+  - proposal type：`workflow_template_update` / `tool_policy_update` / `mcp_binding_update`。
+  - structured patch operation riskLevel：`high/critical`。
+  - remove / unbind 操作。
+  - risk notes / proposal body 中的高风险信号。
+- Release Guard 新增强制检查：
+  - `high_risk_change_window_open`。
+  - `high_risk_dual_approval`。
+  - `high_risk_rollback_plan`。
+- 默认 change window：
+  - `EVOLUTION_RELEASE_CHANGE_WINDOW_ENABLED=true`。
+  - `EVOLUTION_RELEASE_CHANGE_WINDOW_DAYS=1,2,3,4,5`。
+  - `EVOLUTION_RELEASE_CHANGE_WINDOW_START=09:00`。
+  - `EVOLUTION_RELEASE_CHANGE_WINDOW_END=18:00`。
+  - `EVOLUTION_RELEASE_CHANGE_WINDOW_TIMEZONE=Asia/Shanghai`。
+- 双人审批策略：
+  - 高风险发布要求 proposal 已由管理员批准。
+  - 发布人必须与 `reviewed_by` 不同。
+  - Release Guard 查询接口会使用当前登录用户作为 publisher 计算门禁。
+  - publish API 会再次使用当前登录用户做强制校验。
+- 回滚计划策略：
+  - 高风险发布要求 structured patch 包含 rollback plan notes。
+  - release payload 保存 `releaseGovernance` 快照。
+- 前端增强：
+  - Release Guard 面板展示发布风险、变更窗口、双人审批、回滚计划摘要。
+  - 新增高风险治理检查项的中英文文案。
+- 当前边界：P10e 复用现有 proposal approval 字段实现双人审批，不新增多级审批表；后续如需要 N 人会签或 change calendar，可在 governance service 后面接表驱动策略。
 
 ## 最小可用版本
 

@@ -100,12 +100,13 @@ export function publishEvolutionProposal(input: {
     throw new Error('Evolution proposal not found');
   }
   assertPublishable(proposal);
+  assertEvolutionReleaseGuard(proposal, { actorId: input.actorId || null });
 
   const target = normalizeTarget(proposal);
   const previous = getActiveVersion(target.objectType, target.targetId);
   const versionId = randomUUID();
   const versionLabel = buildVersionLabel(proposal, previous);
-  const payload = buildVersionPayload(proposal, target, previous?.id || null);
+  const payload = buildVersionPayload(proposal, target, previous?.id || null, input.actorId || null);
 
   const transaction = db.transaction(() => {
     if (previous) {
@@ -208,7 +209,6 @@ function assertPublishable(proposal: EvolutionProposalRecord): void {
   if (proposal.status !== 'approved') {
     throw new Error(`Proposal must be approved before publishing. Current status: ${proposal.status}`);
   }
-  assertEvolutionReleaseGuard(proposal);
 }
 
 function normalizeTarget(proposal: EvolutionProposalRecord): { objectType: string; targetId: string | null } {
@@ -259,13 +259,14 @@ function buildVersionLabel(proposal: EvolutionProposalRecord, previous: Evolutio
 function buildVersionPayload(
   proposal: EvolutionProposalRecord,
   target: { objectType: string; targetId: string | null },
-  previousVersionId: string | null
+  previousVersionId: string | null,
+  actorId?: string | null
 ): Record<string, unknown> {
   const structuredPatch = getStructuredPatchFromProposal(proposal);
   const evaluation = getLatestEvolutionProposalEvaluation(proposal.id);
   const evalSummary = objectOrEmpty(evaluation?.result_summary);
   const semanticGuard = objectOrEmpty(evalSummary.semanticGuard);
-  const releaseGuard = buildEvolutionReleaseGuard(proposal);
+  const releaseGuard = buildEvolutionReleaseGuard(proposal, { actorId });
   return {
     proposalId: proposal.id,
     proposalType: proposal.type,
@@ -281,6 +282,7 @@ function buildVersionPayload(
     latestEvaluationSummary: evaluation?.result_summary || null,
     semanticGuard: Object.keys(semanticGuard).length > 0 ? semanticGuard : null,
     releaseGuard,
+    releaseGovernance: releaseGuard.governance,
     riskNotes: proposal.risk_notes,
     correlationId: proposal.correlation_id,
     previousVersionId,

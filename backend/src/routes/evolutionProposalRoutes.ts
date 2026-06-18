@@ -109,9 +109,9 @@ router.get('/evaluation-dataset/overview', requireRole('admin', 'operator', 'vie
   }
 });
 
-router.get('/:id/release-guard', requireRole('admin', 'operator', 'viewer'), (req: Request, res: Response) => {
+router.get('/:id/release-guard', requireRole('admin', 'operator', 'viewer'), (req: AuthenticatedRequest, res: Response) => {
   try {
-    res.json({ success: true, data: buildEvolutionReleaseGuard(req.params.id) });
+    res.json({ success: true, data: buildEvolutionReleaseGuard(req.params.id, { actorId: req.user?.id || null }) });
   } catch (error) {
     const status = error instanceof Error && error.message === 'Evolution proposal not found' ? 404 : 500;
     res.status(status).json({ success: false, error: error instanceof Error ? error.message : 'Failed to build evolution release guard' });

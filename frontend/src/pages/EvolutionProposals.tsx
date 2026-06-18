@@ -242,6 +242,34 @@ interface ReleaseGuardSummary {
     notes?: string | null;
     triggers: string[];
   };
+  governance?: {
+    riskLevel: 'low' | 'medium' | 'high' | 'critical';
+    highRisk: boolean;
+    reasons: string[];
+    changeWindow: {
+      enabled: boolean;
+      open: boolean;
+      timezone: string;
+      days: string[];
+      start: string;
+      end: string;
+      localDay: string;
+      localTime: string;
+    };
+    dualApproval: {
+      required: boolean;
+      valid: boolean;
+      reviewerId?: string | null;
+      publisherId?: string | null;
+      reviewedAt?: string | null;
+    };
+    rollbackPlan: {
+      required: boolean;
+      valid: boolean;
+      strategy?: string | null;
+      notes?: string | null;
+    };
+  };
   generatedAt: string;
 }
 
@@ -1193,6 +1221,30 @@ function ReleaseGuardPanel({ guard }: { guard?: ReleaseGuardSummary }) {
                     : t('evolution.eval.notAvailable')}
                 />
               </div>
+              {guard.governance && (
+                <div className="mt-3 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-2">
+                  <ReleaseGuardMetric
+                    label={t('evolution.releaseGuard.governance.risk')}
+                    value={`${guard.governance.riskLevel}${guard.governance.highRisk ? ` · ${t('evolution.releaseGuard.governance.highRisk')}` : ''}`}
+                  />
+                  <ReleaseGuardMetric
+                    label={t('evolution.releaseGuard.governance.changeWindow')}
+                    value={`${guard.governance.changeWindow.open ? t('evolution.eval.valid') : t('evolution.eval.invalid')} · ${guard.governance.changeWindow.localTime}`}
+                  />
+                  <ReleaseGuardMetric
+                    label={t('evolution.releaseGuard.governance.dualApproval')}
+                    value={guard.governance.dualApproval.required
+                      ? (guard.governance.dualApproval.valid ? t('evolution.eval.valid') : t('evolution.eval.invalid'))
+                      : t('common.disabled')}
+                  />
+                  <ReleaseGuardMetric
+                    label={t('evolution.releaseGuard.governance.rollbackPlan')}
+                    value={guard.governance.rollbackPlan.required
+                      ? (guard.governance.rollbackPlan.valid ? t('evolution.eval.valid') : t('evolution.eval.invalid'))
+                      : t('common.disabled')}
+                  />
+                </div>
+              )}
             </div>
           </div>
 
@@ -2056,7 +2108,10 @@ const releaseGuardCheckLabels: Record<string, MessageKey> = {
   staging_replay_present: 'evolution.releaseGuard.check.staging_replay_present',
   staging_replay_passed: 'evolution.releaseGuard.check.staging_replay_passed',
   staging_preflight_passed: 'evolution.releaseGuard.check.staging_preflight_passed',
-  shadow_no_production_mutation: 'evolution.releaseGuard.check.shadow_no_production_mutation'
+  shadow_no_production_mutation: 'evolution.releaseGuard.check.shadow_no_production_mutation',
+  high_risk_change_window_open: 'evolution.releaseGuard.check.high_risk_change_window_open',
+  high_risk_dual_approval: 'evolution.releaseGuard.check.high_risk_dual_approval',
+  high_risk_rollback_plan: 'evolution.releaseGuard.check.high_risk_rollback_plan'
 };
 
 function sourceTypeLabel(
