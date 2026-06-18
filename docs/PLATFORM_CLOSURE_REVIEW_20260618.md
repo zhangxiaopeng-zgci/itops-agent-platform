@@ -1,0 +1,485 @@
+# Platform Closure Review - 2026-06-18
+
+## Conclusion
+
+The platform is usable as an integrated AIOps Agent / Hermes operations platform. The current runtime is healthy, the core governance loop is working, and the frontend can render the main operator pages after the topology fix in this review.
+
+The next closure step should focus on product simplification and test baseline hardening, not new features.
+
+## Runtime Snapshot
+
+Test host:
+
+```text
+URL: http://10.1.132.58:3000
+API: http://10.1.132.58:3001
+Compose: /opt/itops-agent-platform/app/docker-compose.hermes.yml
+```
+
+Containers:
+
+```text
+frontend: healthy
+backend: healthy
+hermes-diagnose: healthy
+hermes-remediate: healthy
+hermes-evolve: healthy
+```
+
+Runtime data:
+
+```text
+agents: 14
+workflows: 9
+tasks: 33
+servers: 5
+hermes_channels: 3
+hermes_workers: 3
+skills: 3
+mcp_servers: 1
+agent_teams: 3
+active_releases: 1
+audit_logs: 417
+```
+
+Hermes state:
+
+```text
+diagnose worker: healthy / smart-router
+remediate worker: healthy / smart-router
+evolve worker: healthy / smart-router
+diagnose channel: healthy
+remediate channel: healthy
+review channel: healthy
+```
+
+Active release:
+
+```text
+Release: 4c03471e-8cbb-4c35-8bac-62d87246890c
+Proposal: 9897ac35-6c09-4c9c-8a99-e3cbede7e65d
+Target: skill-hermes-diagnosis
+Status: active
+```
+
+Ops readiness:
+
+```text
+status: ready
+score: 100
+warnings: none
+active releases: 1
+```
+
+## Verification Performed
+
+### Container And Health
+
+Passed:
+
+```text
+GET /                         -> 200
+GET /health/ready             -> 200
+GET hermes-diagnose /health   -> 200
+GET hermes-remediate /health  -> 200
+GET hermes-evolve /health     -> 200
+docker compose config         -> ok
+```
+
+### Type And Build
+
+Passed:
+
+```text
+backend: npm exec tsc --noEmit
+frontend: npm exec tsc --noEmit
+frontend: npm run build
+```
+
+Frontend production build warning:
+
+```text
+main JS chunk is larger than 500 kB after minification
+```
+
+This does not block operation, but it should be handled by route-level code splitting during product closure.
+
+### API Smoke
+
+Passed representative endpoints:
+
+```text
+/api/health/summary
+/api/dashboard/stats
+/api/servers
+/api/server-groups
+/api/agents
+/api/workflows
+/api/tasks
+/api/alerts
+/api/knowledge
+/api/scripts
+/api/scheduled-tasks
+/api/audit
+/api/users
+/api/settings
+/api/ops-readiness/summary
+/api/hermes-channels
+/api/hermes-workers
+/api/hermes-control-plane/overview
+/api/agent-teams
+/api/skills
+/api/mcp-servers
+/api/evolution-proposals
+/api/evolution-proposals/releases/versions
+/api/evolution-tasks
+/api/tool-approvals
+/api/ai-models
+/api/remediation-policies
+/api/remediation-executions
+/api/network-devices
+/api/ssh-keys
+/api/topology/global
+/api/topology/dependency
+```
+
+### Browser Smoke
+
+Passed after topology fix:
+
+```text
+/dashboard
+/servers
+/agents
+/hermes
+/hermes-channels
+/evolution-proposals
+/ops-readiness
+/workflows
+/tasks
+/topology
+/settings
+```
+
+The browser test used a real login and checked for page rendering, login redirect, not-found state, and obvious render-error text.
+
+## Fix Applied During Review
+
+### Topology Page Runtime Error
+
+Before fix:
+
+```text
+/topology rendered error boundary
+Cannot read properties of undefined (reading 'length')
+```
+
+Cause:
+
+The backend topology API returns server fields as `server_name` and `server_ip`, while `TopologyGraph` expects `name` and `ip`. The component then read `node.name.length`.
+
+Fix:
+
+```text
+frontend/src/pages/Topology.tsx
+```
+
+Added normalization for:
+
+```text
+server_name -> name
+server_ip   -> ip
+dependency_type -> type/protocol fallback
+missing status -> online/active fallback
+```
+
+Verification:
+
+```text
+/topology renders 服务拓扑 / 拓扑视图 / 依赖列表
+frontend tsc --noEmit passed
+frontend production build passed
+frontend container remains healthy
+```
+
+Commit:
+
+```text
+fa469d0 fix: normalize topology API data
+```
+
+## Test Baseline Findings
+
+Backend Vitest currently does not fully pass as a suite.
+
+Observed:
+
+```text
+84 tests passed
+15 tests failed
+2 suites failed
+```
+
+Failure groups:
+
+1. `alertService.test`
+
+The tests share database initialization state and can hit `Database not initialized` or `SQLITE_BUSY` when run as part of the whole suite. This is a test isolation issue.
+
+2. `hermesRuntime.test`
+
+The test can hit a circular runtime import path when Hermes tool execution dynamically imports the tool registry, which then imports evolution/agent executor code and initializes the runtime registry.
+
+Recommendation:
+
+```text
+P0: add a Vitest setup file that initializes one isolated test DB per worker or forces single-worker DB tests.
+P0: split hermesRuntime tool-call test away from runtime registry imports by mocking toolRegistry or registering runtime lazily.
+P1: make npm test set NODE_ENV=test, JWT_SECRET and DATABASE_PATH automatically.
+```
+
+## Current Product Shape
+
+Current frontend:
+
+```text
+routes: 42
+navigation items: 34
+```
+
+Major capability groups:
+
+```text
+1. Home and monitoring
+2. Server and remote access
+3. Agent / Workflow automation
+4. Hermes assistant and control plane
+5. Evolution proposal / release governance
+6. Alert / RCA / AI analysis
+7. Remediation / self-healing
+8. Knowledge / audit / reports
+9. System / users / settings / readiness
+```
+
+This is functionally rich but heavy for day-to-day operators.
+
+## Redundancy And Simplification Candidates
+
+### 1. AI Analysis Pages
+
+Currently overlapping:
+
+```text
+Root Cause Analysis
+AI Root Cause
+AI Insights
+Hermes Assistant diagnosis
+Topology affected path
+```
+
+Recommended product shape:
+
+```text
+Primary operator entry: Diagnose
+Advanced/detail pages: RCA history, AI report detail, topology
+```
+
+Do not delete the underlying pages yet. Move secondary pages behind tabs or contextual links from a single Diagnose workspace.
+
+### 2. Remediation Pages
+
+Currently overlapping:
+
+```text
+Remediation Policies
+Remediation Dashboard
+Remediation Executions
+Remediation Workbench
+Tool Approvals
+Hermes remediate assistant
+```
+
+Recommended product shape:
+
+```text
+Primary operator entry: Remediate
+Tabs: Plan, Approval, Execution, Verification, Policy
+Admin-only detail: policy editor
+```
+
+This would reduce operator navigation while keeping governance visible.
+
+### 3. Hermes / Agent / Workflow / Evolution
+
+Currently separate:
+
+```text
+Agents
+Hermes Assistant
+Hermes Channels
+Evolution Proposals
+Workflows
+Tasks
+Tool Approvals
+```
+
+Recommended product shape:
+
+```text
+Operator: Hermes Assistant
+Operator: Workflows and Tasks
+Admin: Hermes Control Plane
+Admin: Agent / Skill / MCP configuration
+Admin: Evolution and Release governance
+```
+
+The better logic is not to hide Hermes inside Agent Management. Hermes should remain a first-class console, but Agent Management should reference Channel/Skill/MCP rather than duplicate Hermes capability configuration.
+
+### 4. Settings vs Admin Configuration
+
+Currently:
+
+```text
+Settings
+AI Models
+Users
+Ops Readiness
+SSH credentials
+Hermes Channels
+MCP
+Skills
+```
+
+Recommended shape:
+
+```text
+System Settings: theme, locale, general config
+Model Settings: AI model pool
+Access Settings: users, credentials
+Runtime Settings: Hermes channel, skills, MCP, tool policy
+Production Settings: readiness, backup, release audit
+```
+
+This can be implemented as navigation grouping first, without deleting screens.
+
+## Concrete Closure Plan
+
+### C1 - Navigation Simplification
+
+Goal: reduce daily operator navigation from 34 items to around 12 primary items.
+
+Proposed primary nav:
+
+```text
+Overview
+Servers
+Terminal
+Diagnose
+Remediate
+Workflows
+Tasks
+Hermes Console
+Evolution Releases
+Knowledge
+Audit
+Settings
+```
+
+Move these into secondary/contextual links:
+
+```text
+Big Screen
+Network Devices
+Credentials
+Remote Desktop
+Alert Mappings
+Alert Noise
+Root Cause Analysis
+AI Root Cause
+AI Insights
+Remediation Dashboard
+Remediation Executions
+Scheduled Tasks
+Reports
+Users
+Ops Readiness
+```
+
+### C2 - Concept Consolidation
+
+Adopt one product mental model:
+
+```text
+Agent = executable role
+Channel = runtime lane and policy boundary
+Skill = reusable operational capability
+MCP = external tool/server capability
+Workflow = deterministic orchestration
+Hermes = reasoning runtime and team brain
+Evolution Release = versioned runtime overlay
+```
+
+Make all UI labels and docs follow this model.
+
+### C3 - Runtime Governance Cleanup
+
+Keep the current controlled evolution path:
+
+```text
+proposal -> evaluation -> staging replay -> approval -> publish -> runtime overlay -> audit -> rollback
+```
+
+Add one release operations page section:
+
+```text
+active overlays
+affected channel / skill / agent
+latest evaluation
+staging replay score
+rollback button
+runtime consumption evidence
+```
+
+### C4 - Test Baseline Hardening
+
+Make these commands reliable:
+
+```text
+npm run test:backend
+npm run typecheck:backend
+npm run typecheck:frontend
+npm run build:frontend
+npm run smoke:api
+npm run smoke:browser
+```
+
+Do this before more feature work.
+
+### C5 - Production Build And Deployment Cleanup
+
+Current test host is production-like, but the operator workflow still depends on manual deployment actions in places.
+
+Recommended:
+
+```text
+make deploy-test
+make smoke-test
+make release-smoke
+make rollback-release
+```
+
+Each command should write an evidence artifact under `docs/` or `artifacts/`.
+
+## Recommended Next Step
+
+Start with C1 + C4:
+
+```text
+1. Add a platform closure plan doc to roadmap.
+2. Fix backend Vitest isolation.
+3. Add API smoke script.
+4. Add browser smoke script for 10 key routes.
+5. Collapse navigation groups behind role-aware primary entries.
+```
+
+This gives the platform a stable acceptance loop and makes the product feel less like a collection of accumulated stages.

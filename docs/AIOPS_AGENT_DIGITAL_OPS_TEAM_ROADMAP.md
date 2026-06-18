@@ -1541,3 +1541,32 @@ Warnings: none
 Hermes Runtime Overlay: consumed by diagnosis Agent
 Evidence: docs/AGENT_RUNTIME_STAGE_31_RELEASE_SMOKE_EVIDENCE.md
 ```
+
+## 平台功能收口评审
+
+2026-06-18 已完成一次整平台收口评审，覆盖：
+
+```text
+运行态健康
+核心 API smoke
+浏览器页面 smoke
+Hermes / Release / Readiness 验证
+重复入口梳理
+测试基线问题
+下一步产品化收口建议
+```
+
+结论：
+
+```text
+平台可用
+核心运行态健康
+Hermes 三 Worker 正常
+active release 已被 runtime 消费
+拓扑页渲染问题已修复
+下一步优先做导航精简和测试基线硬化
+```
+
+报告：
+
+- `docs/PLATFORM_CLOSURE_REVIEW_20260618.md`
