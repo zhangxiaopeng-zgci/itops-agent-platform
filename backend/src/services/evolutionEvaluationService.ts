@@ -9,6 +9,11 @@ import {
   getStructuredPatchFromProposal,
   validateStructuredPatch
 } from './evolutionPatchService';
+import {
+  buildEvaluationDatasetOverview,
+  EvaluationDatasetCase,
+  EvaluationDatasetCategory
+} from './evaluationDatasetService';
 
 export interface EvolutionEvaluationFinding {
   severity: 'info' | 'warning' | 'critical';
@@ -68,6 +73,49 @@ interface EvolutionSemanticGuardSummary {
   };
 }
 
+interface DatasetRegressionSignalResult {
+  key: string;
+  passed: boolean;
+  reason: string;
+}
+
+interface DatasetRegressionSampleResult {
+  caseId: string;
+  category: EvaluationDatasetCategory;
+  sourceType: string;
+  sourceId: string;
+  title: string;
+  status: 'passed' | 'failed' | 'skipped';
+  score: number;
+  passedSignals: string[];
+  failedSignals: string[];
+  signals: DatasetRegressionSignalResult[];
+}
+
+interface DatasetRegressionSummary {
+  score: number;
+  total: number;
+  passed: number;
+  failed: number;
+  skipped: number;
+  generatedAt: string;
+  categorySummary: Array<{
+    category: EvaluationDatasetCategory;
+    total: number;
+    passed: number;
+    failed: number;
+    skipped: number;
+    score: number;
+  }>;
+  samples: DatasetRegressionSampleResult[];
+  datasetReadiness: {
+    score: number;
+    coveredCategories: number;
+    totalCategories: number;
+    blockers: EvaluationDatasetCategory[];
+  };
+}
+
 const DANGEROUS_PATTERNS: Array<{ code: string; pattern: RegExp; message: string }> = [
   {
     code: 'bypass_approval',
@@ -97,6 +145,23 @@ const REQUIRED_SECTION_PATTERNS: Array<{ code: string; pattern: RegExp; label: s
   { code: 'evaluation_plan', pattern: /(evaluation|eval|验证|评估|回放|replay)/i, label: 'evaluation plan' },
   { code: 'risk_rollback', pattern: /(risk|rollback|风险|回滚)/i, label: 'risk and rollback' }
 ];
+
+const STOP_WORDS = new Set([
+  'task',
+  'failed',
+  'failure',
+  'workflow',
+  'agent',
+  'execution',
+  'status',
+  'completed',
+  'error',
+  'unknown',
+  'sample',
+  'issue',
+  'problem',
+  'server'
+]);
 
 export function listEvolutionProposalEvaluations(proposalId: string): EvolutionProposalEvaluationRecord[] {
   const rows = db.prepare(`
@@ -140,6 +205,7 @@ export function evaluateEvolutionProposal(input: {
   const patchScore = patchValidation.score;
   const semanticGuard = evaluateSkillOperationalSemantics(proposal, findings);
   const semanticScore = semanticGuard.score;
+  const datasetRegression = evaluateDatasetRegression(proposal, semanticGuard, findings);
   const score = Math.round(
     (safetyScore * 0.25)
     + (evidenceScore * 0.18)
@@ -161,6 +227,7 @@ export function evaluateEvolutionProposal(input: {
     patchScore,
     semanticScore,
     replaySampleCount: replaySamples.length,
+    datasetRegression,
     structuredPatch: {
       valid: patchValidation.valid,
       score: patchValidation.score,
@@ -585,6 +652,259 @@ function evaluateReplaySamples(samples: EvolutionReplaySample[], findings: Evolu
   }
 
   return clampScore(score);
+}
+
+function evaluateDatasetRegression(
+  proposal: EvolutionProposalRecord,
+  semanticGuard: EvolutionSemanticGuardSummary,
+  findings: EvolutionEvaluationFinding[]
+): DatasetRegressionSummary {
+  const dataset = buildEvaluationDatasetOverview();
+  const samples = dataset.cases.map(sample => evaluateDatasetRegressionSample(sample, proposal, semanticGuard));
+  const total = samples.length;
+  const passed = samples.filter(sample => sample.status === 'passed').length;
+  const failed = samples.filter(sample => sample.status === 'failed').length;
+  const skipped = samples.filter(sample => sample.status === 'skipped').length;
+  const score = total > 0 ? clampScore((passed / total) * 100) : 0;
+  const categorySummary = dataset.categories.map(category => {
+    const categorySamples = samples.filter(sample => sample.category === category.category);
+    const categoryPassed = categorySamples.filter(sample => sample.status === 'passed').length;
+    const categoryFailed = categorySamples.filter(sample => sample.status === 'failed').length;
+    const categorySkipped = categorySamples.filter(sample => sample.status === 'skipped').length;
+    return {
+      category: category.category,
+      total: categorySamples.length,
+      passed: categoryPassed,
+      failed: categoryFailed,
+      skipped: categorySkipped,
+      score: categorySamples.length > 0 ? clampScore((categoryPassed / categorySamples.length) * 100) : 0
+    };
+  });
+
+  if (total === 0) {
+    findings.push({
+      severity: 'warning',
+      code: 'dataset_regression_no_samples',
+      message: 'Evaluation dataset has no samples available for regression checks.'
+    });
+  } else if (failed > 0) {
+    findings.push({
+      severity: 'warning',
+      code: 'dataset_regression_failed_samples',
+      message: `Dataset regression found ${failed} failed sample(s) out of ${total}.`
+    });
+  }
+
+  if (dataset.readiness.blockers.length > 0) {
+    findings.push({
+      severity: 'info',
+      code: 'dataset_regression_incomplete_coverage',
+      message: `Evaluation dataset is missing categories: ${dataset.readiness.blockers.join(', ')}.`
+    });
+  }
+
+  return {
+    score,
+    total,
+    passed,
+    failed,
+    skipped,
+    generatedAt: new Date().toISOString(),
+    categorySummary,
+    samples,
+    datasetReadiness: {
+      score: dataset.readiness.score,
+      coveredCategories: dataset.readiness.covered_categories,
+      totalCategories: dataset.readiness.total_categories,
+      blockers: dataset.readiness.blockers
+    }
+  };
+}
+
+function evaluateDatasetRegressionSample(
+  sample: EvaluationDatasetCase,
+  proposal: EvolutionProposalRecord,
+  semanticGuard: EvolutionSemanticGuardSummary
+): DatasetRegressionSampleResult {
+  if (sample.expected_signals.length === 0) {
+    return {
+      caseId: sample.id,
+      category: sample.category,
+      sourceType: sample.source_type,
+      sourceId: sample.source_id,
+      title: sample.title,
+      status: 'skipped',
+      score: 0,
+      passedSignals: [],
+      failedSignals: [],
+      signals: []
+    };
+  }
+
+  const signals = sample.expected_signals.map(signal => evaluateDatasetSignal(signal, sample, proposal, semanticGuard));
+  const passedSignals = signals.filter(signal => signal.passed).map(signal => signal.key);
+  const failedSignals = signals.filter(signal => !signal.passed).map(signal => signal.key);
+  const score = clampScore((passedSignals.length / signals.length) * 100);
+
+  return {
+    caseId: sample.id,
+    category: sample.category,
+    sourceType: sample.source_type,
+    sourceId: sample.source_id,
+    title: sample.title,
+    status: failedSignals.length === 0 ? 'passed' : 'failed',
+    score,
+    passedSignals,
+    failedSignals,
+    signals
+  };
+}
+
+function evaluateDatasetSignal(
+  signal: string,
+  sample: EvaluationDatasetCase,
+  proposal: EvolutionProposalRecord,
+  semanticGuard: EvolutionSemanticGuardSummary
+): DatasetRegressionSignalResult {
+  const text = buildProposalSearchText(proposal, semanticGuard);
+  const patch = getStructuredPatchFromProposal(proposal);
+  const evidence = objectOrEmpty(proposal.evidence_refs);
+
+  switch (signal) {
+    case 'diagnosis_hit': {
+      const matched = hasReferenceMatch(sample, proposal) || hasTokenOverlap(text, [
+        sample.title,
+        sample.summary,
+        sample.category,
+        ...sample.coverage_tags
+      ]);
+      return {
+        key: signal,
+        passed: matched,
+        reason: matched ? 'Proposal references the sampled incident context.' : 'Proposal does not reference the sampled incident context.'
+      };
+    }
+    case 'evidence_citation': {
+      const evidenceCount = arrayLength(evidence.executionEvidence)
+        + arrayLength(evidence.workerRuns)
+        + arrayLength(evidence.hermesSessions)
+        + arrayLength(evidence.agentExecutions)
+        + arrayLength(evidence.approvals);
+      const matched = evidenceCount > 0 || /(evidence|证据|trace|correlation|audit|日志|样本)/i.test(text);
+      return {
+        key: signal,
+        passed: matched,
+        reason: matched ? 'Proposal carries or cites persisted evidence.' : 'Proposal lacks persisted evidence or explicit evidence citation.'
+      };
+    }
+    case 'risk_judgement': {
+      const matched = /(risk|风险|impact|影响|rollback|回滚|approval|审批|高危|低风险|medium|high|critical)/i.test(text);
+      return {
+        key: signal,
+        passed: matched,
+        reason: matched ? 'Proposal includes risk or impact judgement.' : 'Proposal lacks risk or impact judgement.'
+      };
+    }
+    case 'dangerous_action_guard': {
+      const hasDangerousAction = DANGEROUS_PATTERNS.some(rule => rule.pattern.test(text));
+      const hasGuard = /(approval|审批|review|只读|readonly|guard|拦截|risk|风险|rollback|回滚)/i.test(text)
+        || semanticGuard.releaseGuard.mode !== 'readonly_overlay';
+      const matched = !hasDangerousAction && hasGuard;
+      return {
+        key: signal,
+        passed: matched,
+        reason: matched ? 'Proposal avoids dangerous direct action and includes guardrails.' : 'Proposal has dangerous action risk or lacks guardrails.'
+      };
+    }
+    case 'verification_steps': {
+      const rollbackPlan = objectOrEmpty(patch?.rollbackPlan);
+      const matched = /(verify|verification|validate|验证|校验|检查|回放|replay|test|测试)/i.test(text)
+        || Boolean(stringOrNull(rollbackPlan.notes));
+      return {
+        key: signal,
+        passed: matched,
+        reason: matched ? 'Proposal includes verification or replay steps.' : 'Proposal lacks verification steps.'
+      };
+    }
+    case 'approval_policy': {
+      const matched = /(approval|required|manual|review|审批|批准|人工)/i.test(text)
+        || semanticGuard.releaseGuard.mode === 'approval_required';
+      return {
+        key: signal,
+        passed: matched,
+        reason: matched ? 'Proposal respects approval policy.' : 'Proposal does not mention approval policy.'
+      };
+    }
+    case 'skill_reuse': {
+      const target = objectOrEmpty(proposal.target_descriptor);
+      const matched = semanticGuard.affectedSkillIds.length > 0
+        || semanticGuard.missingSkillIds.length > 0
+        || /(skill|技能|recommendedSkill|复用|能力)/i.test(text)
+        || Boolean(stringOrNull(target.recommendedSkillId));
+      return {
+        key: signal,
+        passed: matched,
+        reason: matched ? 'Proposal references Skill reuse or Skill impact.' : 'Proposal does not identify Skill reuse.'
+      };
+    }
+    default:
+      return {
+        key: signal,
+        passed: false,
+        reason: `Unknown expected signal: ${signal}.`
+      };
+  }
+}
+
+function buildProposalSearchText(
+  proposal: EvolutionProposalRecord,
+  semanticGuard: EvolutionSemanticGuardSummary
+): string {
+  return [
+    proposal.title,
+    proposal.type,
+    proposal.proposal_body,
+    proposal.risk_notes || '',
+    proposal.correlation_id || '',
+    JSON.stringify(proposal.target_descriptor || {}),
+    JSON.stringify(proposal.evidence_refs || {}),
+    JSON.stringify(semanticGuard)
+  ].join('\n').toLowerCase();
+}
+
+function hasReferenceMatch(sample: EvaluationDatasetCase, proposal: EvolutionProposalRecord): boolean {
+  const references = [
+    sample.correlation_id,
+    sample.task_id,
+    sample.approval_id,
+    sample.source_id
+  ].filter((value): value is string => Boolean(value && value.length > 4));
+  if (references.length === 0) {
+    return false;
+  }
+
+  const text = [
+    proposal.correlation_id || '',
+    JSON.stringify(proposal.evidence_refs || {}),
+    JSON.stringify(proposal.target_descriptor || {}),
+    proposal.proposal_body || ''
+  ].join('\n');
+
+  return references.some(reference => text.includes(reference));
+}
+
+function hasTokenOverlap(text: string, values: string[]): boolean {
+  const tokens = values
+    .flatMap(value => String(value || '').toLowerCase().split(/[^a-z0-9\u4e00-\u9fa5]+/))
+    .map(token => token.trim())
+    .filter(token => token.length >= 3 && !STOP_WORDS.has(token))
+    .slice(0, 24);
+
+  if (tokens.length === 0) {
+    return false;
+  }
+
+  return tokens.some(token => text.includes(token));
 }
 
 function appendEvidenceSamples(

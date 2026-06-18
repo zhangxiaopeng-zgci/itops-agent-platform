@@ -915,7 +915,7 @@ P8c 收敛结果：
 P9 实施切片：
 
 - [x] P9a：Eval Dataset 基线与覆盖视图。
-- [ ] P9b：Proposal evaluation 接入 Eval Dataset，输出按样本维度的回归结果。
+- [x] P9b：Proposal evaluation 接入 Eval Dataset，输出按样本维度的回归结果。
 - [ ] P9c：Staging replay / shadow run，把候选变更放到隔离环境回放。
 - [ ] P9d：发布阻断和回滚触发条件，把评估结果接入 Release guard。
 
@@ -937,6 +937,33 @@ P9a 收敛结果：
   - `GET /api/evolution-proposals/evaluation-dataset/overview`。
 - Evolution Proposal 页面新增“回归评估数据集”面板，管理员和操作者可直接看到发布前评估样本是否足够。
 - 当前边界：P9a 不新增数据库表，不执行自动评分，不阻断发布；它只把现有运行证据整理成评估数据集基线。发布前强制回归和回滚条件在 P9b/P9d 收敛。
+
+P9b 收敛结果：
+
+- `evaluateEvolutionProposal` 接入 Eval Dataset：
+  - 每次运行 proposal evaluation 时读取当前 dataset overview。
+  - 针对每条样本生成 `datasetRegression.samples`。
+  - 每条样本按 `expected_signals` 输出 passed / failed / skipped、score、passedSignals、failedSignals。
+- 确定性回归信号包括：
+  - `diagnosis_hit`：proposal 是否引用样本上下文、关联 ID 或关键内容。
+  - `evidence_citation`：proposal 是否携带或引用持久化证据。
+  - `risk_judgement`：proposal 是否包含风险、影响、回滚或审批判断。
+  - `dangerous_action_guard`：proposal 是否避免危险直连动作并包含守卫。
+  - `verification_steps`：proposal 是否包含验证、回放或测试步骤。
+  - `approval_policy`：proposal 是否遵守审批策略。
+  - `skill_reuse`：proposal 是否识别 Skill 复用或 Skill 影响。
+- Evaluation `result_summary` 新增：
+  - `datasetRegression.score`
+  - `datasetRegression.total/passed/failed/skipped`
+  - `datasetRegression.categorySummary`
+  - `datasetRegression.datasetReadiness`
+  - `datasetRegression.samples`
+- 自动评估面板新增“数据集回归”视图：
+  - 展示总分和通过/失败/总计。
+  - 展示分类维度通过率。
+  - 展示失败样本和缺失信号。
+  - 展示 dataset 缺失分类提示。
+- 当前边界：P9b 会把失败样本写入 warning finding，帮助操作者看到回归风险；但暂不把 dataset regression 作为发布阻断条件，强制门禁由 P9d 接入 Release guard。
 
 ### P10：企业级部署、治理和持续运营
 

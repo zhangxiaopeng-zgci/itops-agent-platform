@@ -126,6 +126,41 @@ interface ProposalEvaluation {
   created_at: string;
 }
 
+interface DatasetRegressionSample {
+  caseId: string;
+  category: EvalDatasetCategory;
+  sourceType: string;
+  sourceId: string;
+  title: string;
+  status: 'passed' | 'failed' | 'skipped';
+  score: number;
+  passedSignals: string[];
+  failedSignals: string[];
+}
+
+interface DatasetRegressionSummary {
+  score: number;
+  total: number;
+  passed: number;
+  failed: number;
+  skipped: number;
+  categorySummary: Array<{
+    category: EvalDatasetCategory;
+    total: number;
+    passed: number;
+    failed: number;
+    skipped: number;
+    score: number;
+  }>;
+  samples: DatasetRegressionSample[];
+  datasetReadiness?: {
+    score: number;
+    coveredCategories: number;
+    totalCategories: number;
+    blockers: EvalDatasetCategory[];
+  };
+}
+
 interface ReleaseVersion {
   id: string;
   proposal_id: string;
@@ -1035,6 +1070,7 @@ function EvaluationPanel({ evaluations }: { evaluations: ProposalEvaluation[] })
   const affectedWorkflowIds = readStringList(semanticGuard?.affectedWorkflowIds);
   const missingSkillIds = readStringList(semanticGuard?.missingSkillIds);
   const semanticPassed = semanticGuard?.passed === true;
+  const datasetRegression = getDatasetRegression(latest);
 
   return (
     <DetailSection title={t('evolution.eval.title')} icon={<Gauge className="w-4 h-4" />}>
@@ -1103,6 +1139,9 @@ function EvaluationPanel({ evaluations }: { evaluations: ProposalEvaluation[] })
           </div>
         </div>
       )}
+      {datasetRegression && (
+        <DatasetRegressionPanel regression={datasetRegression} />
+      )}
       <div className="mt-4 grid grid-cols-1 xl:grid-cols-2 gap-4">
         <div>
           <div className="text-xs font-medium text-text-tertiary mb-2">{t('evolution.eval.findings')}</div>
@@ -1132,6 +1171,103 @@ function EvaluationPanel({ evaluations }: { evaluations: ProposalEvaluation[] })
         </div>
       </div>
     </DetailSection>
+  );
+}
+
+function DatasetRegressionPanel({ regression }: { regression: DatasetRegressionSummary }) {
+  const { t } = useLocale();
+  const failedSamples = regression.samples.filter(sample => sample.status === 'failed').slice(0, 5);
+  const visibleSamples = failedSamples.length > 0 ? failedSamples : regression.samples.slice(0, 5);
+
+  return (
+    <div className="mt-4 rounded-lg bg-background border border-border p-4">
+      <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-3">
+        <div>
+          <div className="text-xs font-medium text-text-tertiary">{t('evolution.eval.datasetRegression')}</div>
+          <div className="text-sm text-text-primary mt-1">
+            {t('evolution.eval.datasetSummary', {
+              passed: regression.passed,
+              failed: regression.failed,
+              total: regression.total
+            })}
+          </div>
+        </div>
+        <div className={clsx(
+          'inline-flex items-center justify-center rounded-full border px-3 py-1 text-sm font-semibold',
+          regression.failed === 0
+            ? 'bg-status-success/10 text-status-success border-status-success/30'
+            : 'bg-status-warning/10 text-status-warning border-status-warning/30'
+        )}>
+          {regression.score}
+        </div>
+      </div>
+
+      <div className="mt-3 grid grid-cols-2 md:grid-cols-3 gap-2">
+        {regression.categorySummary.filter(category => category.total > 0).map((category) => (
+          <div key={category.category} className="rounded-lg border border-border bg-surface/70 px-3 py-2 min-w-0">
+            <div className="text-xs text-text-tertiary truncate">
+              {t(`evolution.dataset.category.${category.category}` as MessageKey)}
+            </div>
+            <div className="mt-1 flex items-center justify-between gap-2">
+              <span className="text-sm font-medium text-text-primary">{category.score}</span>
+              <span className="text-xs text-text-tertiary">
+                {category.passed}/{category.total}
+              </span>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {regression.datasetReadiness?.blockers && regression.datasetReadiness.blockers.length > 0 && (
+        <div className="mt-3 flex flex-wrap gap-1.5">
+          {regression.datasetReadiness.blockers.map((blocker) => (
+            <span key={blocker} className="rounded-md bg-status-warning/10 text-status-warning border border-status-warning/20 px-2 py-0.5 text-xs">
+              {t('evolution.eval.datasetMissing', { category: t(`evolution.dataset.category.${blocker}` as MessageKey) })}
+            </span>
+          ))}
+        </div>
+      )}
+
+      <div className="mt-3 space-y-2">
+        <div className="text-xs font-medium text-text-tertiary">
+          {failedSamples.length > 0 ? t('evolution.eval.datasetFailedSamples') : t('evolution.eval.datasetSamples')}
+        </div>
+        {visibleSamples.map((sample) => (
+          <div key={sample.caseId} className="rounded-lg border border-border bg-surface/70 px-3 py-2">
+            <div className="flex items-center justify-between gap-2">
+              <div className="min-w-0">
+                <div className="text-sm font-medium text-text-primary truncate">{sample.title}</div>
+                <div className="text-xs text-text-tertiary mt-1 truncate">
+                  {t(`evolution.dataset.category.${sample.category}` as MessageKey)} · {sample.sourceType}
+                </div>
+              </div>
+              <span className={clsx(
+                'shrink-0 rounded-full border px-2 py-0.5 text-xs',
+                sample.status === 'passed'
+                  ? 'bg-status-success/10 text-status-success border-status-success/30'
+                  : sample.status === 'failed'
+                    ? 'bg-status-failed/10 text-status-failed border-status-failed/30'
+                    : 'bg-status-pending/10 text-status-pending border-status-pending/30'
+              )}>
+                {t(`evolution.eval.datasetStatus.${sample.status}` as MessageKey)}
+              </span>
+            </div>
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {sample.failedSignals.map((signal) => (
+                <span key={`${sample.caseId}-${signal}`} className="rounded-md bg-status-failed/10 text-status-failed border border-status-failed/20 px-2 py-0.5 text-xs">
+                  {t(`evolution.dataset.metric.${signal}` as MessageKey)}
+                </span>
+              ))}
+              {sample.failedSignals.length === 0 && sample.passedSignals.slice(0, 3).map((signal) => (
+                <span key={`${sample.caseId}-${signal}`} className="rounded-md bg-status-success/10 text-status-success border border-status-success/20 px-2 py-0.5 text-xs">
+                  {t(`evolution.dataset.metric.${signal}` as MessageKey)}
+                </span>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -1542,6 +1678,22 @@ function getSemanticGuard(evaluation: ProposalEvaluation): Record<string, unknow
     return null;
   }
   return guard as Record<string, unknown>;
+}
+
+function getDatasetRegression(evaluation: ProposalEvaluation): DatasetRegressionSummary | null {
+  const summary = evaluation.result_summary;
+  if (!summary || typeof summary !== 'object' || Array.isArray(summary)) {
+    return null;
+  }
+  const regression = summary.datasetRegression;
+  if (!regression || typeof regression !== 'object' || Array.isArray(regression)) {
+    return null;
+  }
+  const record = regression as Record<string, unknown>;
+  if (typeof record.score !== 'number' || typeof record.total !== 'number' || !Array.isArray(record.samples)) {
+    return null;
+  }
+  return regression as DatasetRegressionSummary;
 }
 
 function readSummaryNumber(evaluation: ProposalEvaluation, key: string): number | string {
