@@ -22,6 +22,7 @@ import {
 import { summarizeEvolutionProposalLifecycle } from '../services/evolutionLifecycleService';
 import { buildEvaluationDatasetOverview } from '../services/evaluationDatasetService';
 import { runEvolutionStagingReplay } from '../services/evolutionStagingReplayService';
+import { buildEvolutionReleaseGuard } from '../services/evolutionReleaseGuardService';
 
 interface AuthenticatedRequest extends Request {
   user?: {
@@ -84,6 +85,15 @@ router.get('/evaluation-dataset/overview', requireRole('admin', 'operator', 'vie
     res.json({ success: true, data: buildEvaluationDatasetOverview() });
   } catch (error) {
     res.status(500).json({ success: false, error: error instanceof Error ? error.message : 'Failed to build evaluation dataset overview' });
+  }
+});
+
+router.get('/:id/release-guard', requireRole('admin', 'operator', 'viewer'), (req: Request, res: Response) => {
+  try {
+    res.json({ success: true, data: buildEvolutionReleaseGuard(req.params.id) });
+  } catch (error) {
+    const status = error instanceof Error && error.message === 'Evolution proposal not found' ? 404 : 500;
+    res.status(status).json({ success: false, error: error instanceof Error ? error.message : 'Failed to build evolution release guard' });
   }
 });
 

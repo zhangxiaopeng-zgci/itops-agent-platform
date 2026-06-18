@@ -917,7 +917,7 @@ P9 实施切片：
 - [x] P9a：Eval Dataset 基线与覆盖视图。
 - [x] P9b：Proposal evaluation 接入 Eval Dataset，输出按样本维度的回归结果。
 - [x] P9c：Staging replay / shadow run，把候选变更放到隔离环境回放。
-- [ ] P9d：发布阻断和回滚触发条件，把评估结果接入 Release guard。
+- [x] P9d：发布阻断和回滚触发条件，把评估结果接入 Release guard。
 
 P9a 收敛结果：
 
@@ -999,6 +999,42 @@ P9c 收敛结果：
   - 展示回放目标和 shadow 操作数量。
   - 展示失败样本或通过样本摘要。
 - 当前边界：P9c 只形成隔离回放证据，不阻断发布；P9d 会把 staging replay / dataset regression / rollback 条件接入 Release guard。
+
+P9d 收敛结果：
+
+- 新增 Release Guard 服务：
+  - `buildEvolutionReleaseGuard(proposalId)` 只读汇总当前提案的发布门禁。
+  - `assertEvolutionReleaseGuard(proposal)` 在发布前复用同一套判断。
+- Release Guard 强制检查：
+  - 提案必须已批准。
+  - 最新 deterministic evaluation 必须通过。
+  - 结构化 Patch 必须有效。
+  - Skill / Workflow 类提案必须通过 semantic guard。
+  - Skill / Workflow 类提案必须具备有效 rollback boundary。
+  - 必须存在 dataset regression，且失败样本为 0。
+  - 必须存在 staging replay，且失败样本为 0。
+  - staging preflight 必须同时通过 evaluation、patch、semantic guard、dataset regression。
+  - staging replay 必须是 `shadow_overlay` 且 `noProductionMutation=true`。
+- Release Guard 输出：
+  - `passed`
+  - `score`
+  - `blockers`
+  - `checks`
+  - `datasetRegression`
+  - `stagingReplay`
+  - `rollbackTrigger`
+- 新增只读 API：
+  - `GET /api/evolution-proposals/:id/release-guard`。
+- 发布 API 接入 Release Guard：
+  - `POST /api/evolution-proposals/:id/publish` 会在 guard 未通过时阻断。
+  - 发布版本 payload 会保存当次 `releaseGuard` 快照，便于审计和回滚复盘。
+- Evolution Proposal 页面新增“发布门禁”面板：
+  - 展示门禁分、允许/阻断状态。
+  - 展示阻断项和每个检查项状态。
+  - 展示 dataset regression / staging replay 摘要。
+  - 展示回滚触发条件。
+  - 门禁失败时发布按钮置灰，避免误操作。
+- 当前边界：P9d 只负责发布前阻断和版本证据留痕，不自动修复失败样本，也不自动发布；失败后的 proposal 修正、重新评估、重新回放仍由后续持续进化链路或人工处理。
 
 ### P10：企业级部署、治理和持续运营
 

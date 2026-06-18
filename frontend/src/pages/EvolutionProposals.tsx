@@ -204,6 +204,47 @@ interface StagingReplaySummary {
   samples: StagingReplaySample[];
 }
 
+interface ReleaseGuardCheck {
+  key: string;
+  status: 'passed' | 'failed' | 'warning';
+  required: boolean;
+  message: string;
+}
+
+interface ReleaseGuardSummary {
+  passed: boolean;
+  score: number;
+  blockers: string[];
+  checks: ReleaseGuardCheck[];
+  latestEvaluationId?: string | null;
+  datasetRegression?: {
+    score: number;
+    total: number;
+    passed: number;
+    failed: number;
+    skipped: number;
+    coverageReady: boolean;
+    coverageBlockers: string[];
+  } | null;
+  stagingReplay?: {
+    score: number;
+    total: number;
+    passed: number;
+    failed: number;
+    skipped: number;
+    applyMode?: string | null;
+    noProductionMutation: boolean;
+  } | null;
+  rollbackTrigger: {
+    required: boolean;
+    valid: boolean;
+    source?: string | null;
+    notes?: string | null;
+    triggers: string[];
+  };
+  generatedAt: string;
+}
+
 interface ReleaseVersion {
   id: string;
   proposal_id: string;
@@ -474,6 +515,16 @@ export default function EvolutionProposals() {
     refetchInterval: 60000
   });
 
+  const { data: releaseGuard } = useQuery({
+    queryKey: ['evolution-release-guard', activeProposalId],
+    enabled: Boolean(activeProposalId),
+    queryFn: async () => {
+      const res = await api.get(`/api/evolution-proposals/${activeProposalId!}/release-guard`);
+      return res.data.data as ReleaseGuardSummary;
+    },
+    refetchInterval: 30000
+  });
+
   const generateMutation = useMutation({
     mutationFn: async () => {
       const res = await api.post('/api/evolution-proposals/generate', {
@@ -509,6 +560,7 @@ export default function EvolutionProposals() {
       setSelectedId(proposal.id);
       queryClient.invalidateQueries({ queryKey: ['evolution-proposals'] });
       queryClient.invalidateQueries({ queryKey: ['evolution-proposal-detail', proposal.id] });
+      queryClient.invalidateQueries({ queryKey: ['evolution-release-guard', proposal.id] });
     },
     onError: (error: unknown) => {
       toast.error(error instanceof Error ? error.message : t('evolution.toast.statusFailed'));
@@ -524,6 +576,7 @@ export default function EvolutionProposals() {
       toast.success(t('evolution.toast.evaluated'));
       queryClient.invalidateQueries({ queryKey: ['evolution-proposals'] });
       queryClient.invalidateQueries({ queryKey: ['evolution-proposal-detail', proposalId] });
+      queryClient.invalidateQueries({ queryKey: ['evolution-release-guard', proposalId] });
     },
     onError: (error: unknown) => {
       toast.error(error instanceof Error ? error.message : t('evolution.toast.evaluateFailed'));
@@ -539,6 +592,7 @@ export default function EvolutionProposals() {
       toast.success(t('evolution.toast.stagingReplayComplete'));
       queryClient.invalidateQueries({ queryKey: ['evolution-proposals'] });
       queryClient.invalidateQueries({ queryKey: ['evolution-proposal-detail', proposalId] });
+      queryClient.invalidateQueries({ queryKey: ['evolution-release-guard', proposalId] });
     },
     onError: (error: unknown) => {
       toast.error(error instanceof Error ? error.message : t('evolution.toast.stagingReplayFailed'));
@@ -555,6 +609,7 @@ export default function EvolutionProposals() {
       setSelectedId(result.proposal.id);
       queryClient.invalidateQueries({ queryKey: ['evolution-proposals'] });
       queryClient.invalidateQueries({ queryKey: ['evolution-proposal-detail', result.proposal.id] });
+      queryClient.invalidateQueries({ queryKey: ['evolution-release-guard', result.proposal.id] });
       queryClient.invalidateQueries({ queryKey: ['evolution-review-queue'] });
     },
     onError: (error: unknown) => {
@@ -574,6 +629,7 @@ export default function EvolutionProposals() {
       setComment('');
       queryClient.invalidateQueries({ queryKey: ['evolution-proposals'] });
       queryClient.invalidateQueries({ queryKey: ['evolution-proposal-detail', proposalId] });
+      queryClient.invalidateQueries({ queryKey: ['evolution-release-guard', proposalId] });
     },
     onError: (error: unknown) => {
       toast.error(error instanceof Error ? error.message : t('evolution.toast.publishFailed'));
@@ -616,6 +672,8 @@ export default function EvolutionProposals() {
       toast.error(error instanceof Error ? error.message : t('evolution.continuous.toast.runFailed'));
     }
   });
+
+  const publishBlockedByGuard = releaseGuard?.passed === false;
 
   return (
     <div className="space-y-5">
@@ -848,7 +906,7 @@ export default function EvolutionProposals() {
                   <ActionButton
                     label={publishMutation.isPending ? t('evolution.publishing') : t('evolution.action.publish')}
                     icon={<ShieldCheck className="w-4 h-4" />}
-                    disabled={!canApprove || publishMutation.isPending}
+                    disabled={!canApprove || publishMutation.isPending || publishBlockedByGuard}
                     onClick={() => publishMutation.mutate(activeProposal.id)}
                   />
                   <ActionButton
@@ -883,6 +941,8 @@ export default function EvolutionProposals() {
               <EvaluationPanel evaluations={detail?.evaluations || []} />
 
               <StructuredPatchPanel proposal={activeProposal} />
+
+              <ReleaseGuardPanel guard={releaseGuard} />
 
               <ReleasePanel
                 releases={detail?.releases || []}
@@ -1045,6 +1105,132 @@ function PatchInfo({ label, value }: { label: string; value?: string | null }) {
     <div className="rounded-lg bg-background border border-border px-3 py-2 min-w-0">
       <div className="text-xs text-text-tertiary">{label}</div>
       <div className="text-sm text-text-primary truncate mt-1">{value || '-'}</div>
+    </div>
+  );
+}
+
+function ReleaseGuardPanel({ guard }: { guard?: ReleaseGuardSummary }) {
+  const { t } = useLocale();
+
+  return (
+    <DetailSection title={t('evolution.releaseGuard.title')} icon={<ShieldCheck className="w-4 h-4" />}>
+      {!guard ? (
+        <div className="text-sm text-text-tertiary">{t('common.loading')}</div>
+      ) : (
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 lg:grid-cols-[160px_minmax(0,1fr)] gap-4">
+            <div className="rounded-lg bg-background border border-border p-4">
+              <div className="text-xs text-text-tertiary">{t('evolution.releaseGuard.score')}</div>
+              <div className="text-3xl font-semibold text-text-primary mt-1">{guard.score}</div>
+              <div className={clsx(
+                'mt-2 inline-flex px-2 py-1 rounded-full border text-xs font-medium',
+                guard.passed
+                  ? 'bg-status-success/10 text-status-success border-status-success/30'
+                  : 'bg-status-failed/10 text-status-failed border-status-failed/30'
+              )}>
+                {guard.passed ? t('evolution.releaseGuard.passed') : t('evolution.releaseGuard.blocked')}
+              </div>
+            </div>
+            <div className="rounded-lg bg-background border border-border p-4">
+              <div className="flex flex-col md:flex-row md:items-start justify-between gap-3">
+                <div>
+                  <div className="text-xs text-text-tertiary">{t('evolution.releaseGuard.blockers')}</div>
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {guard.blockers.length === 0 ? (
+                      <span className="text-sm text-status-success">{t('evolution.releaseGuard.noBlockers')}</span>
+                    ) : guard.blockers.map((blocker) => (
+                      <span key={blocker} className="rounded-md bg-status-failed/10 text-status-failed border border-status-failed/20 px-2 py-0.5 text-xs">
+                        {releaseGuardCheckLabel(blocker, t)}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+                <div className="text-xs text-text-tertiary shrink-0">
+                  {guard.latestEvaluationId ? `${t('evolution.releaseGuard.evaluation')} ${guard.latestEvaluationId.slice(0, 8)}` : t('evolution.eval.notAvailable')}
+                </div>
+              </div>
+              <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-2">
+                <ReleaseGuardMetric
+                  label={t('evolution.releaseGuard.dataset')}
+                  value={guard.datasetRegression
+                    ? t('evolution.eval.datasetSummary', {
+                      passed: guard.datasetRegression.passed,
+                      failed: guard.datasetRegression.failed,
+                      total: guard.datasetRegression.total
+                    })
+                    : t('evolution.eval.notAvailable')}
+                />
+                <ReleaseGuardMetric
+                  label={t('evolution.releaseGuard.staging')}
+                  value={guard.stagingReplay
+                    ? t('evolution.eval.stagingSummary', {
+                      passed: guard.stagingReplay.passed,
+                      failed: guard.stagingReplay.failed,
+                      total: guard.stagingReplay.total
+                    })
+                    : t('evolution.eval.notAvailable')}
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2">
+            {guard.checks.map((check) => (
+              <div key={check.key} className="rounded-lg bg-background border border-border px-3 py-2">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="text-xs font-medium text-text-primary truncate">{releaseGuardCheckLabel(check.key, t)}</div>
+                  <span className={clsx(
+                    'shrink-0 rounded-full border px-2 py-0.5 text-[11px]',
+                    check.status === 'passed'
+                      ? 'bg-status-success/10 text-status-success border-status-success/30'
+                      : check.status === 'warning'
+                        ? 'bg-status-warning/10 text-status-warning border-status-warning/30'
+                        : 'bg-status-failed/10 text-status-failed border-status-failed/30'
+                  )}>
+                    {t(`evolution.releaseGuard.status.${check.status}` as MessageKey)}
+                  </span>
+                </div>
+                <div className="text-xs text-text-tertiary mt-1 line-clamp-2">{check.message}</div>
+              </div>
+            ))}
+          </div>
+
+          <div className="rounded-lg bg-background border border-border px-3 py-2">
+            <div className="flex flex-col md:flex-row md:items-start justify-between gap-3">
+              <div>
+                <div className="text-xs text-text-tertiary">{t('evolution.releaseGuard.rollbackTriggers')}</div>
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {guard.rollbackTrigger.triggers.map((trigger) => (
+                    <span key={trigger} className="rounded-md bg-surface border border-border px-2 py-0.5 text-xs text-text-secondary">
+                      {t(`evolution.releaseGuard.trigger.${trigger}` as MessageKey)}
+                    </span>
+                  ))}
+                </div>
+              </div>
+              <div className={clsx(
+                'shrink-0 rounded-full border px-2 py-1 text-xs',
+                guard.rollbackTrigger.valid
+                  ? 'bg-status-success/10 text-status-success border-status-success/30'
+                  : 'bg-status-failed/10 text-status-failed border-status-failed/30'
+              )}>
+                {guard.rollbackTrigger.valid ? t('evolution.eval.valid') : t('evolution.eval.invalid')}
+              </div>
+            </div>
+            {guard.rollbackTrigger.notes && (
+              <div className="text-xs text-text-tertiary mt-2 line-clamp-2">{guard.rollbackTrigger.notes}</div>
+            )}
+          </div>
+        </div>
+      )}
+    </DetailSection>
+  );
+}
+
+function ReleaseGuardMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg border border-border bg-surface/70 px-3 py-2 min-w-0">
+      <div className="text-xs text-text-tertiary">{label}</div>
+      <div className="text-sm text-text-primary truncate mt-1">{value}</div>
     </div>
   );
 }
@@ -1814,12 +2000,35 @@ const queueSourceTypeLabels: Record<string, MessageKey> = {
   tool_approval: 'evolution.continuous.source.toolApproval'
 };
 
+const releaseGuardCheckLabels: Record<string, MessageKey> = {
+  proposal_approved: 'evolution.releaseGuard.check.proposal_approved',
+  evaluation_passed: 'evolution.releaseGuard.check.evaluation_passed',
+  structured_patch_valid: 'evolution.releaseGuard.check.structured_patch_valid',
+  semantic_guard_passed: 'evolution.releaseGuard.check.semantic_guard_passed',
+  rollback_boundary_valid: 'evolution.releaseGuard.check.rollback_boundary_valid',
+  dataset_regression_present: 'evolution.releaseGuard.check.dataset_regression_present',
+  dataset_regression_passed: 'evolution.releaseGuard.check.dataset_regression_passed',
+  dataset_coverage_ready: 'evolution.releaseGuard.check.dataset_coverage_ready',
+  staging_replay_present: 'evolution.releaseGuard.check.staging_replay_present',
+  staging_replay_passed: 'evolution.releaseGuard.check.staging_replay_passed',
+  staging_preflight_passed: 'evolution.releaseGuard.check.staging_preflight_passed',
+  shadow_no_production_mutation: 'evolution.releaseGuard.check.shadow_no_production_mutation'
+};
+
 function sourceTypeLabel(
   sourceType: string,
   t: (key: MessageKey, values?: Record<string, string | number>) => string
 ): string {
   const key = queueSourceTypeLabels[sourceType];
   return key ? t(key) : sourceType.replace(/_/g, ' ');
+}
+
+function releaseGuardCheckLabel(
+  key: string,
+  t: (key: MessageKey, values?: Record<string, string | number>) => string
+): string {
+  const labelKey = releaseGuardCheckLabels[key];
+  return labelKey ? t(labelKey) : key.replace(/_/g, ' ');
 }
 
 function formatTime(value?: string | null): string {
