@@ -916,7 +916,7 @@ P9 实施切片：
 
 - [x] P9a：Eval Dataset 基线与覆盖视图。
 - [x] P9b：Proposal evaluation 接入 Eval Dataset，输出按样本维度的回归结果。
-- [ ] P9c：Staging replay / shadow run，把候选变更放到隔离环境回放。
+- [x] P9c：Staging replay / shadow run，把候选变更放到隔离环境回放。
 - [ ] P9d：发布阻断和回滚触发条件，把评估结果接入 Release guard。
 
 P9a 收敛结果：
@@ -964,6 +964,41 @@ P9b 收敛结果：
   - 展示失败样本和缺失信号。
   - 展示 dataset 缺失分类提示。
 - 当前边界：P9b 会把失败样本写入 warning finding，帮助操作者看到回归风险；但暂不把 dataset regression 作为发布阻断条件，强制门禁由 P9d 接入 Release guard。
+
+P9c 收敛结果：
+
+- 新增 Staging Replay 动作：
+  - `POST /api/evolution-proposals/:id/staging-replay`。
+  - 需要先存在最新 deterministic evaluation 和 dataset regression。
+  - admin/operator 可触发，viewer 只读。
+- Staging Replay 使用 shadow overlay 语义：
+  - `environment=staging`
+  - `applyMode=shadow_overlay`
+  - `noProductionMutation=true`
+  - 不调用真实修复工具。
+  - 不发布 release。
+  - 不改变生产对象。
+- Replay 结果回写到最新 evaluation：
+  - `result_summary.stagingReplay.score`
+  - `result_summary.stagingReplay.preflight`
+  - `result_summary.stagingReplay.target`
+  - `result_summary.stagingReplay.samples`
+  - `result_summary.stagingReplay.findings`
+- Preflight 检查：
+  - evaluation 是否通过。
+  - structured patch 是否有效。
+  - semantic guard 是否通过。
+  - dataset regression 是否可用且通过。
+- 每条 dataset sample 会被放入 staging shadow replay：
+  - dataset regression 失败的样本继续失败。
+  - patch / semantic guard preflight 失败时样本失败。
+  - 通过样本记录 shadow actions，明确没有生产修改。
+- 自动评估面板新增“Staging Replay”视图：
+  - 展示回放分数、通过/失败/总计。
+  - 展示 preflight 信号。
+  - 展示回放目标和 shadow 操作数量。
+  - 展示失败样本或通过样本摘要。
+- 当前边界：P9c 只形成隔离回放证据，不阻断发布；P9d 会把 staging replay / dataset regression / rollback 条件接入 Release guard。
 
 ### P10：企业级部署、治理和持续运营
 

@@ -161,6 +161,49 @@ interface DatasetRegressionSummary {
   };
 }
 
+interface StagingReplaySample {
+  caseId: string;
+  category: EvalDatasetCategory | string;
+  sourceType: string;
+  sourceId: string;
+  title: string;
+  status: 'passed' | 'failed' | 'skipped';
+  score: number;
+  reason: string;
+  inheritedFailedSignals: string[];
+  shadowActions: string[];
+}
+
+interface StagingReplaySummary {
+  mode: 'staging_replay';
+  environment: 'staging';
+  applyMode: 'shadow_overlay';
+  noProductionMutation: boolean;
+  proposalId: string;
+  evaluationId: string;
+  score: number;
+  total: number;
+  passed: number;
+  failed: number;
+  skipped: number;
+  generatedAt: string;
+  preflight: {
+    evaluationPassed: boolean;
+    structuredPatchValid: boolean;
+    semanticGuardPassed: boolean;
+    datasetRegressionAvailable: boolean;
+    datasetRegressionPassed: boolean;
+  };
+  target: {
+    proposalType: string;
+    patchKind?: string | null;
+    applyMode?: string | null;
+    operationCount: number;
+  };
+  findings: EvaluationFinding[];
+  samples: StagingReplaySample[];
+}
+
 interface ReleaseVersion {
   id: string;
   proposal_id: string;
@@ -487,6 +530,21 @@ export default function EvolutionProposals() {
     }
   });
 
+  const stagingReplayMutation = useMutation({
+    mutationFn: async (proposalId: string) => {
+      const res = await api.post(`/api/evolution-proposals/${proposalId}/staging-replay`);
+      return res.data.data as ProposalEvaluation;
+    },
+    onSuccess: (_evaluation, proposalId) => {
+      toast.success(t('evolution.toast.stagingReplayComplete'));
+      queryClient.invalidateQueries({ queryKey: ['evolution-proposals'] });
+      queryClient.invalidateQueries({ queryKey: ['evolution-proposal-detail', proposalId] });
+    },
+    onError: (error: unknown) => {
+      toast.error(error instanceof Error ? error.message : t('evolution.toast.stagingReplayFailed'));
+    }
+  });
+
   const enrichMutation = useMutation({
     mutationFn: async (proposalId: string) => {
       const res = await api.post(`/api/evolution-proposals/${proposalId}/enrich`);
@@ -750,6 +808,12 @@ export default function EvolutionProposals() {
                     icon={<Gauge className="w-4 h-4" />}
                     disabled={!canGenerate || evaluateMutation.isPending}
                     onClick={() => evaluateMutation.mutate(activeProposal.id)}
+                  />
+                  <ActionButton
+                    label={stagingReplayMutation.isPending ? t('evolution.stagingReplay.running') : t('evolution.action.stagingReplay')}
+                    icon={<PlayCircle className="w-4 h-4" />}
+                    disabled={!canGenerate || stagingReplayMutation.isPending}
+                    onClick={() => stagingReplayMutation.mutate(activeProposal.id)}
                   />
                   <ActionButton
                     label={enrichMutation.isPending ? t('evolution.enriching') : t('evolution.action.enrich')}
@@ -1071,6 +1135,7 @@ function EvaluationPanel({ evaluations }: { evaluations: ProposalEvaluation[] })
   const missingSkillIds = readStringList(semanticGuard?.missingSkillIds);
   const semanticPassed = semanticGuard?.passed === true;
   const datasetRegression = getDatasetRegression(latest);
+  const stagingReplay = getStagingReplay(latest);
 
   return (
     <DetailSection title={t('evolution.eval.title')} icon={<Gauge className="w-4 h-4" />}>
@@ -1141,6 +1206,9 @@ function EvaluationPanel({ evaluations }: { evaluations: ProposalEvaluation[] })
       )}
       {datasetRegression && (
         <DatasetRegressionPanel regression={datasetRegression} />
+      )}
+      {stagingReplay && (
+        <StagingReplayPanel replay={stagingReplay} />
       )}
       <div className="mt-4 grid grid-cols-1 xl:grid-cols-2 gap-4">
         <div>
@@ -1264,6 +1332,119 @@ function DatasetRegressionPanel({ regression }: { regression: DatasetRegressionS
                 </span>
               ))}
             </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function StagingReplayPanel({ replay }: { replay: StagingReplaySummary }) {
+  const { t } = useLocale();
+  const failedSamples = replay.samples.filter(sample => sample.status === 'failed').slice(0, 5);
+  const visibleSamples = failedSamples.length > 0 ? failedSamples : replay.samples.slice(0, 5);
+  const preflightItems = [
+    ['evaluationPassed', replay.preflight.evaluationPassed],
+    ['structuredPatchValid', replay.preflight.structuredPatchValid],
+    ['semanticGuardPassed', replay.preflight.semanticGuardPassed],
+    ['datasetRegressionPassed', replay.preflight.datasetRegressionPassed]
+  ] as const;
+
+  return (
+    <div className="mt-4 rounded-lg bg-background border border-border p-4">
+      <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-3">
+        <div>
+          <div className="text-xs font-medium text-text-tertiary">{t('evolution.eval.stagingReplay')}</div>
+          <div className="text-sm text-text-primary mt-1">
+            {t('evolution.eval.stagingSummary', {
+              passed: replay.passed,
+              failed: replay.failed,
+              total: replay.total
+            })}
+          </div>
+          <div className="text-xs text-text-tertiary mt-1">
+            {replay.environment} · {replay.applyMode} · {t('evolution.eval.noProductionMutation')}
+          </div>
+        </div>
+        <div className={clsx(
+          'inline-flex items-center justify-center rounded-full border px-3 py-1 text-sm font-semibold',
+          replay.failed === 0
+            ? 'bg-status-success/10 text-status-success border-status-success/30'
+            : 'bg-status-warning/10 text-status-warning border-status-warning/30'
+        )}>
+          {replay.score}
+        </div>
+      </div>
+
+      <div className="mt-3 grid grid-cols-2 md:grid-cols-4 gap-2">
+        {preflightItems.map(([key, ok]) => (
+          <div key={key} className="rounded-lg border border-border bg-surface/70 px-3 py-2">
+            <div className="text-xs text-text-tertiary truncate">
+              {t(`evolution.eval.stagingPreflight.${key}` as MessageKey)}
+            </div>
+            <div className={clsx('mt-1 text-sm font-medium', ok ? 'text-status-success' : 'text-status-failed')}>
+              {ok ? t('evolution.eval.passed') : t('evolution.eval.failed')}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-3 rounded-lg border border-border bg-surface/70 px-3 py-2">
+        <div className="text-xs text-text-tertiary">{t('evolution.eval.stagingTarget')}</div>
+        <div className="text-sm text-text-primary mt-1">
+          {replay.target.proposalType} · {replay.target.patchKind || '-'} · {t('evolution.eval.stagingOperations', { count: replay.target.operationCount })}
+        </div>
+      </div>
+
+      {replay.findings.length > 0 && (
+        <div className="mt-3 flex flex-wrap gap-1.5">
+          {replay.findings.map((finding) => (
+            <span key={finding.code} className={clsx(
+              'rounded-md border px-2 py-0.5 text-xs',
+              finding.severity === 'critical'
+                ? 'bg-status-failed/10 text-status-failed border-status-failed/20'
+                : 'bg-status-warning/10 text-status-warning border-status-warning/20'
+            )}>
+              {finding.code}
+            </span>
+          ))}
+        </div>
+      )}
+
+      <div className="mt-3 space-y-2">
+        <div className="text-xs font-medium text-text-tertiary">
+          {failedSamples.length > 0 ? t('evolution.eval.stagingFailedSamples') : t('evolution.eval.stagingSamples')}
+        </div>
+        {visibleSamples.map((sample) => (
+          <div key={sample.caseId} className="rounded-lg border border-border bg-surface/70 px-3 py-2">
+            <div className="flex items-center justify-between gap-2">
+              <div className="min-w-0">
+                <div className="text-sm font-medium text-text-primary truncate">{sample.title}</div>
+                <div className="text-xs text-text-tertiary mt-1 truncate">
+                  {datasetCategoryLabel(sample.category, t)} · {sample.sourceType}
+                </div>
+              </div>
+              <span className={clsx(
+                'shrink-0 rounded-full border px-2 py-0.5 text-xs',
+                sample.status === 'passed'
+                  ? 'bg-status-success/10 text-status-success border-status-success/30'
+                  : sample.status === 'failed'
+                    ? 'bg-status-failed/10 text-status-failed border-status-failed/30'
+                    : 'bg-status-pending/10 text-status-pending border-status-pending/30'
+              )}>
+                {t(`evolution.eval.datasetStatus.${sample.status}` as MessageKey)}
+              </span>
+            </div>
+            <div className="text-xs text-text-tertiary mt-1 line-clamp-2">{sample.reason}</div>
+            {sample.shadowActions.length > 0 && (
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {sample.shadowActions.slice(0, 3).map((action) => (
+                  <span key={`${sample.caseId}-${action}`} className="rounded-md bg-background border border-border px-2 py-0.5 text-xs text-text-tertiary">
+                    {action}
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
         ))}
       </div>
@@ -1696,6 +1877,22 @@ function getDatasetRegression(evaluation: ProposalEvaluation): DatasetRegression
   return regression as DatasetRegressionSummary;
 }
 
+function getStagingReplay(evaluation: ProposalEvaluation): StagingReplaySummary | null {
+  const summary = evaluation.result_summary;
+  if (!summary || typeof summary !== 'object' || Array.isArray(summary)) {
+    return null;
+  }
+  const replay = summary.stagingReplay;
+  if (!replay || typeof replay !== 'object' || Array.isArray(replay)) {
+    return null;
+  }
+  const record = replay as Record<string, unknown>;
+  if (typeof record.score !== 'number' || typeof record.total !== 'number' || !Array.isArray(record.samples)) {
+    return null;
+  }
+  return replay as StagingReplaySummary;
+}
+
 function readSummaryNumber(evaluation: ProposalEvaluation, key: string): number | string {
   const summary = evaluation.result_summary;
   if (!summary || typeof summary !== 'object' || Array.isArray(summary)) {
@@ -1717,4 +1914,21 @@ function readStringList(value: unknown): string[] {
   return value
     .filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
     .map((item) => item.trim());
+}
+
+function datasetCategoryLabel(
+  category: string,
+  t: (key: MessageKey, values?: Record<string, string | number>) => string
+): string {
+  const knownCategories = new Set([
+    'alert_incident',
+    'server_fault',
+    'kubernetes_issue',
+    'historical_failure',
+    'approval_rejection',
+    'verification_failure'
+  ]);
+  return knownCategories.has(category)
+    ? t(`evolution.dataset.category.${category}` as MessageKey)
+    : category.replace(/_/g, ' ');
 }

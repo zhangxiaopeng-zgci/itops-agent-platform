@@ -21,6 +21,7 @@ import {
 } from '../services/evolutionReleaseService';
 import { summarizeEvolutionProposalLifecycle } from '../services/evolutionLifecycleService';
 import { buildEvaluationDatasetOverview } from '../services/evaluationDatasetService';
+import { runEvolutionStagingReplay } from '../services/evolutionStagingReplayService';
 
 interface AuthenticatedRequest extends Request {
   user?: {
@@ -175,6 +176,19 @@ router.post('/:id/evaluate', requireRole('admin', 'operator'), (req: Authenticat
     return res.json({ success: true, data: evaluation });
   } catch (error) {
     return res.status(400).json({ success: false, error: error instanceof Error ? error.message : 'Failed to evaluate evolution proposal' });
+  }
+});
+
+router.post('/:id/staging-replay', requireRole('admin', 'operator'), (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const evaluation = runEvolutionStagingReplay({
+      proposalId: req.params.id,
+      actorId: req.user?.id || null
+    });
+
+    return res.json({ success: true, data: evaluation });
+  } catch (error) {
+    return res.status(400).json({ success: false, error: error instanceof Error ? error.message : 'Failed to run staging replay' });
   }
 });
 
