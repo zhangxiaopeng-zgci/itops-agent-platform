@@ -73,8 +73,7 @@ const navigationGroups: Array<{
     items: [
       { labelKey: 'nav.diagnosisCenter', href: '/diagnosis-center', icon: AlertTriangle },
       { labelKey: 'nav.executionCenter', href: '/execution-center', icon: Workflow },
-      { labelKey: 'nav.servers', href: '/servers', icon: Server },
-      { labelKey: 'nav.terminal', href: '/terminal', icon: Terminal },
+      { labelKey: 'nav.assetsCenter', href: '/assets-center', icon: Server },
     ]
   },
   {
@@ -96,6 +95,8 @@ const navigationGroups: Array<{
       { labelKey: 'nav.bigScreen', href: '/big-screen', icon: Monitor },
       { labelKey: 'nav.networkDevices', href: '/network-devices', icon: Network },
       { labelKey: 'nav.credentials', href: '/ssh-keys', icon: Key },
+      { labelKey: 'nav.servers', href: '/servers', icon: Server },
+      { labelKey: 'nav.terminal', href: '/terminal', icon: Terminal },
       { labelKey: 'nav.remoteDesktop', href: '/remote-desktop', icon: MonitorPlay },
       { labelKey: 'nav.hermes', href: '/hermes', icon: Brain },
       { labelKey: 'nav.remediationWorkbench', href: '/remediation-workbench', icon: Workflow },

@@ -68,6 +68,12 @@ User can enter the platform and choose a job path without understanding every te
 
 ## Phase 2 - Assets And Access Center
 
+Status:
+
+```text
+First version implemented in this iteration.
+```
+
 Goal:
 
 ```text
@@ -110,6 +116,16 @@ Create an Assets And Access Center.
 Keep Servers and Web Terminal as high-frequency entries.
 Move network devices, credentials, and remote desktop into asset actions.
 Add asset detail pages with recent alerts, tasks, Hermes sessions, topology, and allowed actions.
+```
+
+Implemented baseline:
+
+```text
+Added /assets-center as the primary Assets And Access entry.
+Moved Servers and Web Terminal out of the top-level Ops Workspace and kept them under Advanced.
+Aggregated hosts, network devices, credentials, Web Terminal, Remote Desktop, Diagnosis Center, and Execution Center.
+Added a visible Kubernetes cluster asset family placeholder for the next phase.
+Linked the Today Ops Workbench asset card to /assets-center.
 ```
 
 Acceptance:

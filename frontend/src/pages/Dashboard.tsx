@@ -196,7 +196,7 @@ export default function Dashboard() {
       descriptionKey: 'dashboard.workbench.assets.desc',
       count: enabledServers,
       countKey: 'dashboard.workbench.assets.count',
-      href: '/servers',
+      href: '/assets-center',
       icon: Server,
       tone: 'text-cyan-500 bg-cyan-500/10',
     },
