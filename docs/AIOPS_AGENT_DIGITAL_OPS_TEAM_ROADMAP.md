@@ -1078,6 +1078,38 @@ P9d 收敛结果：
 - 高风险变更没有 rollback plan 不能发布。
 - 所有 Team Run 都可追溯到 trace、approval、tool call、release version。
 
+P10 实施切片：
+
+- [x] P10a：生产治理就绪度只读清单，集中展示部署、运行、数据、发布和安全治理状态。
+- [ ] P10b：备份恢复演练记录，保存演练时间、操作者、结果和恢复验证证据。
+- [ ] P10c：容器删除重建恢复演练，把 compose 网络 alias、volume、healthcheck 和 Hermes Worker 状态纳入验证。
+- [ ] P10d：发布审计导出，按 release version 汇总 proposal、evaluation、staging replay、release guard、rollback event。
+- [ ] P10e：高风险发布治理，接入 change window 和双人审批策略。
+
+P10a 收敛结果：
+
+- 新增只读 API：
+  - `GET /api/ops-readiness/summary`。
+- 就绪度清单聚合：
+  - `healthService` 当前健康检查。
+  - `backupService` 自动备份、备份数量、最近备份验证状态。
+  - 三个 Hermes Worker 的配置和健康状态。
+  - 当前 active release version 数量。
+  - approved / approval_pending evolution proposal 数量。
+  - 数据库路径、备份目录、Allowed Origins、Worker fallback 等环境摘要。
+- 检查项分组：
+  - deployment：生产运行模式、前端生产包。
+  - runtime：Hermes Worker 配置/健康、整体 health ready。
+  - data：数据库持久化路径、备份启用、备份存在、备份验证。
+  - release：Release Guard 可用、active release 追踪。
+  - security：Allowed Origins 配置。
+- 前端新增“生产就绪”页面：
+  - 显示总分、ready / warning / blocked 状态。
+  - 显示阻断项和提醒项。
+  - 按类别展示检查项。
+  - 展示 Hermes Worker、数据持久化和环境摘要。
+- 当前边界：P10a 只读，不触发备份、恢复、容器重建或发布动作；演练记录和审计导出由 P10b/P10d 补齐。
+
 ## 最小可用版本
 
 建议先做一个最小闭环，而不是一次性铺开全部能力：

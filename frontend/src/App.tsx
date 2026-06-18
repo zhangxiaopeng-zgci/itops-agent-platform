@@ -46,6 +46,7 @@ import AIInsights from './pages/AIInsights';
 import NetworkDevices from './pages/NetworkDevices';
 import SSHKeys from './pages/SSHKeys';
 import AIModels from './pages/AIModels';
+import OpsReadiness from './pages/OpsReadiness';
 import NotFound from './pages/NotFound';
 import { useLocale } from './contexts/LocaleContext';
 
@@ -104,6 +105,7 @@ function App() {
               <Route path="reports" element={<ProtectedRoute><Reports /></ProtectedRoute>} />
               <Route path="users" element={<ProtectedRoute><Users /></ProtectedRoute>} />
               <Route path="settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
+              <Route path="ops-readiness" element={<ProtectedRoute><OpsReadiness /></ProtectedRoute>} />
               <Route path="alert-noise" element={<ProtectedRoute><AlertNoiseManagement /></ProtectedRoute>} />
               <Route path="root-cause-analysis" element={<ProtectedRoute><RootCauseAnalysis /></ProtectedRoute>} />
               <Route path="terminal" element={<ProtectedRoute><TerminalPage /></ProtectedRoute>} />

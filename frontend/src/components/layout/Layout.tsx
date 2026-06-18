@@ -138,6 +138,7 @@ const navigationGroups: Array<{
     icon: Cog,
     items: [
       { labelKey: 'nav.users', href: '/users', icon: Users },
+      { labelKey: 'nav.opsReadiness', href: '/ops-readiness', icon: ShieldCheck },
       { labelKey: 'nav.settings', href: '/settings', icon: Settings },
     ]
   },

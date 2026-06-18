@@ -56,6 +56,7 @@ import hermesControlPlaneRoutes from './routes/hermesControlPlaneRoutes';
 import agentTeamRoutes from './routes/agentTeamRoutes';
 import evolutionProposalRoutes from './routes/evolutionProposalRoutes';
 import evolutionTaskRoutes from './routes/evolutionTaskRoutes';
+import opsReadinessRoutes from './routes/opsReadinessRoutes';
 import { schedulerService } from './services/schedulerService';
 import { reportService } from './services/reportService';
 import { copilotService } from './services/copilotService';
@@ -221,6 +222,7 @@ app.use('/api/hermes-control-plane', rateLimiter, hermesControlPlaneRoutes);
 app.use('/api/agent-teams', rateLimiter, agentTeamRoutes);
 app.use('/api/evolution-proposals', rateLimiter, evolutionProposalRoutes);
 app.use('/api/evolution-tasks', rateLimiter, evolutionTaskRoutes);
+app.use('/api/ops-readiness', rateLimiter, opsReadinessRoutes);
 app.use('/api/skills', rateLimiter, skillRoutes);
 app.use('/api/mcp-servers', rateLimiter, mcpServerRoutes);
 
