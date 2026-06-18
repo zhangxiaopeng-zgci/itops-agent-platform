@@ -1,7 +1,7 @@
 import { type ReactNode, useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Archive, CheckCircle2, Clock, Database, FileText, Gauge, PlayCircle, RefreshCw, ShieldCheck, Sparkles, XCircle } from 'lucide-react';
+import { Archive, CheckCircle2, Clock, Database, Download, FileText, Gauge, PlayCircle, RefreshCw, ShieldCheck, Sparkles, XCircle } from 'lucide-react';
 import clsx from 'clsx';
 import api from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
@@ -656,6 +656,26 @@ export default function EvolutionProposals() {
     }
   });
 
+  const auditExportMutation = useMutation({
+    mutationFn: async ({ versionId, format }: { versionId: string; format: 'json' | 'markdown' }) => {
+      const res = await api.get(`/api/evolution-proposals/releases/versions/${versionId}/audit`, {
+        params: { format },
+        responseType: 'blob'
+      });
+      const disposition = String(res.headers['content-disposition'] || '');
+      const filename = readDownloadFilename(disposition)
+        || `evolution-release-audit-${versionId}.${format === 'json' ? 'json' : 'md'}`;
+      downloadBlob(res.data, filename);
+      return { filename };
+    },
+    onSuccess: () => {
+      toast.success(t('evolution.toast.auditExported'));
+    },
+    onError: (error: unknown) => {
+      toast.error(error instanceof Error ? error.message : t('evolution.toast.auditExportFailed'));
+    }
+  });
+
   const runTaskMutation = useMutation({
     mutationFn: async (taskId: string) => {
       const res = await api.post(`/api/evolution-tasks/${taskId}/run`);
@@ -949,6 +969,8 @@ export default function EvolutionProposals() {
                 canRollback={canApprove}
                 isRollingBack={rollbackMutation.isPending}
                 onRollback={(versionId) => rollbackMutation.mutate(versionId)}
+                isExportingAudit={auditExportMutation.isPending}
+                onExportAudit={(versionId, format) => auditExportMutation.mutate({ versionId, format })}
               />
 
               <DetailSection title={t('evolution.body')} icon={<FileText className="w-4 h-4" />}>
@@ -1239,12 +1261,16 @@ function ReleasePanel({
   releases,
   canRollback,
   isRollingBack,
-  onRollback
+  onRollback,
+  isExportingAudit,
+  onExportAudit
 }: {
   releases: ReleaseVersion[];
   canRollback: boolean;
   isRollingBack: boolean;
   onRollback: (versionId: string) => void;
+  isExportingAudit: boolean;
+  onExportAudit: (versionId: string, format: 'json' | 'markdown') => void;
 }) {
   const { t } = useLocale();
 
@@ -1275,16 +1301,34 @@ function ReleasePanel({
                     {version.object_type} · {version.target_id || 'global'} · {formatTime(version.published_at)}
                   </div>
                 </div>
-                {version.status === 'active' && (
+                <div className="flex flex-wrap items-center gap-2">
                   <button
-                    disabled={!canRollback || isRollingBack}
-                    onClick={() => onRollback(version.id)}
-                    className="inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-background border border-border text-xs text-text-secondary hover:text-text-primary hover:border-primary/40 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    disabled={isExportingAudit}
+                    onClick={() => onExportAudit(version.id, 'json')}
+                    className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-background border border-border text-xs text-text-secondary hover:text-text-primary hover:border-primary/40 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   >
-                    <Archive className="w-4 h-4" />
-                    {isRollingBack ? t('evolution.rollingBack') : t('evolution.action.rollback')}
+                    <Download className="w-4 h-4" />
+                    {t('evolution.release.exportJson')}
                   </button>
-                )}
+                  <button
+                    disabled={isExportingAudit}
+                    onClick={() => onExportAudit(version.id, 'markdown')}
+                    className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-background border border-border text-xs text-text-secondary hover:text-text-primary hover:border-primary/40 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    <Download className="w-4 h-4" />
+                    {t('evolution.release.exportMarkdown')}
+                  </button>
+                  {version.status === 'active' && (
+                    <button
+                      disabled={!canRollback || isRollingBack}
+                      onClick={() => onRollback(version.id)}
+                      className="inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-background border border-border text-xs text-text-secondary hover:text-text-primary hover:border-primary/40 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    >
+                      <Archive className="w-4 h-4" />
+                      {isRollingBack ? t('evolution.rollingBack') : t('evolution.action.rollback')}
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           ))}
@@ -2040,6 +2084,30 @@ function formatTime(value?: string | null): string {
 
 function shortId(value: string): string {
   return value.length > 12 ? `${value.slice(0, 8)}...` : value;
+}
+
+function readDownloadFilename(disposition: string): string | null {
+  const utf8Match = disposition.match(/filename\*=UTF-8''([^;]+)/i);
+  if (utf8Match?.[1]) {
+    return decodeURIComponent(utf8Match[1]);
+  }
+  const quotedMatch = disposition.match(/filename="([^"]+)"/i);
+  if (quotedMatch?.[1]) {
+    return quotedMatch[1];
+  }
+  const plainMatch = disposition.match(/filename=([^;]+)/i);
+  return plainMatch?.[1]?.trim() || null;
+}
+
+function downloadBlob(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
 }
 
 function getStructuredPatch(proposal: EvolutionProposal): StructuredPatch | null {

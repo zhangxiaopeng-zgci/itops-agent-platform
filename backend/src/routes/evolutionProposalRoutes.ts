@@ -23,6 +23,12 @@ import { summarizeEvolutionProposalLifecycle } from '../services/evolutionLifecy
 import { buildEvaluationDatasetOverview } from '../services/evaluationDatasetService';
 import { runEvolutionStagingReplay } from '../services/evolutionStagingReplayService';
 import { buildEvolutionReleaseGuard } from '../services/evolutionReleaseGuardService';
+import {
+  buildEvolutionReleaseAuditBundle,
+  buildEvolutionReleaseAuditFilename,
+  EvolutionReleaseAuditFormat,
+  renderEvolutionReleaseAudit
+} from '../services/evolutionReleaseAuditService';
 
 interface AuthenticatedRequest extends Request {
   user?: {
@@ -77,6 +83,21 @@ router.get('/releases/versions/:id/events', requireRole('admin', 'operator', 'vi
     res.json({ success: true, data: listEvolutionReleaseEvents(req.params.id) });
   } catch (error) {
     res.status(500).json({ success: false, error: error instanceof Error ? error.message : 'Failed to list evolution release events' });
+  }
+});
+
+router.get('/releases/versions/:id/audit', requireRole('admin', 'operator', 'viewer'), (req: Request, res: Response) => {
+  try {
+    const format = normalizeAuditFormat(req.query.format);
+    const bundle = buildEvolutionReleaseAuditBundle(req.params.id);
+    const content = renderEvolutionReleaseAudit(bundle, format);
+    const filename = buildEvolutionReleaseAuditFilename(bundle, format);
+    res.setHeader('Content-Type', format === 'json' ? 'application/json; charset=utf-8' : 'text/markdown; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(content);
+  } catch (error) {
+    const status = error instanceof Error && error.message === 'Evolution release version not found' ? 404 : 500;
+    res.status(status).json({ success: false, error: error instanceof Error ? error.message : 'Failed to export evolution release audit' });
   }
 });
 
@@ -251,5 +272,9 @@ router.post('/:id/status', requireRole('admin', 'operator'), (req: Authenticated
     return res.status(400).json({ success: false, error: error instanceof Error ? error.message : 'Failed to update evolution proposal status' });
   }
 });
+
+function normalizeAuditFormat(value: unknown): EvolutionReleaseAuditFormat {
+  return value === 'markdown' || value === 'md' ? 'markdown' : 'json';
+}
 
 export default router;

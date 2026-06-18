@@ -1083,7 +1083,7 @@ P10 实施切片：
 - [x] P10a：生产治理就绪度只读清单，集中展示部署、运行、数据、发布和安全治理状态。
 - [x] P10b：备份恢复演练记录，保存演练时间、操作者、结果和恢复验证证据。
 - [x] P10c：容器删除重建恢复演练，把 compose 网络 alias、volume、healthcheck 和 Hermes Worker 状态纳入验证。
-- [ ] P10d：发布审计导出，按 release version 汇总 proposal、evaluation、staging replay、release guard、rollback event。
+- [x] P10d：发布审计导出，按 release version 汇总 proposal、evaluation、staging replay、release guard、rollback event。
 - [ ] P10e：高风险发布治理，接入 change window 和双人审批策略。
 
 P10a 收敛结果：
@@ -1168,6 +1168,28 @@ P10c 收敛结果：
   - 在 `10.1.132.58` 使用 `docker compose -f docker-compose.hermes.yml up -d --force-recreate ...` 重建 backend / frontend / 3 Hermes Worker。
   - 重建后由 API 记录验证证据。
 - 当前边界：P10c 不在 backend 容器内直接调用 Docker；真实容器重建由运维侧或部署脚本执行，平台负责记录和审计重建后的恢复验证证据。
+
+P10d 收敛结果：
+
+- 新增发布审计导出服务：
+  - `evolutionReleaseAuditService`。
+- 新增 API：
+  - `GET /api/evolution-proposals/releases/versions/:id/audit?format=json`。
+  - `GET /api/evolution-proposals/releases/versions/:id/audit?format=markdown`。
+- 审计包聚合内容：
+  - release version。
+  - proposal 快照。
+  - proposal lifecycle events。
+  - release ledger events。
+  - deterministic evaluation。
+  - dataset regression summary。
+  - staging replay summary。
+  - release guard。
+  - rollback status / reason / rollback events。
+- 前端增强：
+  - 进化提案详情的 Release Versions 面板新增 `导出 JSON` 和 `导出 Markdown`。
+  - 导出使用现有鉴权 API，返回附件下载。
+- 当前边界：P10d 只做审计证据导出，不改变 release version 状态，不触发发布/回滚；发布前高风险治理和 change window 在 P10e 收敛。
 
 ## 最小可用版本
 

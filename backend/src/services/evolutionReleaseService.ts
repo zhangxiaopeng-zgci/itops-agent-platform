@@ -239,9 +239,13 @@ function getActiveVersion(objectType: string, targetId: string | null): Evolutio
   return row ? parseVersion(row) : null;
 }
 
-function getVersion(id: string): EvolutionReleaseVersionRecord | null {
+export function getEvolutionReleaseVersion(id: string): EvolutionReleaseVersionRecord | null {
   const row = db.prepare('SELECT * FROM evolution_release_versions WHERE id = ?').get(id) as Record<string, unknown> | undefined;
   return row ? parseVersion(row) : null;
+}
+
+function getVersion(id: string): EvolutionReleaseVersionRecord | null {
+  return getEvolutionReleaseVersion(id);
 }
 
 function buildVersionLabel(proposal: EvolutionProposalRecord, previous: EvolutionReleaseVersionRecord | null): string {
