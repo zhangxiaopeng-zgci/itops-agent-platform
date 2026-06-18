@@ -84,7 +84,7 @@ External references:
 ```text
 User-provided WeChat reference for product/architecture direction:
   https://mp.weixin.qq.com/s/CYfrtxi18fxmdEpPgTFEkQ
-  Note: the article body must be manually extracted if precise concepts need to be mapped into requirements.
+  Extracted topic: Hermes multi-agent delegation, recursive orchestration, durable Kanban queue, worker lanes, and execution boundary.
 
 Hermes Kanban user guide:
   https://github.com/NousResearch/hermes-agent/blob/main/website/docs/user-guide/features/kanban.md
@@ -108,6 +108,56 @@ When applying the WeChat reference, first extract concrete principles into:
 
 Do not turn the reference into broad UI duplication.
 Only implement ideas that strengthen the AIOps + Hermes division of responsibility.
+```
+
+Extracted principles from the WeChat reference:
+
+```text
+Single Agent has natural limits:
+  context overflow
+  serialized work
+  mixed responsibilities
+
+Hermes collaboration model:
+  Orchestrator delegates bounded tasks to isolated child agents.
+  Child agents receive explicit context and restricted tools.
+  Recursive orchestration is useful but must be depth-limited.
+  Parallel workers are useful only when tasks are independent enough.
+
+Hermes Kanban model:
+  Durable queue for long-running or restart-safe work.
+  Lanes represent operational state, not production approval.
+  Worker lanes can represent different profiles, models, prompts, tools, or external CLI agents.
+  Pipeline, fleet, and circuit-breaker patterns are first-class scheduling ideas.
+
+Execution boundary:
+  Use delegated agents for work that requires reasoning.
+  Use deterministic scripts/workflows for mechanical bulk execution.
+  Do not delegate when the task needs user clarification.
+  Do not rely on ephemeral child agents for long-running background work; use Kanban or AIOps tasks.
+```
+
+AIOps mapping:
+
+```text
+Diagnosis Center:
+  AIOps builds a complete context pack.
+  Hermes Orchestrator may delegate evidence collection, log review, topology impact, and recommendation drafting.
+
+Execution Center:
+  Hermes may prepare repair plans and verification plans.
+  AIOps owns approval, task execution, audit, rollback, and verification records.
+
+Capability Control Plane:
+  Configure max concurrent children, max delegation depth, allowed worker lanes, allowed tools, and fallback behavior per Hermes Channel.
+
+Evolution Governance:
+  Kanban cards can become proposal candidates.
+  Publishing still requires AIOps evaluation, staging replay, approval, and release guard.
+
+Automation boundary:
+  Deterministic batch operations should be scripts/workflows.
+  Agent delegation should be reserved for ambiguous, evidence-heavy, or planning-heavy tasks.
 ```
 
 ## Phase 1 - Today Ops Workbench
@@ -341,6 +391,32 @@ Add security guard:
   role-based visibility
   read-only fallback
   no direct production execution bypass
+
+Add delegation policy per Hermes Channel:
+  maxConcurrentChildren
+  maxSpawnDepth
+  allowedWorkerLanes
+  allowedExternalCliWorkers
+  delegateAllowed
+  kanbanRequiredForLongRunning
+  circuitBreakerThreshold
+
+Add context pack contract:
+  source page
+  asset references
+  alert references
+  topology impact
+  recent tasks
+  approvals
+  knowledge hints
+  allowed tools
+  expected output schema
+
+Add work routing rules:
+  transient delegate_task for bounded reasoning subtasks
+  Hermes Kanban for durable multi-step queues
+  AIOps Workflow/Scripts for deterministic execution
+  AIOps Approval for production-changing actions
 ```
 
 Acceptance:
@@ -372,11 +448,15 @@ Recommended implementation slices:
   Add settings, health probe, navigation link, and external link table.
   Show Hermes Dashboard link/embed from Hermes Assistant, Evolution Proposals, and Capability Control Plane.
 
-3B-3: Correlation bridge
+3B-3: Delegation policy baseline
+  Add channel-level delegation limits, allowed lanes, and circuit-breaker settings.
+  Render delegation capability summary in Capability Control Plane.
+
+3B-4: Correlation bridge
   Write externalCardId/externalRunId onto Hermes sessions, proposals, tasks, and trace views.
   Add jump-back links from Hermes work items to AIOps pages where possible.
 
-3B-4: Operational contract
+3B-5: Operational contract
   Define which Kanban lane transitions can create AIOps proposals or approval drafts.
   Keep publish/execution gated inside AIOps.
 ```
