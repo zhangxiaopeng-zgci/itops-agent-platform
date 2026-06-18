@@ -1,16 +1,41 @@
 import { useQuery } from '@tanstack/react-query';
-import { Bot, GitBranch, Play, Bell, TrendingUp, TrendingDown, Minus, Clock, Server, BookOpen, Zap, Activity, Shield } from 'lucide-react';
-import { useNavigate, Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
+import {
+  AlertTriangle,
+  ArrowRight,
+  Bot,
+  Brain,
+  CheckCircle2,
+  Clock,
+  GitBranch,
+  LayoutDashboard,
+  ListChecks,
+  Play,
+  Radar,
+  Route,
+  Server,
+  Settings,
+  ShieldAlert,
+  Sparkles,
+  Wrench,
+} from 'lucide-react';
 import api from '../lib/api';
 import { safeFormatDistance } from '../lib/date';
 import { useLocale, type MessageKey } from '../contexts/LocaleContext';
 
 interface Agent {
   id: string;
-  name: string;
-  avatar: string;
-  role: string;
   enabled: number;
+}
+
+interface ServerItem {
+  id: string;
+  enabled: number;
+}
+
+interface Workflow {
+  id: string;
+  is_template: number;
 }
 
 interface Task {
@@ -28,175 +53,208 @@ interface Alert {
   created_at: string;
 }
 
-interface Server {
+interface ToolApproval {
   id: string;
-  name: string;
-  hostname: string;
-  enabled: number;
-  last_connected?: string;
+  tool_name?: string;
+  status: string;
+  risk_level?: string;
+  requested_at?: string;
 }
 
-interface Workflow {
-  id: string;
-  name: string;
-  is_template: number;
-}
-
-interface Knowledge {
+interface EvolutionProposal {
   id: string;
   title: string;
-  category: string;
-  usage_count: number;
+  status: string;
+  priority?: string;
+  created_at?: string;
+}
+
+function toArray<T>(value: unknown, keys: string[] = []): T[] {
+  if (Array.isArray(value)) return value as T[];
+  if (value && typeof value === 'object') {
+    const record = value as Record<string, unknown>;
+    for (const key of keys) {
+      if (Array.isArray(record[key])) return record[key] as T[];
+    }
+  }
+  return [];
 }
 
 export default function Dashboard() {
   const navigate = useNavigate();
   const { t } = useLocale();
 
-  const quickActions = [
-    {
-      nameKey: 'dashboard.quick.inspect.title',
-      descriptionKey: 'dashboard.quick.inspect.desc',
-      icon: Activity,
-      color: 'text-blue-600',
-      bg: 'bg-blue-600/10',
-      action: () => navigate('/workflows'),
-    },
-    {
-      nameKey: 'dashboard.quick.script.title',
-      descriptionKey: 'dashboard.quick.script.desc',
-      icon: Zap,
-      color: 'text-purple-600',
-      bg: 'bg-purple-600/10',
-      action: () => navigate('/scripts'),
-    },
-    {
-      nameKey: 'dashboard.quick.security.title',
-      descriptionKey: 'dashboard.quick.security.desc',
-      icon: Shield,
-      color: 'text-green-600',
-      bg: 'bg-green-600/10',
-      action: () => navigate('/workflows'),
-    },
-    {
-      nameKey: 'dashboard.quick.alerts.title',
-      descriptionKey: 'dashboard.quick.alerts.desc',
-      icon: Bell,
-      color: 'text-red-600',
-      bg: 'bg-red-600/10',
-      action: () => navigate('/alerts'),
-    },
-  ];
-
-  const { data: agents, isLoading: agentsLoading } = useQuery({
-    queryKey: ['agents'],
+  const { data: agents = [], isLoading: agentsLoading } = useQuery({
+    queryKey: ['workbench', 'agents'],
     queryFn: async () => {
       const res = await api.get('/api/agents');
-      return res.data.data as Agent[];
+      return toArray<Agent>(res.data.data, ['agents', 'items']);
     },
     staleTime: 60000,
   });
 
-  const { data: servers, isLoading: serversLoading } = useQuery({
-    queryKey: ['servers'],
+  const { data: servers = [], isLoading: serversLoading } = useQuery({
+    queryKey: ['workbench', 'servers'],
     queryFn: async () => {
       const res = await api.get('/api/servers');
-      return res.data.data as Server[];
+      return toArray<ServerItem>(res.data.data, ['servers', 'items']);
     },
     staleTime: 60000,
   });
 
-  const { data: workflows, isLoading: workflowsLoading } = useQuery({
-    queryKey: ['workflows'],
+  const { data: workflows = [], isLoading: workflowsLoading } = useQuery({
+    queryKey: ['workbench', 'workflows'],
     queryFn: async () => {
       const res = await api.get('/api/workflows');
-      return res.data.data as Workflow[];
+      return toArray<Workflow>(res.data.data, ['workflows', 'items']);
     },
     staleTime: 120000,
   });
 
-  const { data: knowledge, isLoading: knowledgeLoading } = useQuery({
-    queryKey: ['knowledge'],
+  const { data: tasks = [], isLoading: tasksLoading } = useQuery({
+    queryKey: ['workbench', 'tasks'],
     queryFn: async () => {
-      const res = await api.get('/api/knowledge');
-      return res.data.data as Knowledge[];
-    },
-    staleTime: 120000,
-  });
-
-  const { data: tasks, isLoading: tasksLoading } = useQuery({
-    queryKey: ['tasks', { limit: 5 }],
-    queryFn: async () => {
-      const res = await api.get('/api/tasks', { params: { limit: 5 } });
-      return res.data.data as Task[];
+      const res = await api.get('/api/tasks');
+      return toArray<Task>(res.data.data, ['tasks', 'items']);
     },
     staleTime: 30000,
   });
 
-  const { data: alerts, isLoading: alertsLoading } = useQuery({
-    queryKey: ['alerts', { limit: 5 }],
+  const { data: alerts = [], isLoading: alertsLoading } = useQuery({
+    queryKey: ['workbench', 'alerts'],
     queryFn: async () => {
-      const res = await api.get('/api/alerts', { params: { limit: 5 } });
-      return res.data.data as Alert[];
+      const res = await api.get('/api/alerts');
+      return toArray<Alert>(res.data.data, ['alerts', 'items']);
     },
     staleTime: 30000,
   });
 
-  const isLoading = agentsLoading || serversLoading || workflowsLoading || knowledgeLoading || tasksLoading || alertsLoading;
+  const { data: approvals = [], isLoading: approvalsLoading } = useQuery({
+    queryKey: ['workbench', 'tool-approvals'],
+    queryFn: async () => {
+      const res = await api.get('/api/tool-approvals');
+      return toArray<ToolApproval>(res.data.data, ['approvals', 'items']);
+    },
+    staleTime: 30000,
+  });
 
-  const stats = [
+  const { data: proposals = [], isLoading: proposalsLoading } = useQuery({
+    queryKey: ['workbench', 'evolution-proposals'],
+    queryFn: async () => {
+      const res = await api.get('/api/evolution-proposals', { params: { limit: 10 } });
+      return toArray<EvolutionProposal>(res.data.data, ['proposals', 'items']);
+    },
+    staleTime: 60000,
+  });
+
+  const isLoading = agentsLoading
+    || serversLoading
+    || workflowsLoading
+    || tasksLoading
+    || alertsLoading
+    || approvalsLoading
+    || proposalsLoading;
+
+  const openAlerts = alerts.filter((alert) => ['new', 'active', 'open'].includes(alert.status));
+  const highRiskAlerts = openAlerts.filter((alert) => ['critical', 'high'].includes(alert.severity));
+  const pendingApprovals = approvals.filter((approval) => approval.status === 'pending');
+  const runningTasks = tasks.filter((task) => task.status === 'running');
+  const failedTasks = tasks.filter((task) => task.status === 'failed');
+  const pendingProposals = proposals.filter((proposal) => [
+    'draft',
+    'generated',
+    'eval_pending',
+    'eval_passed',
+    'approval_pending',
+    'approved',
+  ].includes(proposal.status));
+  const enabledServers = servers.filter((server) => server.enabled === 1).length;
+  const enabledAgents = agents.filter((agent) => agent.enabled === 1).length;
+  const workflowTemplates = workflows.filter((workflow) => workflow.is_template === 1).length;
+
+  const workbenchCards = [
     {
-      nameKey: 'dashboard.stats.servers',
-      value: servers?.length || 0,
+      titleKey: 'dashboard.workbench.diagnosis.title',
+      descriptionKey: 'dashboard.workbench.diagnosis.desc',
+      count: highRiskAlerts.length || openAlerts.length,
+      countKey: highRiskAlerts.length > 0 ? 'dashboard.workbench.diagnosis.highRisk' : 'dashboard.workbench.diagnosis.open',
+      href: '/diagnosis-center',
+      icon: Radar,
+      tone: highRiskAlerts.length > 0 ? 'text-red-500 bg-red-500/10' : 'text-blue-500 bg-blue-500/10',
+    },
+    {
+      titleKey: 'dashboard.workbench.execution.title',
+      descriptionKey: 'dashboard.workbench.execution.desc',
+      count: pendingApprovals.length + runningTasks.length + failedTasks.length,
+      countKey: 'dashboard.workbench.execution.todo',
+      href: '/execution-center',
+      icon: Route,
+      tone: pendingApprovals.length > 0 ? 'text-yellow-500 bg-yellow-500/10' : 'text-emerald-500 bg-emerald-500/10',
+    },
+    {
+      titleKey: 'dashboard.workbench.assets.title',
+      descriptionKey: 'dashboard.workbench.assets.desc',
+      count: enabledServers,
+      countKey: 'dashboard.workbench.assets.count',
+      href: '/servers',
       icon: Server,
-      color: 'text-purple-500',
-      bg: 'bg-purple-500/10',
+      tone: 'text-cyan-500 bg-cyan-500/10',
     },
     {
-      nameKey: 'dashboard.stats.agents',
-      value: agents?.length || 0,
-      icon: Bot,
-      color: 'text-blue-500',
-      bg: 'bg-blue-500/10',
+      titleKey: 'dashboard.workbench.capability.title',
+      descriptionKey: 'dashboard.workbench.capability.desc',
+      count: enabledAgents,
+      countKey: 'dashboard.workbench.capability.count',
+      href: '/hermes-channels',
+      icon: Brain,
+      tone: 'text-purple-500 bg-purple-500/10',
     },
     {
-      nameKey: 'dashboard.stats.workflowTemplates',
-      value: workflows?.filter((w) => w.is_template === 1).length || 0,
-      icon: GitBranch,
-      color: 'text-green-500',
-      bg: 'bg-green-500/10',
-    },
-    {
-      nameKey: 'dashboard.stats.runningTasks',
-      value: tasks?.filter((t) => t.status === 'running').length || 0,
-      icon: Play,
-      color: 'text-yellow-500',
-      bg: 'bg-yellow-500/10',
-    },
-    {
-      nameKey: 'dashboard.stats.activeAlerts',
-      value: alerts?.filter((a) => a.status === 'new').length || 0,
-      icon: Bell,
-      color: 'text-red-500',
-      bg: 'bg-red-500/10',
-    },
-    {
-      nameKey: 'dashboard.stats.knowledge',
-      value: knowledge?.length || 0,
-      icon: BookOpen,
-      color: 'text-cyan-500',
-      bg: 'bg-cyan-500/10',
+      titleKey: 'dashboard.workbench.evolution.title',
+      descriptionKey: 'dashboard.workbench.evolution.desc',
+      count: pendingProposals.length,
+      countKey: 'dashboard.workbench.evolution.count',
+      href: '/evolution-proposals',
+      icon: Sparkles,
+      tone: 'text-indigo-500 bg-indigo-500/10',
     },
   ];
 
-  const formatEnabled = (enabled: number) => t(enabled ? 'status.enabled' : 'status.disabled');
-  const formatOnline = (enabled: number) => t(enabled ? 'status.online' : 'status.offline');
-  const formatUsageCount = (count: number) => t('dashboard.usageCount', { count });
+  const overviewCards = [
+    {
+      labelKey: 'dashboard.stats.servers',
+      value: servers.length,
+      helper: t('dashboard.overview.enabledServers', { count: enabledServers }),
+      icon: Server,
+    },
+    {
+      labelKey: 'dashboard.stats.agents',
+      value: agents.length,
+      helper: t('dashboard.overview.enabledAgents', { count: enabledAgents }),
+      icon: Bot,
+    },
+    {
+      labelKey: 'dashboard.stats.workflowTemplates',
+      value: workflowTemplates,
+      helper: t('dashboard.overview.workflowTemplates'),
+      icon: GitBranch,
+    },
+    {
+      labelKey: 'dashboard.stats.runningTasks',
+      value: runningTasks.length,
+      helper: failedTasks.length > 0
+        ? t('dashboard.overview.failedTasks', { count: failedTasks.length })
+        : t('dashboard.overview.noFailedTasks'),
+      icon: Play,
+    },
+  ];
+
   const formatTaskStatus = (status: string) => {
     const key = `status.task.${status}` as MessageKey;
     const text = t(key);
     return text === key ? status : text;
   };
+
   const formatSeverity = (severity: string) => {
     const key = `status.severity.${severity}` as MessageKey;
     const text = t(key);
@@ -206,297 +264,200 @@ export default function Dashboard() {
   return (
     <div className="h-full overflow-auto p-6">
       <div className="space-y-6">
-        <div>
-          <h1 className="text-2xl font-bold text-text-primary mb-2">{t('dashboard.title')}</h1>
-          <p className="text-text-secondary">{t('dashboard.subtitle')}</p>
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <div className="flex items-center gap-3 mb-3">
+              <div className="w-10 h-10 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
+                <LayoutDashboard className="w-5 h-5" />
+              </div>
+              <div>
+                <h1 className="text-2xl font-bold text-text-primary">{t('dashboard.title')}</h1>
+                <p className="text-text-secondary mt-1">{t('dashboard.subtitle')}</p>
+              </div>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={() => navigate('/diagnosis-center')}
+              className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-primary text-white hover:bg-primary/90 transition-colors"
+            >
+              <Radar className="w-4 h-4" />
+              {t('dashboard.primary.diagnose')}
+            </button>
+            <button
+              onClick={() => navigate('/execution-center')}
+              className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg border border-border text-text-primary hover:bg-surface transition-colors"
+            >
+              <Wrench className="w-4 h-4" />
+              {t('dashboard.primary.execute')}
+            </button>
+          </div>
         </div>
 
         {isLoading ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {Array.from({ length: 6 }).map((_, i) => (
-              <div key={i} className="bg-surface rounded-xl p-6 border border-border animate-pulse">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="w-12 h-12 rounded-lg bg-border/50" />
-                  <div className="w-8 h-8 rounded bg-border/50" />
-                </div>
-                <div className="h-8 w-16 bg-border/50 rounded mb-2" />
-                <div className="h-4 w-24 bg-border/50 rounded" />
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
+            {Array.from({ length: 5 }).map((_, index) => (
+              <div key={index} className="bg-surface rounded-lg p-5 border border-border animate-pulse">
+                <div className="w-10 h-10 rounded-lg bg-border/50 mb-4" />
+                <div className="h-5 w-28 bg-border/50 rounded mb-3" />
+                <div className="h-4 w-full bg-border/50 rounded" />
               </div>
             ))}
           </div>
         ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {stats.map((stat) => (
-            <div
-              key={stat.nameKey}
-              className="bg-surface rounded-xl p-6 border border-border hover:border-primary/50 hover:shadow-lg hover:shadow-primary/10 transition-all"
-            >
-              <div className="flex items-center justify-between mb-4">
-                <div className={`p-3 rounded-lg ${stat.bg}`}>
-                  <stat.icon className={`w-6 h-6 ${stat.color}`} />
-                </div>
-                {(() => {
-                  const TrendIcon = stat.value > 5 ? TrendingUp : stat.value === 0 ? TrendingDown : Minus;
-                  const trendColor = stat.value > 5 ? 'text-status-success' : stat.value === 0 ? 'text-status-failed' : 'text-text-secondary';
-                  return <TrendIcon className={`w-5 h-5 ${trendColor}`} />;
-                })()}
-              </div>
-              <h3 className="text-3xl font-bold text-text-primary mb-1">
-                {stat.value}
-              </h3>
-              <p className="text-sm text-text-secondary">{t(stat.nameKey as MessageKey)}</p>
-            </div>
-          ))}
-        </div>
-        )}
-
-        <div className="bg-surface rounded-xl p-6 border border-border">
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="text-lg font-semibold text-text-primary flex items-center gap-2">
-              <Zap className="w-5 h-5 text-primary" />
-              {t('dashboard.quickActions')}
-            </h2>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            {quickActions.map((action) => (
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
+            {workbenchCards.map((card) => (
               <button
-                key={action.nameKey}
-                onClick={action.action}
-                className="p-4 rounded-xl bg-background hover:bg-background/80 border border-border hover:border-primary/50 transition-all text-left group"
+                key={card.href}
+                onClick={() => navigate(card.href)}
+                className="text-left bg-surface border border-border rounded-lg p-5 hover:border-primary/60 hover:bg-primary/5 transition-colors"
               >
-                <div className={`w-12 h-12 rounded-lg ${action.bg} flex items-center justify-center mb-3 group-hover:scale-110 transition-transform`}>
-                  <action.icon className={`w-6 h-6 ${action.color}`} />
+                <div className="flex items-start justify-between gap-3">
+                  <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${card.tone}`}>
+                    <card.icon className="w-5 h-5" />
+                  </div>
+                  <ArrowRight className="w-4 h-4 text-text-secondary" />
                 </div>
-                <h3 className="font-semibold text-text-primary mb-1">{t(action.nameKey as MessageKey)}</h3>
-                <p className="text-sm text-text-secondary">{t(action.descriptionKey as MessageKey)}</p>
+                <p className="font-semibold text-text-primary mt-4">{t(card.titleKey as MessageKey)}</p>
+                <p className="text-sm text-text-secondary mt-2 min-h-[40px]">{t(card.descriptionKey as MessageKey)}</p>
+                <div className="mt-4 flex items-baseline gap-2">
+                  <span className="text-2xl font-semibold text-text-primary">{card.count}</span>
+                  <span className="text-xs text-text-secondary">{t(card.countKey as MessageKey)}</span>
+                </div>
               </button>
             ))}
           </div>
-        </div>
+        )}
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="bg-surface rounded-xl p-6 border border-border">
-            <div className="flex items-center justify-between mb-6">
+        <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+          <div className="xl:col-span-2 bg-surface border border-border rounded-lg p-5">
+            <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-semibold text-text-primary flex items-center gap-2">
-                <Server className="w-5 h-5 text-purple-500" />
-                {t('dashboard.sections.servers')}
+                <ListChecks className="w-5 h-5 text-primary" />
+                {t('dashboard.todo.title')}
               </h2>
-              <Link to="/servers" className="text-sm text-primary hover:underline">
-                {t('common.viewAll')}
+              <Link to="/execution-center" className="text-sm text-primary hover:underline">
+                {t('dashboard.todo.viewExecution')}
               </Link>
             </div>
-            <div className="space-y-3">
-              {(Array.isArray(servers) ? servers : []).slice(0, 5).map((server) => (
-                <div
-                  key={server.id}
-                  className="flex items-center gap-3 p-3 rounded-lg bg-background hover:bg-background/80 transition-all"
-                >
-                  <div className={`p-2 rounded-lg ${server.enabled ? 'bg-purple-500/10' : 'bg-status-failed/10'}`}>
-                    <Server className={`w-5 h-5 ${server.enabled ? 'text-purple-500' : 'text-text-secondary'}`} />
-                  </div>
-                  <div className="flex-1">
-                    <h3 className="font-medium text-text-primary">{server.name}</h3>
-                    <p className="text-sm text-text-secondary">{server.hostname}</p>
-                  </div>
-                  <span
-                    className={`px-2 py-1 rounded text-xs font-medium ${
-                      server.enabled
-                        ? 'bg-status-success/10 text-status-success'
-                        : 'bg-status-failed/10 text-status-failed'
-                    }`}
-                  >
-                    {formatEnabled(server.enabled)}
-                  </span>
-                </div>
-              ))}
-              {!servers || servers.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-8 text-center">
-                  <div className="p-4 rounded-xl bg-surface border border-border mb-3">
-                    <Server className="w-8 h-8 text-text-secondary opacity-50" />
-                  </div>
-                  <p className="text-sm text-text-secondary mb-2">{t('dashboard.empty.servers.title')}</p>
-                  <p className="text-xs text-text-tertiary mb-3">{t('dashboard.empty.servers.desc')}</p>
-                  <button
-                    onClick={() => navigate('/servers')}
-                    className="px-3 py-1.5 bg-primary/10 text-primary rounded-lg text-xs hover:bg-primary/20 transition-colors"
-                  >
-                    {t('dashboard.empty.servers.action')}
-                  </button>
-                </div>
-              ) : null}
-            </div>
-          </div>
-          
-          <div className="bg-surface rounded-xl p-6 border border-border">
-            <div className="flex items-center justify-between mb-6">
-              <h2 className="text-lg font-semibold text-text-primary flex items-center gap-2">
-                <Bot className="w-5 h-5 text-primary" />
-                {t('dashboard.sections.agents')}
-              </h2>
-              <Link to="/agents" className="text-sm text-primary hover:underline">
-                {t('common.viewAll')}
-              </Link>
-            </div>
-            <div className="space-y-3">
-              {agents?.slice(0, 5).map((agent) => (
-                <div
-                  key={agent.id}
-                  className="flex items-center gap-3 p-3 rounded-lg bg-background hover:bg-background/80 transition-all"
-                >
-                  <span className="text-2xl">{agent.avatar}</span>
-                  <div className="flex-1">
-                    <h3 className="font-medium text-text-primary">{agent.name}</h3>
-                    <p className="text-sm text-text-secondary">{agent.role}</p>
-                  </div>
-                  <span
-                    className={`px-2 py-1 rounded text-xs font-medium ${
-                      agent.enabled
-                        ? 'bg-status-success/10 text-status-success'
-                        : 'bg-status-failed/10 text-status-failed'
-                    }`}
-                  >
-                    {formatOnline(agent.enabled)}
-                  </span>
-                </div>
-              ))}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+              <TodoColumn
+                title={t('dashboard.todo.alerts')}
+                empty={t('dashboard.todo.noAlerts')}
+                icon={AlertTriangle}
+                items={openAlerts.slice(0, 4).map((alert) => ({
+                  id: alert.id,
+                  title: alert.title,
+                  meta: `${formatSeverity(alert.severity)} · ${safeFormatDistance(alert.created_at)}`,
+                  href: '/diagnosis-center',
+                }))}
+              />
+              <TodoColumn
+                title={t('dashboard.todo.approvals')}
+                empty={t('dashboard.todo.noApprovals')}
+                icon={ShieldAlert}
+                items={pendingApprovals.slice(0, 4).map((approval) => ({
+                  id: approval.id,
+                  title: approval.tool_name || t('dashboard.todo.approvalFallback'),
+                  meta: approval.risk_level || t('common.unknown'),
+                  href: `/tool-approvals?approvalId=${encodeURIComponent(approval.id)}`,
+                }))}
+              />
+              <TodoColumn
+                title={t('dashboard.todo.tasks')}
+                empty={t('dashboard.todo.noTasks')}
+                icon={Clock}
+                items={[...runningTasks, ...failedTasks].slice(0, 4).map((task) => ({
+                  id: task.id,
+                  title: task.name,
+                  meta: `${formatTaskStatus(task.status)} · ${safeFormatDistance(task.created_at)}`,
+                  href: '/tasks',
+                }))}
+              />
             </div>
           </div>
 
-          <div className="bg-surface rounded-xl p-6 border border-border">
-            <div className="flex items-center justify-between mb-6">
+          <div className="bg-surface border border-border rounded-lg p-5">
+            <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-semibold text-text-primary flex items-center gap-2">
-                <BookOpen className="w-5 h-5 text-cyan-500" />
-                {t('dashboard.sections.knowledge')}
+                <Sparkles className="w-5 h-5 text-indigo-500" />
+                {t('dashboard.evolution.title')}
               </h2>
-              <Link to="/knowledge" className="text-sm text-primary hover:underline">
+              <Link to="/evolution-proposals" className="text-sm text-primary hover:underline">
                 {t('common.viewAll')}
               </Link>
             </div>
             <div className="space-y-3">
-              {knowledge?.slice(0, 5).map((item) => (
-                <div
-                  key={item.id}
-                  className="flex items-start gap-3 p-3 rounded-lg bg-background hover:bg-background/80 transition-all"
+              {pendingProposals.slice(0, 5).map((proposal) => (
+                <button
+                  key={proposal.id}
+                  onClick={() => navigate(`/evolution-proposals?proposalId=${encodeURIComponent(proposal.id)}`)}
+                  className="w-full text-left p-3 rounded-lg bg-background hover:bg-background/80 transition-colors"
                 >
-                  <div className="p-2 rounded-lg bg-cyan-500/10">
-                    <BookOpen className="w-4 h-4 text-cyan-500" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <h3 className="font-medium text-text-primary truncate">{item.title}</h3>
-                    <div className="flex items-center justify-between mt-1">
-                      <span className="text-xs text-text-secondary">{item.category}</span>
-                      <span className="text-xs text-status-success">
-                        {formatUsageCount(item.usage_count || 0)}
-                      </span>
-                    </div>
-                  </div>
-                </div>
+                  <p className="text-sm font-medium text-text-primary line-clamp-1">{proposal.title}</p>
+                  <p className="text-xs text-text-secondary mt-1">
+                    {proposal.priority || t('common.unknown')} · {proposal.status}
+                  </p>
+                </button>
               ))}
-              {!knowledge || knowledge.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-8 text-center">
-                  <div className="p-4 rounded-xl bg-surface border border-border mb-3">
-                    <BookOpen className="w-8 h-8 text-text-secondary opacity-50" />
-                  </div>
-                  <p className="text-sm text-text-secondary mb-2">{t('dashboard.empty.knowledge.title')}</p>
-                  <p className="text-xs text-text-tertiary mb-3">{t('dashboard.empty.knowledge.desc')}</p>
-                  <button
-                    onClick={() => navigate('/knowledge')}
-                    className="px-3 py-1.5 bg-cyan-500/10 text-cyan-500 rounded-lg text-xs hover:bg-cyan-500/20 transition-colors"
-                  >
-                    {t('dashboard.empty.knowledge.action')}
-                  </button>
+              {pendingProposals.length === 0 && (
+                <div className="py-8 text-center">
+                  <CheckCircle2 className="w-8 h-8 text-emerald-500 mx-auto mb-3" />
+                  <p className="text-sm text-text-secondary">{t('dashboard.evolution.empty')}</p>
                 </div>
-              ) : null}
-            </div>
-          </div>
-          
-          <div className="bg-surface rounded-xl p-6 border border-border">
-            <div className="flex items-center justify-between mb-6">
-              <h2 className="text-lg font-semibold text-text-primary flex items-center gap-2">
-                <Bell className="w-5 h-5 text-red-500" />
-                {t('dashboard.sections.alerts')}
-              </h2>
-              <Link to="/alerts" className="text-sm text-primary hover:underline">
-                {t('common.viewAll')}
-              </Link>
-            </div>
-            <div className="space-y-3">
-              {alerts?.slice(0, 5).map((alert) => (
-                <div
-                  key={alert.id}
-                  className="p-3 rounded-lg bg-background hover:bg-background/80 transition-all"
-                >
-                  <div className="flex items-start justify-between mb-2">
-                    <h3 className="font-medium text-text-primary text-sm">{alert.title}</h3>
-                    <span
-                      className={`px-2 py-1 rounded text-xs font-medium ${
-                        alert.severity === 'critical'
-                          ? 'bg-status-failed/10 text-status-failed'
-                          : alert.severity === 'high'
-                          ? 'bg-status-warning/10 text-status-warning'
-                          : 'bg-status-pending/10 text-status-pending'
-                      }`}
-                    >
-                      {formatSeverity(alert.severity)}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2 text-xs text-text-secondary">
-                    <Clock className="w-3 h-3" />
-                    {safeFormatDistance(alert.created_at)}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="bg-surface rounded-xl p-6 border border-border lg:col-span-3">
-            <div className="flex items-center justify-between mb-6">
-              <h2 className="text-lg font-semibold text-text-primary flex items-center gap-2">
-                <Play className="w-5 h-5 text-green-500" />
-                {t('dashboard.sections.tasks')}
-              </h2>
-              <Link to="/tasks" className="text-sm text-primary hover:underline">
-                {t('common.viewAll')}
-              </Link>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead>
-                  <tr className="text-left text-sm text-text-secondary border-b border-border">
-                    <th className="pb-3 font-medium">{t('dashboard.tasks.name')}</th>
-                    <th className="pb-3 font-medium">{t('common.status')}</th>
-                    <th className="pb-3 font-medium">{t('dashboard.tasks.executedAt')}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {tasks?.map((task) => (
-                    <tr key={task.id} className="border-b border-border/50 hover:bg-background/50">
-                      <td className="py-3 text-text-primary">{task.name}</td>
-                      <td className="py-3">
-                        <span
-                          className={`px-2 py-1 rounded text-xs font-medium ${
-                            task.status === 'completed'
-                              ? 'bg-status-success/10 text-status-success'
-                              : task.status === 'running'
-                              ? 'bg-status-running/10 text-status-running'
-                              : task.status === 'failed'
-                              ? 'bg-status-failed/10 text-status-failed'
-                              : 'bg-status-pending/10 text-status-pending'
-                          }`}
-                        >
-                          {formatTaskStatus(task.status)}
-                        </span>
-                      </td>
-                      <td className="py-3 text-sm text-text-secondary">
-                        {safeFormatDistance(task.created_at)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              )}
             </div>
           </div>
         </div>
+
+        <div className="bg-surface border border-border rounded-lg p-5">
+          <h2 className="text-lg font-semibold text-text-primary mb-4">{t('dashboard.overview.title')}</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+            {overviewCards.map((card) => (
+              <div key={card.labelKey} className="rounded-lg bg-background/60 border border-border p-4">
+                <card.icon className="w-5 h-5 text-primary mb-3" />
+                <p className="text-2xl font-semibold text-text-primary">{card.value}</p>
+                <p className="text-sm text-text-secondary mt-1">{t(card.labelKey as MessageKey)}</p>
+                <p className="text-xs text-text-secondary mt-2">{card.helper}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function TodoColumn({
+  title,
+  empty,
+  icon: Icon,
+  items,
+}: {
+  title: string;
+  empty: string;
+  icon: typeof AlertTriangle;
+  items: Array<{ id: string; title: string; meta: string; href: string }>;
+}) {
+  return (
+    <div className="rounded-lg border border-border bg-background/50 p-3">
+      <div className="flex items-center gap-2 mb-3">
+        <Icon className="w-4 h-4 text-primary" />
+        <h3 className="text-sm font-semibold text-text-primary">{title}</h3>
+      </div>
+      <div className="space-y-2">
+        {items.map((item) => (
+          <Link key={item.id} to={item.href} className="block rounded-lg bg-surface p-3 hover:bg-surface/80 transition-colors">
+            <p className="text-sm font-medium text-text-primary line-clamp-1">{item.title}</p>
+            <p className="text-xs text-text-secondary mt-1">{item.meta}</p>
+          </Link>
+        ))}
+        {items.length === 0 && (
+          <div className="py-6 text-center">
+            <CheckCircle2 className="w-7 h-7 text-emerald-500 mx-auto mb-2" />
+            <p className="text-sm text-text-secondary">{empty}</p>
+          </div>
+        )}
       </div>
     </div>
   );
