@@ -833,7 +833,7 @@ P8 实施切片：
 
 - [x] P8a：Agent 管理页能力摘要，展示 Team、Channel、Skill、MCP、Tool、风险边界和最近执行质量。
 - [x] P8b：Workflow 管理页增强，展示 Hermes-enhanced、Agent Team、Skill/MCP 依赖、审批/验证和最近成功率。
-- [ ] P8c：Hermes 控制台产品化汇总，把 Team 拓扑、Channel 健康、Skill 覆盖、MCP 健康、执行质量和 Evolution 反馈组织成统一管理视图。
+- [x] P8c：Hermes 控制台产品化汇总，把 Team 拓扑、Channel 健康、Skill 覆盖、MCP 健康、执行质量和 Evolution 反馈组织成统一管理视图。
 
 P8a 收敛结果：
 
@@ -863,6 +863,25 @@ P8b 收敛结果：
 - `/api/workflows` 列表和 `/api/workflows/:id` 详情都返回 `capability_summary`。
 - Workflow 管理页卡片增加能力摘要，展示模式、Team、Agent、Skill、MCP、执行质量、门禁和最近状态。
 - 当前边界：P8b 只做只读管理可视化，不新增 Workflow 编排规则，不自动改变审批/验证策略，不改变执行器。
+
+P8c 收敛结果：
+
+- Hermes Control Plane overview 增加 `productSummary`：
+  - teamTopology：团队总数、就绪团队、待补齐团队、已绑定 Agent。
+  - channelHealth：Channel 健康数、异常数、Worker 健康数。
+  - capabilityCoverage：Tool、高风险 Tool、Skill、MCP、异常 MCP、生效 Release。
+  - executionQuality：Worker 运行次数、成功率、失败次数、降级次数。
+  - evolutionFeedback：提案数、待推进提案、复盘队列、过期复盘队列、生效 Release。
+  - riskPosture：critical/warning/info 风险计数和优先处理动作。
+- Hermes 控制台顶部新增“运营态势”摘要卡片，让管理员第一眼看到：
+  - Team 是否齐备。
+  - Channel/Worker 是否健康。
+  - Skill/MCP/Tool/Release 能力是否覆盖。
+  - 运行质量是否有失败或 fallback。
+  - Evolution 是否有待处理提案/队列。
+  - 当前优先风险动作。
+- 保留原有 Team Overview、Control Plane、Worker Status、Channel Detail，P8c 只增加产品化总览层，不移除明细能力。
+- 当前边界：P8c 只做只读运营态势收口，不新增自动修复动作，不自动发布 Release，不改变 Channel/Team 配置。
 
 ### P9：评估与回归测试体系
 

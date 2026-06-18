@@ -93,6 +93,7 @@ export interface HermesControlPlaneOverview {
   workers: HermesWorkerStatus[];
   agentBindings: HermesControlPlaneAgentBinding[];
   capabilityInventory: HermesControlPlaneCapabilityInventory[];
+  productSummary: HermesControlPlaneProductSummary;
   evolutionState: HermesControlPlaneEvolutionState;
   releaseState: {
     active: ReturnType<typeof listEvolutionReleaseVersions>;
@@ -100,6 +101,49 @@ export interface HermesControlPlaneOverview {
   };
   capabilityGraph: HermesControlPlaneCapabilityGraph;
   riskSummary: HermesControlPlaneRiskSummary;
+}
+
+export interface HermesControlPlaneProductSummary {
+  teamTopology: {
+    teams: number;
+    readyTeams: number;
+    pendingTeams: number;
+    boundAgents: number;
+  };
+  channelHealth: {
+    channels: number;
+    healthyChannels: number;
+    unhealthyChannels: number;
+    workers: number;
+    healthyWorkers: number;
+  };
+  capabilityCoverage: {
+    tools: number;
+    highRiskTools: number;
+    skills: number;
+    mcpServers: number;
+    unhealthyMcpServers: number;
+    activeReleases: number;
+  };
+  executionQuality: {
+    workerRuns24h: number;
+    workerSuccessRate: number | null;
+    failedRuns24h: number;
+    fallbackRuns24h: number;
+  };
+  evolutionFeedback: {
+    proposals: number;
+    pendingProposals: number;
+    reviewQueue: number;
+    staleReviewQueue: number;
+    activeReleases: number;
+  };
+  riskPosture: {
+    critical: number;
+    warning: number;
+    info: number;
+    topActions: string[];
+  };
 }
 
 export async function getHermesControlPlaneOverview(): Promise<HermesControlPlaneOverview> {
@@ -116,6 +160,7 @@ export async function getHermesControlPlaneOverview(): Promise<HermesControlPlan
   };
   const capabilityGraph = buildCapabilityGraph(channels, workers, agentBindings, activeReleases);
   const riskSummary = buildRiskSummary(capabilityInventory, agentBindings, evolutionState);
+  const productSummary = buildProductSummary(capabilityInventory, workers, agentBindings, evolutionState, riskSummary);
 
   return {
     generatedAt: new Date().toISOString(),
@@ -123,6 +168,7 @@ export async function getHermesControlPlaneOverview(): Promise<HermesControlPlan
     workers,
     agentBindings,
     capabilityInventory,
+    productSummary,
     evolutionState,
     releaseState,
     capabilityGraph,
@@ -508,6 +554,109 @@ function buildRiskSummary(
     generatedAt: new Date().toISOString(),
     items
   };
+}
+
+function buildProductSummary(
+  inventory: HermesControlPlaneCapabilityInventory[],
+  workers: HermesWorkerStatus[],
+  agentBindings: HermesControlPlaneAgentBinding[],
+  evolutionState: HermesControlPlaneEvolutionState,
+  riskSummary: HermesControlPlaneRiskSummary
+): HermesControlPlaneProductSummary {
+  const totalWorkerRuns = workers.reduce((sum, worker) => sum + Number(worker.runStats?.totalRuns || 0), 0);
+  const successWorkerRuns = workers.reduce((sum, worker) => sum + Number(worker.runStats?.successRuns || 0), 0);
+  const failedWorkerRuns = workers.reduce((sum, worker) => sum + Number(worker.runStats?.failedRuns || 0), 0);
+  const fallbackRuns = inventory.reduce((sum, item) => sum + item.fallbackRuns24h, 0);
+  const proposals = sumRecord(evolutionState.proposalsByStatus);
+  const pendingProposals = ['draft', 'generated', 'eval_pending', 'eval_failed', 'approval_pending']
+    .reduce((sum, status) => sum + Number(evolutionState.proposalsByStatus[status] || 0), 0);
+  const reviewQueue = sumRecord(evolutionState.reviewQueueByStatus);
+  const riskCounts = riskSummary.items.reduce<Record<string, number>>((counts, item) => {
+    counts[item.severity] = Number(counts[item.severity] || 0) + 1;
+    return counts;
+  }, {});
+  const teamTopology = summarizeTeamTopology(agentBindings);
+
+  return {
+    teamTopology,
+    channelHealth: {
+      channels: inventory.length,
+      healthyChannels: inventory.filter((item) => item.healthStatus === 'healthy').length,
+      unhealthyChannels: inventory.filter((item) => item.healthStatus !== 'healthy').length,
+      workers: workers.length,
+      healthyWorkers: workers.filter((worker) => worker.healthy).length
+    },
+    capabilityCoverage: {
+      tools: inventory.reduce((sum, item) => sum + item.enabledTools, 0),
+      highRiskTools: inventory.reduce((sum, item) => sum + item.highRiskTools, 0),
+      skills: inventory.reduce((sum, item) => sum + item.enabledSkills, 0),
+      mcpServers: inventory.reduce((sum, item) => sum + item.enabledMcpServers, 0),
+      unhealthyMcpServers: inventory.reduce((sum, item) => sum + item.unhealthyMcpServers, 0),
+      activeReleases: evolutionState.activeReleaseCount
+    },
+    executionQuality: {
+      workerRuns24h: totalWorkerRuns,
+      workerSuccessRate: totalWorkerRuns > 0 ? Math.round((successWorkerRuns / totalWorkerRuns) * 100) : null,
+      failedRuns24h: failedWorkerRuns,
+      fallbackRuns24h: fallbackRuns
+    },
+    evolutionFeedback: {
+      proposals,
+      pendingProposals,
+      reviewQueue,
+      staleReviewQueue: countRows('evolution_review_queue', "status IN ('queued', 'reviewing') AND created_at <= datetime('now', '-7 days')"),
+      activeReleases: evolutionState.activeReleaseCount
+    },
+    riskPosture: {
+      critical: Number(riskCounts.critical || 0),
+      warning: Number(riskCounts.warning || 0),
+      info: Number(riskCounts.info || 0),
+      topActions: Array.from(new Set(riskSummary.items.map((item) => item.action))).slice(0, 4)
+    }
+  };
+}
+
+function summarizeTeamTopology(agentBindings: HermesControlPlaneAgentBinding[]): HermesControlPlaneProductSummary['teamTopology'] {
+  const rows = db.prepare(`
+    SELECT
+      t.id,
+      m.role,
+      m.required,
+      m.enabled,
+      m.agent_id,
+      m.channel_type
+    FROM agent_teams t
+    LEFT JOIN agent_team_members m ON m.team_id = t.id
+  `).all() as Array<Record<string, unknown>>;
+  const teams = new Map<string, Array<Record<string, unknown>>>();
+  rows.forEach((row) => {
+    const teamId = String(row.id || '');
+    if (!teamId) return;
+    const members = teams.get(teamId) || [];
+    members.push(row);
+    teams.set(teamId, members);
+  });
+
+  let readyTeams = 0;
+  teams.forEach((members) => {
+    const requiredMembers = members.filter((member) => Number(member.required ?? 1) === 1 && Number(member.enabled ?? 1) === 1);
+    const missing = requiredMembers.some((member) => {
+      if (String(member.role || '') === 'leader') return false;
+      return !nullableString(member.channel_type);
+    });
+    if (!missing) readyTeams += 1;
+  });
+
+  return {
+    teams: teams.size,
+    readyTeams,
+    pendingTeams: Math.max(0, teams.size - readyTeams),
+    boundAgents: agentBindings.filter((agent) => Boolean(agent.channel_id)).length
+  };
+}
+
+function sumRecord(value: Record<string, number>): number {
+  return Object.values(value).reduce((sum, count) => sum + Number(count || 0), 0);
 }
 
 function countBy(table: string, column: string, where = '1=1'): Record<string, number> {

@@ -173,6 +173,48 @@ interface HermesControlPlaneOverview {
     workerHealthy: boolean;
     fallbackRuns24h: number;
   }>;
+  productSummary: {
+    teamTopology: {
+      teams: number;
+      readyTeams: number;
+      pendingTeams: number;
+      boundAgents: number;
+    };
+    channelHealth: {
+      channels: number;
+      healthyChannels: number;
+      unhealthyChannels: number;
+      workers: number;
+      healthyWorkers: number;
+    };
+    capabilityCoverage: {
+      tools: number;
+      highRiskTools: number;
+      skills: number;
+      mcpServers: number;
+      unhealthyMcpServers: number;
+      activeReleases: number;
+    };
+    executionQuality: {
+      workerRuns24h: number;
+      workerSuccessRate: number | null;
+      failedRuns24h: number;
+      fallbackRuns24h: number;
+    };
+    evolutionFeedback: {
+      proposals: number;
+      pendingProposals: number;
+      reviewQueue: number;
+      staleReviewQueue: number;
+      activeReleases: number;
+    };
+    riskPosture: {
+      critical: number;
+      warning: number;
+      info: number;
+      topActions: string[];
+    };
+  };
   evolutionState: {
     proposalsByStatus: Record<string, number>;
     proposalsByType: Record<string, number>;
@@ -639,6 +681,8 @@ export default function HermesChannels() {
           </div>
         </div>
 
+        {overview?.productSummary && <ProductSummaryPanel overview={overview} />}
+
         {overview && (
           <DigitalOpsTeamOverview
             overview={overview}
@@ -724,6 +768,143 @@ export default function HermesChannels() {
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+function ProductSummaryPanel({ overview }: { overview: HermesControlPlaneOverview }) {
+  const { t } = useLocale();
+  const summary = overview.productSummary;
+  const quality = summary.executionQuality.workerSuccessRate === null ? '-' : `${summary.executionQuality.workerSuccessRate}%`;
+  const cards: Array<{
+    icon: typeof Bot;
+    title: string;
+    value: string;
+    detail: string;
+    tone: 'normal' | 'warning' | 'critical';
+  }> = [
+    {
+      icon: UsersRound,
+      title: t('hermesChannels.product.teamTopology'),
+      value: `${summary.teamTopology.readyTeams}/${summary.teamTopology.teams}`,
+      detail: t('hermesChannels.product.teamDetail', {
+        agents: summary.teamTopology.boundAgents,
+        pending: summary.teamTopology.pendingTeams
+      }),
+      tone: summary.teamTopology.pendingTeams > 0 ? 'warning' : 'normal'
+    },
+    {
+      icon: Cable,
+      title: t('hermesChannels.product.channelHealth'),
+      value: `${summary.channelHealth.healthyChannels}/${summary.channelHealth.channels}`,
+      detail: t('hermesChannels.product.workerDetail', {
+        healthy: summary.channelHealth.healthyWorkers,
+        total: summary.channelHealth.workers
+      }),
+      tone: summary.channelHealth.unhealthyChannels > 0 || summary.channelHealth.healthyWorkers < summary.channelHealth.workers ? 'critical' : 'normal'
+    },
+    {
+      icon: BookOpenCheck,
+      title: t('hermesChannels.product.capabilityCoverage'),
+      value: `${summary.capabilityCoverage.skills}/${summary.capabilityCoverage.mcpServers}`,
+      detail: t('hermesChannels.product.capabilityDetail', {
+        tools: summary.capabilityCoverage.tools,
+        releases: summary.capabilityCoverage.activeReleases
+      }),
+      tone: summary.capabilityCoverage.unhealthyMcpServers > 0 ? 'warning' : 'normal'
+    },
+    {
+      icon: Activity,
+      title: t('hermesChannels.product.executionQuality'),
+      value: quality,
+      detail: t('hermesChannels.product.executionDetail', {
+        runs: summary.executionQuality.workerRuns24h,
+        failed: summary.executionQuality.failedRuns24h,
+        fallback: summary.executionQuality.fallbackRuns24h
+      }),
+      tone: summary.executionQuality.failedRuns24h > 0 || summary.executionQuality.fallbackRuns24h > 0 ? 'warning' : 'normal'
+    },
+    {
+      icon: GitBranch,
+      title: t('hermesChannels.product.evolutionFeedback'),
+      value: String(summary.evolutionFeedback.pendingProposals),
+      detail: t('hermesChannels.product.evolutionDetail', {
+        proposals: summary.evolutionFeedback.proposals,
+        queue: summary.evolutionFeedback.reviewQueue
+      }),
+      tone: summary.evolutionFeedback.staleReviewQueue > 0 ? 'warning' : 'normal'
+    },
+    {
+      icon: ShieldCheck,
+      title: t('hermesChannels.product.riskPosture'),
+      value: `${summary.riskPosture.critical}/${summary.riskPosture.warning}`,
+      detail: summary.riskPosture.topActions.length > 0
+        ? summary.riskPosture.topActions.map((action) => riskActionText(action, t)).join(' / ')
+        : t('hermesChannels.overview.noRisks'),
+      tone: summary.riskPosture.critical > 0 ? 'critical' : summary.riskPosture.warning > 0 ? 'warning' : 'normal'
+    }
+  ];
+
+  return (
+    <div className={`${panelClass} p-5`}>
+      <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4 mb-4">
+        <div>
+          <div className="inline-flex items-center gap-2 rounded-lg bg-primary/10 border border-primary/20 px-3 py-1.5 text-xs font-semibold text-primary">
+            <ShieldCheck className="w-4 h-4" />
+            {t('hermesChannels.product.badge')}
+          </div>
+          <h2 className="mt-3 text-xl font-semibold text-text-primary">{t('hermesChannels.product.title')}</h2>
+          <p className="mt-2 text-sm text-text-secondary leading-6">{t('hermesChannels.product.subtitle')}</p>
+        </div>
+        <div className="text-xs text-text-tertiary">
+          {t('hermesChannels.overview.generatedAt')}: {formatDateTime(overview.generatedAt)}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+        {cards.map((card) => (
+          <ProductSummaryCard key={card.title} {...card} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ProductSummaryCard({
+  icon: Icon,
+  title,
+  value,
+  detail,
+  tone
+}: {
+  icon: typeof Bot;
+  title: string;
+  value: string;
+  detail: string;
+  tone: 'normal' | 'warning' | 'critical';
+}) {
+  return (
+    <div className={clsx(
+      'rounded-lg border p-4 bg-background',
+      tone === 'critical' ? 'border-red-500/30' : tone === 'warning' ? 'border-amber-500/30' : 'border-border'
+    )}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="text-xs text-text-tertiary">{title}</div>
+          <div className="mt-1 text-2xl font-semibold text-text-primary">{value}</div>
+        </div>
+        <span className={clsx(
+          'inline-flex h-9 w-9 items-center justify-center rounded-lg border',
+          tone === 'critical'
+            ? 'bg-red-500/10 border-red-500/20 text-red-400'
+            : tone === 'warning'
+              ? 'bg-amber-500/10 border-amber-500/20 text-amber-300'
+              : 'bg-primary/10 border-primary/20 text-primary'
+        )}>
+          <Icon className="w-4 h-4" />
+        </span>
+      </div>
+      <div className="mt-2 text-xs text-text-secondary line-clamp-2">{detail}</div>
     </div>
   );
 }
