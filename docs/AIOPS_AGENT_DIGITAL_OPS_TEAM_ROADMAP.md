@@ -912,6 +912,32 @@ P8c 收敛结果：
 - 运行态变更发布前必须经过评估。
 - 回滚有明确触发条件。
 
+P9 实施切片：
+
+- [x] P9a：Eval Dataset 基线与覆盖视图。
+- [ ] P9b：Proposal evaluation 接入 Eval Dataset，输出按样本维度的回归结果。
+- [ ] P9c：Staging replay / shadow run，把候选变更放到隔离环境回放。
+- [ ] P9d：发布阻断和回滚触发条件，把评估结果接入 Release guard。
+
+P9a 收敛结果：
+
+- 新增只读 Eval Dataset overview：
+  - 典型告警样本来自 `alerts`。
+  - 服务器故障来自失败的 `tasks`。
+  - Kubernetes 问题从告警和任务文本中识别。
+  - 历史失败来自失败的 `agent_executions`。
+  - 审批拒绝来自 `tool_approvals`。
+  - 验证失败来自 `evolution_review_queue` 和失败验证任务。
+- Dataset overview 输出：
+  - 六类样本的覆盖数量和最近时间。
+  - 七类评估指标覆盖情况：诊断命中、引用证据、风险判断、危险动作拦截、验证步骤、审批策略、Skill 复用。
+  - 最近样本列表，保留 source、status、risk、correlation/task/approval 关联。
+  - readiness score 和缺失分类 blockers。
+- 新增 API：
+  - `GET /api/evolution-proposals/evaluation-dataset/overview`。
+- Evolution Proposal 页面新增“回归评估数据集”面板，管理员和操作者可直接看到发布前评估样本是否足够。
+- 当前边界：P9a 不新增数据库表，不执行自动评分，不阻断发布；它只把现有运行证据整理成评估数据集基线。发布前强制回归和回滚条件在 P9b/P9d 收敛。
+
 ### P10：企业级部署、治理和持续运营
 
 目标：

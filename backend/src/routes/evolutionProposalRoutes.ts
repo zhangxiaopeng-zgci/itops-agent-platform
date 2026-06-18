@@ -20,6 +20,7 @@ import {
   rollbackEvolutionReleaseVersion
 } from '../services/evolutionReleaseService';
 import { summarizeEvolutionProposalLifecycle } from '../services/evolutionLifecycleService';
+import { buildEvaluationDatasetOverview } from '../services/evaluationDatasetService';
 
 interface AuthenticatedRequest extends Request {
   user?: {
@@ -74,6 +75,14 @@ router.get('/releases/versions/:id/events', requireRole('admin', 'operator', 'vi
     res.json({ success: true, data: listEvolutionReleaseEvents(req.params.id) });
   } catch (error) {
     res.status(500).json({ success: false, error: error instanceof Error ? error.message : 'Failed to list evolution release events' });
+  }
+});
+
+router.get('/evaluation-dataset/overview', requireRole('admin', 'operator', 'viewer'), (_req: Request, res: Response) => {
+  try {
+    res.json({ success: true, data: buildEvaluationDatasetOverview() });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error instanceof Error ? error.message : 'Failed to build evaluation dataset overview' });
   }
 });
 

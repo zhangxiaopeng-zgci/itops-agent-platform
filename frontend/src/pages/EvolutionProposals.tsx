@@ -1,7 +1,7 @@
 import { type ReactNode, useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Archive, CheckCircle2, Clock, FileText, Gauge, PlayCircle, RefreshCw, ShieldCheck, Sparkles, XCircle } from 'lucide-react';
+import { Archive, CheckCircle2, Clock, Database, FileText, Gauge, PlayCircle, RefreshCw, ShieldCheck, Sparkles, XCircle } from 'lucide-react';
 import clsx from 'clsx';
 import api from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
@@ -222,6 +222,55 @@ interface EvolutionQueueItem {
   } | null;
 }
 
+type EvalDatasetCategory =
+  | 'alert_incident'
+  | 'server_fault'
+  | 'kubernetes_issue'
+  | 'historical_failure'
+  | 'approval_rejection'
+  | 'verification_failure';
+
+interface EvalDatasetCase {
+  id: string;
+  category: EvalDatasetCategory;
+  source_type: string;
+  source_id: string;
+  title: string;
+  summary: string;
+  status?: string | null;
+  risk_level?: string | null;
+  correlation_id?: string | null;
+  task_id?: string | null;
+  approval_id?: string | null;
+  expected_signals: string[];
+  coverage_tags: string[];
+  created_at?: string | null;
+}
+
+interface EvalDatasetOverview {
+  categories: Array<{
+    category: EvalDatasetCategory;
+    total: number;
+    ready: boolean;
+    latest_at?: string | null;
+  }>;
+  metrics: Array<{
+    key: string;
+    categories: EvalDatasetCategory[];
+    covered_count: number;
+    ready: boolean;
+  }>;
+  cases: EvalDatasetCase[];
+  readiness: {
+    score: number;
+    covered_categories: number;
+    total_categories: number;
+    total_cases: number;
+    blockers: EvalDatasetCategory[];
+  };
+  generated_at: string;
+}
+
 const panelClass = 'bg-surface/95 rounded-xl border border-border shadow-sm';
 const inputClass = 'w-full px-3 py-2 bg-background border border-border rounded-lg text-text-primary placeholder-text-tertiary focus:outline-none focus:border-primary/60 focus:ring-2 focus:ring-primary/20 transition-all';
 
@@ -336,6 +385,15 @@ export default function EvolutionProposals() {
       return res.data.data as EvolutionQueueItem[];
     },
     refetchInterval: 30000
+  });
+
+  const { data: evalDataset } = useQuery({
+    queryKey: ['evolution-evaluation-dataset'],
+    queryFn: async () => {
+      const res = await api.get('/api/evolution-proposals/evaluation-dataset/overview');
+      return res.data.data as EvalDatasetOverview;
+    },
+    refetchInterval: 60000
   });
 
   const generateMutation = useMutation({
@@ -497,6 +555,8 @@ export default function EvolutionProposals() {
             isRunning={runTaskMutation.isPending}
             onRun={(taskId) => runTaskMutation.mutate(taskId)}
           />
+
+          <EvalDatasetPanel dataset={evalDataset} />
 
           <section className={`${panelClass} p-5`}>
             <div className="flex items-center gap-2 mb-4">
@@ -1109,6 +1169,103 @@ function StatusBadge({ status }: { status: ProposalStatus }) {
       {icon}
       {statusLabel(status)}
     </span>
+  );
+}
+
+function EvalDatasetPanel({ dataset }: { dataset?: EvalDatasetOverview }) {
+  const { t } = useLocale();
+  const readiness = dataset?.readiness;
+  const sampleCases = dataset?.cases.slice(0, 4) || [];
+
+  return (
+    <section className={`${panelClass} p-5`}>
+      <div className="flex items-start justify-between gap-3 mb-4">
+        <div className="flex items-center gap-2 min-w-0">
+          <Database className="w-5 h-5 text-primary shrink-0" />
+          <div className="min-w-0">
+            <h2 className="text-sm font-semibold text-text-primary">{t('evolution.dataset.title')}</h2>
+            <p className="text-xs text-text-tertiary mt-0.5">{t('evolution.dataset.subtitle')}</p>
+          </div>
+        </div>
+        <div className="shrink-0 text-right">
+          <div className="text-2xl font-semibold text-text-primary">{readiness?.score ?? '-'}</div>
+          <div className="text-[11px] text-text-tertiary">{t('evolution.dataset.score')}</div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-2">
+        {(dataset?.categories || []).map((item) => (
+          <div key={item.category} className="rounded-lg bg-background border border-border px-3 py-2 min-w-0">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-xs text-text-tertiary truncate">
+                {t(`evolution.dataset.category.${item.category}` as MessageKey)}
+              </span>
+              <span className={clsx(
+                'shrink-0 h-2 w-2 rounded-full',
+                item.ready ? 'bg-status-success' : 'bg-status-warning'
+              )} />
+            </div>
+            <div className="text-sm font-semibold text-text-primary mt-1">{item.total}</div>
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-4 rounded-lg bg-background border border-border p-3">
+        <div className="flex items-center justify-between gap-3 mb-2">
+          <div className="text-xs font-medium text-text-tertiary">{t('evolution.dataset.metrics')}</div>
+          <div className="text-xs text-text-tertiary">
+            {readiness
+              ? `${readiness.covered_categories}/${readiness.total_categories}`
+              : '-'}
+          </div>
+        </div>
+        <div className="space-y-1.5">
+          {(dataset?.metrics || []).map((metric) => (
+            <div key={metric.key} className="flex items-center justify-between gap-2 text-xs">
+              <span className="text-text-secondary truncate">
+                {t(`evolution.dataset.metric.${metric.key}` as MessageKey)}
+              </span>
+              <span className={clsx(
+                'shrink-0 rounded-full border px-1.5 py-0.5',
+                metric.ready
+                  ? 'bg-status-success/10 text-status-success border-status-success/30'
+                  : 'bg-status-warning/10 text-status-warning border-status-warning/30'
+              )}>
+                {metric.covered_count}/{metric.categories.length}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="mt-4 space-y-2">
+        <div className="text-xs font-medium text-text-tertiary">{t('evolution.dataset.samples')}</div>
+        {sampleCases.map((item) => (
+          <div key={item.id} className="rounded-lg bg-background border border-border px-3 py-2 min-w-0">
+            <div className="flex items-center justify-between gap-2">
+              <div className="text-sm font-medium text-text-primary truncate">{item.title}</div>
+              <span className="shrink-0 text-[11px] text-text-tertiary">
+                {t(`evolution.dataset.category.${item.category}` as MessageKey)}
+              </span>
+            </div>
+            <div className="text-xs text-text-tertiary mt-1 truncate">{item.summary}</div>
+            <div className="mt-1.5 flex flex-wrap gap-1.5">
+              {item.coverage_tags.slice(0, 3).map((tag) => (
+                <span key={`${item.id}-${tag}`} className="rounded-md bg-surface border border-border px-1.5 py-0.5 text-[11px] text-text-tertiary">
+                  {tag}
+                </span>
+              ))}
+            </div>
+          </div>
+        ))}
+        {dataset && sampleCases.length === 0 && (
+          <div className="text-sm text-text-tertiary">{t('evolution.dataset.empty')}</div>
+        )}
+        {!dataset && (
+          <div className="text-sm text-text-tertiary">{t('common.loading')}</div>
+        )}
+      </div>
+    </section>
   );
 }
 
