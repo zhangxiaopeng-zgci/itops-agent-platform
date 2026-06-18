@@ -23,6 +23,29 @@ interface TopologyData {
   edges: TopologyEdge[];
 }
 
+interface ApiTopologyNode {
+  id: string;
+  server_id?: string;
+  server_name?: string;
+  server_ip?: string;
+  name?: string;
+  ip?: string;
+  status?: TopologyNode['status'];
+  type?: string;
+  x?: number;
+  y?: number;
+}
+
+interface ApiTopologyEdge {
+  id?: string;
+  source: string;
+  target: string;
+  dependency_type?: string;
+  type?: string;
+  protocol?: string;
+  status?: TopologyEdge['status'];
+}
+
 interface Server {
   id: string;
   name: string;
@@ -98,7 +121,7 @@ export default function Topology() {
     queryKey: ['topology', 'global'],
     queryFn: async () => {
       const res = await api.get('/api/topology/global');
-      return res.data.data as TopologyData;
+      return normalizeTopologyData(res.data.data);
     },
   });
 
@@ -106,7 +129,7 @@ export default function Topology() {
     queryKey: ['topology', 'dependencies'],
     queryFn: async () => {
       const res = await api.get('/api/topology/dependency');
-      return res.data.data as Dependency[];
+      return normalizeDependencies(res.data.data);
     },
   });
 
@@ -386,4 +409,44 @@ export default function Topology() {
       </div>
     </div>
   );
+}
+
+function normalizeTopologyData(value: unknown): TopologyData {
+  const data = value && typeof value === 'object' ? value as { nodes?: ApiTopologyNode[]; edges?: ApiTopologyEdge[] } : {};
+
+  return {
+    nodes: Array.isArray(data.nodes)
+      ? data.nodes.map((node) => ({
+        id: node.id,
+        name: node.name || node.server_name || node.server_id || node.id,
+        status: node.status || 'online',
+        ip: node.ip || node.server_ip,
+        x: node.x,
+        y: node.y
+      }))
+      : [],
+    edges: Array.isArray(data.edges)
+      ? data.edges.map((edge) => ({
+        source: edge.source,
+        target: edge.target,
+        protocol: edge.protocol || edge.type || edge.dependency_type,
+        status: edge.status || 'active'
+      }))
+      : []
+  };
+}
+
+function normalizeDependencies(value: unknown): Dependency[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.map((dep: ApiTopologyEdge) => ({
+    id: dep.id,
+    source: dep.source,
+    target: dep.target,
+    type: dep.type || dep.dependency_type || '-',
+    protocol: dep.protocol || '-',
+    status: dep.status || 'active'
+  }));
 }
