@@ -39,6 +39,14 @@ interface Credential {
   usage_count?: number;
 }
 
+interface KubernetesCluster {
+  id: string;
+  name: string;
+  status?: string;
+  node_count?: number;
+  pod_count?: number;
+}
+
 function toArray<T>(value: unknown, keys: string[] = []): T[] {
   if (Array.isArray(value)) return value as T[];
   if (value && typeof value === 'object') {
@@ -81,10 +89,20 @@ export default function AssetsCenter() {
     staleTime: 60000,
   });
 
+  const { data: kubernetesClusters = [] } = useQuery({
+    queryKey: ['assets-center', 'kubernetes-clusters'],
+    queryFn: async () => {
+      const res = await api.get('/api/kubernetes-clusters');
+      return toArray<KubernetesCluster>(res.data.data, ['clusters', 'items']);
+    },
+    staleTime: 60000,
+  });
+
   const enabledServers = servers.filter((server) => server.enabled === 1);
   const onlineNetworkDevices = networkDevices.filter((device) => ['online', 'active', 'success'].includes(String(device.status || '').toLowerCase()));
   const passwordCredentials = credentials.filter((credential) => credential.auth_type === 'password').length;
   const keyCredentials = credentials.filter((credential) => credential.auth_type === 'key').length;
+  const healthyKubernetesClusters = kubernetesClusters.filter((cluster) => ['healthy', 'online', 'active', 'ready'].includes(String(cluster.status || '').toLowerCase())).length;
 
   const assetFamilies = [
     {
@@ -108,10 +126,10 @@ export default function AssetsCenter() {
     {
       titleKey: 'assetsCenter.family.kubernetes.title',
       descriptionKey: 'assetsCenter.family.kubernetes.desc',
-      count: 0,
-      helper: t('assetsCenter.family.kubernetes.helper'),
+      count: kubernetesClusters.length,
+      helper: t('assetsCenter.family.kubernetes.helper', { count: healthyKubernetesClusters }),
       icon: Boxes,
-      href: '',
+      href: '/kubernetes-clusters',
       tone: 'text-emerald-500 bg-emerald-500/10',
     },
     {
@@ -168,6 +186,14 @@ export default function AssetsCenter() {
       typeKey: 'assetsCenter.type.network' as MessageKey,
       href: '/network-devices',
       icon: Network,
+    })),
+    ...kubernetesClusters.slice(0, 4).map((cluster) => ({
+      id: `kubernetes-${cluster.id}`,
+      name: cluster.name,
+      meta: `${cluster.node_count || 0} nodes / ${cluster.pod_count || 0} pods`,
+      typeKey: 'assetsCenter.type.kubernetes' as MessageKey,
+      href: '/kubernetes-clusters',
+      icon: Boxes,
     })),
   ].slice(0, 6);
 

@@ -94,6 +94,7 @@ const navigationGroups: Array<{
     items: [
       { labelKey: 'nav.bigScreen', href: '/big-screen', icon: Monitor },
       { labelKey: 'nav.networkDevices', href: '/network-devices', icon: Network },
+      { labelKey: 'nav.kubernetesClusters', href: '/kubernetes-clusters', icon: ServerCog },
       { labelKey: 'nav.credentials', href: '/ssh-keys', icon: Key },
       { labelKey: 'nav.servers', href: '/servers', icon: Server },
       { labelKey: 'nav.terminal', href: '/terminal', icon: Terminal },

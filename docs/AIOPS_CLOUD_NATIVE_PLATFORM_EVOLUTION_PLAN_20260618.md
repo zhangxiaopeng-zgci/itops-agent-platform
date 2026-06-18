@@ -136,6 +136,12 @@ User first chooses the affected object, then diagnoses or executes from that obj
 
 ## Phase 3 - Kubernetes Cluster Management
 
+Status:
+
+```text
+Baseline started in this implementation.
+```
+
 Goal:
 
 ```text
@@ -164,6 +170,16 @@ Sync nodes, namespaces, workloads, pods, services, and events.
 Auto-link Kubernetes nodes to host assets by internal IP and hostname.
 Support manual node-to-host bind and unbind.
 Show cluster health, API server status, Kubernetes version, node health, abnormal pods, recent events, and node-host coverage.
+```
+
+Implemented baseline:
+
+```text
+Added Kubernetes asset inventory tables for clusters, nodes, namespaces, workloads, pods, services, and events.
+Added /api/kubernetes-clusters for cluster registration, list, detail, delete, asset aggregation, and connection metadata validation.
+Added Kubernetes Cluster Management page for registering clusters and viewing inventory counters.
+Connected Assets And Access Center to real Kubernetes cluster counts and navigation.
+Kept live kubeconfig/token probing and sync for the next implementation slice.
 ```
 
 Acceptance:
