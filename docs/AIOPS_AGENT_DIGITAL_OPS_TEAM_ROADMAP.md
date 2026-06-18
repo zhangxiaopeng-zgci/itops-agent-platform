@@ -1281,7 +1281,7 @@ P11 实施切片：
 
 - [x] P11a：验收清单和测试矩阵，固化角色、页面、API、部署、数据、发布治理检查项。
 - [x] P11b：远端测试机真实验收，按矩阵执行并记录通过/失败证据。
-- [ ] P11c：补齐验收中发现的小缺口，只做稳定化修复，不扩展大功能。
+- [x] P11c：补齐验收中发现的小缺口，只做稳定化修复，不扩展大功能。
 - [ ] P11d：运维交付手册，覆盖部署、备份恢复、容器重建、Hermes 配置、发布治理和回滚。
 - [ ] P11e：验收报告和版本标识，固化当前 commit、部署状态、已知边界和下一阶段建议。
 
@@ -1336,6 +1336,31 @@ P11b 收敛结果：
   - 主题仅验证入口和文案，未做截图对比。
   - 运维交付手册等待 P11d。
 - 当前边界：P11b 已完成第一轮真实验收并记录证据；warning 项进入 P11c/P11d 收口，不在 P11b 内扩展新能力。
+
+P11c 收敛结果：
+
+- 新增稳定化证据文档：
+  - `docs/AGENT_RUNTIME_STAGE_31_P11C_STABILIZATION.md`。
+- 在测试机补齐 viewer/operator 验收账号：
+  - `p11_viewer`：viewer，只读路径和高风险阻断验证。
+  - `p11_operator`：operator，操作者创建提案和发布/回滚阻断验证。
+- 角色权限验证通过：
+  - viewer 可读取生产就绪和进化提案列表。
+  - viewer 创建 evolution proposal 被 403 阻断。
+  - viewer 通过 Hermes 助手进入修复编排模式被 403 阻断。
+  - operator 可创建 P3 smoke proposal，并已由 admin 归档。
+  - operator approve / publish / rollback 均被 403 阻断。
+- 主题视觉补测通过：
+  - 通过浏览器在 `/settings` 切换浅色、深色、跟随系统。
+  - 扫描 `/big-screen`、`/agents`、`/hermes`、`/ops-readiness`。
+  - 三种模式下核心页面 console error 均为 0。
+  - 浅色模式下 `/big-screen` 使用浅色卡片体系，不再呈现突兀深色孤岛。
+  - 采样页面未发现明显文本裁切。
+- `active_release_tracking` 处理策略：
+  - 保留为 non-blocking warning，不在 P11c 强行发布测试 release。
+  - 原因是 P11c 只做稳定化，不临时改变 release ledger 运行态。
+  - 该 warning 应通过一次完整 evaluation / staging replay / approval / publish 流程自然消除，或在 P11e 专项验收中记录为已知边界。
+- 当前边界：P11c 已收口 P11b 的账号、权限、主题 warning；运维交付手册进入 P11d，最终验收报告和版本标识进入 P11e。
 
 验收：
 
