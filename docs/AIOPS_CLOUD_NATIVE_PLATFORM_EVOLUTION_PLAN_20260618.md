@@ -317,7 +317,13 @@ Kubernetes clusters are manageable assets and can be correlated with underlying 
 Status:
 
 ```text
-Planned after Kubernetes asset baseline and before deep diagnosis/execution workspace expansion.
+Discovery baseline documented after Kubernetes asset baseline.
+```
+
+Discovery document:
+
+```text
+docs/HERMES_DASHBOARD_KANBAN_BRIDGE_DISCOVERY_20260618.md
 ```
 
 Goal:
@@ -443,6 +449,7 @@ Recommended implementation slices:
 3B-1: Discovery spike
   Deploy or connect Hermes Dashboard in the test environment.
   Confirm URL structure, auth, Kanban persistence, deep links, and available APIs.
+  Baseline findings are documented in docs/HERMES_DASHBOARD_KANBAN_BRIDGE_DISCOVERY_20260618.md.
 
 3B-2: Read-only bridge
   Add settings, health probe, navigation link, and external link table.
