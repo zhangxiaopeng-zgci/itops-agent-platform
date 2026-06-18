@@ -34,6 +34,80 @@ Capability Control Plane
 
 Evolution Governance Center
   Proposals, evaluations, staging replay, approvals, releases, runtime overlays, audit, and rollback.
+
+Hermes Dashboard And Kanban Bridge
+  Reuse the upstream Hermes Dashboard and durable Kanban board for Agent task visualization where it fits.
+```
+
+## External Hermes Dashboard Decision
+
+Decision:
+
+```text
+Introduce Hermes Dashboard / Hermes Kanban as an optional external operator console instead of rebuilding every Agent task board inside this platform.
+```
+
+Rationale:
+
+```text
+Hermes already provides a dashboard surface for API key/configuration management, sessions, status, and operational visibility.
+Hermes Kanban is designed as a durable task board for Agent work items and can reduce duplicated Kanban, run history, and worker log development.
+This AIOps platform should keep ownership of assets, credentials, approvals, production execution, audit, release governance, and role boundaries.
+Hermes Dashboard should be integrated as a companion control surface, not as the system of record for production changes.
+```
+
+Boundary:
+
+```text
+AIOps source of truth:
+  assets, topology, users, roles, approvals, tasks, workflows, audit, releases, policies.
+
+Hermes Dashboard source of truth:
+  Hermes sessions, Agent work queue, Kanban task state, Hermes run history, worker visibility.
+
+Shared bridge:
+  correlationId, hermesSessionId, taskId, approvalId, proposalId, asset references, user/role context.
+```
+
+Integration principles:
+
+```text
+Prefer deep links, iframe/embed, and API bridge before copying UI.
+Keep SSO/session handling explicit.
+Keep dangerous tool execution behind AIOps approvals even if Hermes Kanban moves a card forward.
+Mirror only minimal state needed for audit and navigation.
+Support disabling Hermes Dashboard integration if the deployment cannot run it.
+```
+
+External references:
+
+```text
+User-provided WeChat reference for product/architecture direction:
+  https://mp.weixin.qq.com/s/CYfrtxi18fxmdEpPgTFEkQ
+  Note: the article body must be manually extracted if precise concepts need to be mapped into requirements.
+
+Hermes Kanban user guide:
+  https://github.com/NousResearch/hermes-agent/blob/main/website/docs/user-guide/features/kanban.md
+
+Hermes Kanban RFC / implementation tracking:
+  https://github.com/NousResearch/hermes-agent/issues/16102
+
+Hermes Agent v0.9.0 release note for Local Web Dashboard:
+  https://github.com/NousResearch/hermes-agent/releases
+```
+
+User-reference interpretation guardrail:
+
+```text
+When applying the WeChat reference, first extract concrete principles into:
+  operating model
+  task board model
+  human-agent collaboration boundary
+  observability model
+  governance model
+
+Do not turn the reference into broad UI duplication.
+Only implement ideas that strengthen the AIOps + Hermes division of responsibility.
 ```
 
 ## Phase 1 - Today Ops Workbench
@@ -186,6 +260,125 @@ Acceptance:
 
 ```text
 Kubernetes clusters are manageable assets and can be correlated with underlying hosts.
+```
+
+## Phase 3B - Hermes Dashboard And Kanban Bridge
+
+Status:
+
+```text
+Planned after Kubernetes asset baseline and before deep diagnosis/execution workspace expansion.
+```
+
+Goal:
+
+```text
+Reuse Hermes Dashboard and its built-in durable Kanban as the Agent work queue and visibility surface, reducing duplicated dashboard development inside AIOps Agent.
+```
+
+Why now:
+
+```text
+The platform already has Hermes workers, channels, sessions, traces, approvals, tasks, evolution proposals, and a growing operator workspace.
+Without a bridge, AIOps may duplicate Hermes task board, run history, worker log, and Agent execution visibility.
+With a bridge, the platform can focus on assets, production safety, and operational workflows while Hermes provides the Agent-native board.
+```
+
+Target experience:
+
+```text
+Operator opens AIOps Workbench.
+If the task is an Agent work item, AIOps shows the linked Hermes Kanban card or opens the embedded Hermes Dashboard view.
+If the task requires production action, AIOps keeps approval, execution, audit, and verification in its own Execution Center.
+Every cross-system action carries correlationId and deep links back to AIOps.
+```
+
+Work items:
+
+```text
+Add Hermes Dashboard integration settings:
+  dashboardUrl
+  enabled
+  embedMode: link | iframe | sidecar
+  authMode: none | reverse_proxy | token
+  allowedOrigins
+
+Add a Hermes Dashboard health probe:
+  reachable
+  version/capability summary if available
+  kanbanAvailable
+  lastCheckedAt
+
+Add navigation entry under Capability Control Plane:
+  Hermes Dashboard
+  Hermes Kanban
+
+Add AIOps-to-Hermes deep links:
+  Hermes session -> dashboard session/run
+  Evolution proposal -> Kanban card
+  Diagnosis/Execution correlation -> Kanban lane/card
+
+Add Hermes-to-AIOps callback contract:
+  correlationId
+  externalCardId
+  externalRunId
+  externalTaskState
+  linked approvalId/taskId/proposalId
+
+Add state mirror table:
+  hermes_external_links
+  source_type
+  source_id
+  correlation_id
+  external_system
+  external_url
+  external_card_id
+  external_state
+  last_synced_at
+
+Add security guard:
+  iframe allowlist
+  role-based visibility
+  read-only fallback
+  no direct production execution bypass
+```
+
+Acceptance:
+
+```text
+Operators can jump from AIOps task/proposal/session context to Hermes Dashboard/Kanban and return with correlation intact.
+AIOps does not duplicate Hermes Kanban UI.
+Production execution still goes through AIOps approval, task, audit, and verification controls.
+The integration can be disabled without breaking core AIOps workflows.
+```
+
+Risks:
+
+```text
+Hermes Dashboard API and deep-link contract may not be stable enough for tight coupling.
+Embedding may require reverse proxy, auth, and CSP adjustments.
+Kanban card state must not be treated as production approval.
+If Hermes Dashboard is unavailable, AIOps must degrade to native session/proposal/task views.
+```
+
+Recommended implementation slices:
+
+```text
+3B-1: Discovery spike
+  Deploy or connect Hermes Dashboard in the test environment.
+  Confirm URL structure, auth, Kanban persistence, deep links, and available APIs.
+
+3B-2: Read-only bridge
+  Add settings, health probe, navigation link, and external link table.
+  Show Hermes Dashboard link/embed from Hermes Assistant, Evolution Proposals, and Capability Control Plane.
+
+3B-3: Correlation bridge
+  Write externalCardId/externalRunId onto Hermes sessions, proposals, tasks, and trace views.
+  Add jump-back links from Hermes work items to AIOps pages where possible.
+
+3B-4: Operational contract
+  Define which Kanban lane transitions can create AIOps proposals or approval drafts.
+  Keep publish/execution gated inside AIOps.
 ```
 
 ## Phase 4 - Unified Asset Topology
@@ -496,13 +689,14 @@ New users can complete a diagnosis-to-execution loop without understanding every
 1. Today Ops Workbench
 2. Assets And Access Center
 3. Kubernetes Cluster Management
-4. Diagnosis Center Workspace
-5. Execution Center Workspace
-6. Kubernetes Diagnosis And Execution
-7. Capability Control Plane
-8. Evolution Governance Center
-9. Role-Based Navigation
-10. Guided Onboarding
+4. Hermes Dashboard And Kanban Bridge
+5. Diagnosis Center Workspace
+6. Execution Center Workspace
+7. Kubernetes Diagnosis And Execution
+8. Capability Control Plane
+9. Evolution Governance Center
+10. Role-Based Navigation
+11. Guided Onboarding
 ```
 
 The reason for this order:
@@ -511,6 +705,7 @@ The reason for this order:
 First solve how users start.
 Then define what objects they operate.
 Then add Kubernetes.
+Then reuse Hermes-native Dashboard/Kanban before duplicating Agent work board features.
 Then deepen diagnosis and execution.
 Then close capability governance and continuous evolution.
 ```
