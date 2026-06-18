@@ -457,6 +457,26 @@ export class BackupService {
     return [...this.backupHistory];
   }
 
+  getBackupInfo(backupId: string): BackupInfo {
+    const backup = this.backupHistory.find(b => b.id === backupId);
+    if (!backup) {
+      throw new Error('Backup not found');
+    }
+    return { ...backup };
+  }
+
+  async verifyBackupIntegrity(backupId: string): Promise<{ verified: boolean; checksum?: string; fileExists: boolean }> {
+    const backup = this.getBackupInfo(backupId);
+    const fileExists = fs.existsSync(backup.filePath);
+    if (!fileExists) {
+      return { verified: false, fileExists };
+    }
+
+    const verified = await this.verifyBackup(backup.filePath);
+    const checksum = verified ? await this.calculateChecksum(backup.filePath) : backup.checksum;
+    return { verified, checksum, fileExists };
+  }
+
   getStatus(): {
     isRunning: boolean;
     lastBackup?: BackupInfo;

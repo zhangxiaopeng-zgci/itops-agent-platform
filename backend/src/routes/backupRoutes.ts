@@ -5,9 +5,20 @@ import { requireRole } from '../middleware/auth';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
+import {
+  createBackupRestoreDrill,
+  listBackupRestoreDrills
+} from '../services/backupRestoreDrillService';
 
 const router = Router();
 const upload = multer({ dest: '/tmp/itops-uploads/' });
+
+interface AuthenticatedRequest extends Request {
+  user?: {
+    id: string;
+    role: string;
+  };
+}
 
 router.get('/status', requireRole('admin'), (req: Request, res: Response) => {
   try {
@@ -55,6 +66,37 @@ router.get('/history', requireRole('admin'), (req: Request, res: Response) => {
   } catch (error) {
     logger.error('Failed to get backup history', error as Error);
     res.status(500).json({
+      success: false,
+      message: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+router.get('/restore-drills', requireRole('admin', 'operator', 'viewer'), (req: Request, res: Response) => {
+  try {
+    const drills = listBackupRestoreDrills(req.query.limit ? Number(req.query.limit) : 20);
+    res.json({ success: true, data: drills });
+  } catch (error) {
+    logger.error('Failed to get backup restore drills', error as Error);
+    res.status(500).json({
+      success: false,
+      message: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
+router.post('/restore-drills', requireRole('admin'), async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const drill = await createBackupRestoreDrill({
+      backupId: String(req.body?.backupId || ''),
+      drillType: typeof req.body?.drillType === 'string' ? req.body.drillType : undefined,
+      notes: typeof req.body?.notes === 'string' ? req.body.notes : undefined,
+      createdBy: req.user?.id || null
+    });
+    res.status(201).json({ success: true, data: drill });
+  } catch (error) {
+    logger.error('Failed to create backup restore drill', error as Error);
+    res.status(400).json({
       success: false,
       message: error instanceof Error ? error.message : 'Unknown error'
     });

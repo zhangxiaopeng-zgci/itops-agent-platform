@@ -6,6 +6,7 @@ import { backupService } from './backupService';
 import { getHermesWorkerStatuses, HermesWorkerStatus } from './hermesWorkerService';
 import { listEvolutionReleaseVersions } from './evolutionReleaseService';
 import { listEvolutionProposals } from './evolutionProposalService';
+import { listBackupRestoreDrills } from './backupRestoreDrillService';
 
 export type OpsReadinessStatus = 'ready' | 'warning' | 'blocked';
 
@@ -45,6 +46,9 @@ export interface OpsReadinessSummary {
     totalBackups: number;
     lastBackupAt: string | null;
     lastBackupVerified: boolean;
+    restoreDrills: number;
+    lastRestoreDrillAt: string | null;
+    lastRestoreDrillStatus: string | null;
     totalBackupSize: number;
     databaseSize: number;
   };
@@ -70,6 +74,8 @@ export async function buildOpsReadinessSummary(): Promise<OpsReadinessSummary> {
   const releases = listEvolutionReleaseVersions({ status: 'active', limit: 200 });
   const approvedProposals = listEvolutionProposals({ status: 'approved', limit: 1 }).total;
   const pendingApprovalProposals = listEvolutionProposals({ status: 'approval_pending', limit: 1 }).total;
+  const restoreDrills = listBackupRestoreDrills(20);
+  const lastRestoreDrill = restoreDrills[0] || null;
   const checks: OpsReadinessCheck[] = [];
 
   const databasePersistent = isPersistentDatabasePath(env.DATABASE_PATH);
@@ -132,6 +138,15 @@ export async function buildOpsReadinessSummary(): Promise<OpsReadinessSummary> {
     message: lastBackup
       ? `Latest backup verified=${lastBackup.verified}.`
       : 'No backup verification evidence is available.'
+  }));
+  checks.push(check({
+    key: 'restore_drill_recorded',
+    category: 'data',
+    status: lastRestoreDrill?.status === 'passed' ? 'ready' : 'warning',
+    required: false,
+    message: lastRestoreDrill
+      ? `Latest restore drill status is ${lastRestoreDrill.status}.`
+      : 'No restore drill record has been created yet.'
   }));
   checks.push(check({
     key: 'hermes_workers_configured',
@@ -211,6 +226,9 @@ export async function buildOpsReadinessSummary(): Promise<OpsReadinessSummary> {
       totalBackups: backupStatus.totalBackups,
       lastBackupAt: lastBackup?.createdAt || null,
       lastBackupVerified: Boolean(lastBackup?.verified),
+      restoreDrills: restoreDrills.length,
+      lastRestoreDrillAt: lastRestoreDrill?.completed_at || null,
+      lastRestoreDrillStatus: lastRestoreDrill?.status || null,
       totalBackupSize: backupStatus.totalSize,
       databaseSize: health.database.size
     },

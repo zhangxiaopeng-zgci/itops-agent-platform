@@ -1,8 +1,10 @@
-import { useQuery } from '@tanstack/react-query';
-import { Activity, Archive, CheckCircle2, Database, RefreshCw, ServerCog, ShieldCheck, XCircle } from 'lucide-react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Activity, Archive, CheckCircle2, Database, PlayCircle, RefreshCw, ServerCog, ShieldCheck, XCircle } from 'lucide-react';
 import clsx from 'clsx';
 import api from '../lib/api';
 import { useLocale, type MessageKey } from '../contexts/LocaleContext';
+import { useAuth } from '../contexts/AuthContext';
+import { useToast } from '../contexts/ToastContext';
 
 type ReadinessStatus = 'ready' | 'warning' | 'blocked';
 type CheckCategory = 'deployment' | 'runtime' | 'data' | 'release' | 'security';
@@ -53,6 +55,9 @@ interface OpsReadinessSummary {
     totalBackups: number;
     lastBackupAt?: string | null;
     lastBackupVerified: boolean;
+    restoreDrills: number;
+    lastRestoreDrillAt?: string | null;
+    lastRestoreDrillStatus?: string | null;
     totalBackupSize: number;
     databaseSize: number;
   };
@@ -70,11 +75,35 @@ interface OpsReadinessSummary {
   generatedAt: string;
 }
 
+interface BackupInfo {
+  id: string;
+  filename: string;
+  size: number;
+  createdAt: string;
+  verified: boolean;
+}
+
+interface BackupRestoreDrill {
+  id: string;
+  backup_id: string;
+  backup_filename: string;
+  drill_type: string;
+  status: 'passed' | 'failed' | 'warning';
+  verification_status: string;
+  notes?: string | null;
+  created_at: string;
+  completed_at?: string | null;
+}
+
 const panelClass = 'rounded-xl border border-border bg-surface/95 shadow-sm';
 const categories: CheckCategory[] = ['deployment', 'runtime', 'data', 'release', 'security'];
 
 export default function OpsReadiness() {
   const { t } = useLocale();
+  const { user } = useAuth();
+  const toast = useToast();
+  const queryClient = useQueryClient();
+  const canRunRestoreDrill = user?.role === 'admin';
   const { data, isLoading, refetch, isFetching } = useQuery({
     queryKey: ['ops-readiness-summary'],
     queryFn: async () => {
@@ -82,6 +111,45 @@ export default function OpsReadiness() {
       return res.data.data as OpsReadinessSummary;
     },
     refetchInterval: 30000
+  });
+  const { data: backups } = useQuery({
+    queryKey: ['backup-history'],
+    enabled: canRunRestoreDrill,
+    queryFn: async () => {
+      const res = await api.get('/api/backups/history');
+      return res.data.data as BackupInfo[];
+    },
+    refetchInterval: 60000
+  });
+  const { data: restoreDrills } = useQuery({
+    queryKey: ['backup-restore-drills'],
+    queryFn: async () => {
+      const res = await api.get('/api/backups/restore-drills?limit=5');
+      return res.data.data as BackupRestoreDrill[];
+    },
+    refetchInterval: 30000
+  });
+  const restoreDrillMutation = useMutation({
+    mutationFn: async () => {
+      const backupId = backups?.[0]?.id;
+      if (!backupId) {
+        throw new Error(t('opsReadiness.drill.noBackup'));
+      }
+      const res = await api.post('/api/backups/restore-drills', {
+        backupId,
+        drillType: 'restore_validation',
+        notes: t('opsReadiness.drill.defaultNotes')
+      });
+      return res.data.data as BackupRestoreDrill;
+    },
+    onSuccess: () => {
+      toast.success(t('opsReadiness.drill.created'));
+      queryClient.invalidateQueries({ queryKey: ['backup-restore-drills'] });
+      queryClient.invalidateQueries({ queryKey: ['ops-readiness-summary'] });
+    },
+    onError: (error: unknown) => {
+      toast.error(error instanceof Error ? error.message : t('opsReadiness.drill.failed'));
+    }
   });
 
   return (
@@ -137,7 +205,14 @@ export default function OpsReadiness() {
 
           <section className="grid grid-cols-1 xl:grid-cols-3 gap-4">
             <WorkersPanel workers={data.hermesWorkers} />
-            <DataPanel summary={data} />
+            <DataPanel
+              summary={data}
+              backups={backups || []}
+              restoreDrills={restoreDrills || []}
+              canRunRestoreDrill={canRunRestoreDrill}
+              isRunningRestoreDrill={restoreDrillMutation.isPending}
+              onRunRestoreDrill={() => restoreDrillMutation.mutate()}
+            />
             <EnvironmentPanel summary={data} />
           </section>
         </>
@@ -230,19 +305,66 @@ function WorkersPanel({ workers }: { workers: HermesWorkerStatus[] }) {
   );
 }
 
-function DataPanel({ summary }: { summary: OpsReadinessSummary }) {
+function DataPanel({
+  summary,
+  backups,
+  restoreDrills,
+  canRunRestoreDrill,
+  isRunningRestoreDrill,
+  onRunRestoreDrill
+}: {
+  summary: OpsReadinessSummary;
+  backups: BackupInfo[];
+  restoreDrills: BackupRestoreDrill[];
+  canRunRestoreDrill: boolean;
+  isRunningRestoreDrill: boolean;
+  onRunRestoreDrill: () => void;
+}) {
   const { t } = useLocale();
+  const latestBackup = backups[0];
   return (
     <section className={`${panelClass} p-4`}>
-      <div className="flex items-center gap-2 mb-3">
-        <Database className="w-4 h-4 text-primary" />
-        <h2 className="text-sm font-semibold text-text-primary">{t('opsReadiness.data.title')}</h2>
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 mb-3">
+        <div className="flex items-center gap-2">
+          <Database className="w-4 h-4 text-primary" />
+          <h2 className="text-sm font-semibold text-text-primary">{t('opsReadiness.data.title')}</h2>
+        </div>
+        {canRunRestoreDrill && (
+          <button
+            disabled={!latestBackup || isRunningRestoreDrill}
+            onClick={onRunRestoreDrill}
+            className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-background border border-border text-xs text-text-secondary hover:text-text-primary hover:border-primary/40 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            <PlayCircle className="w-4 h-4" />
+            {isRunningRestoreDrill ? t('opsReadiness.drill.running') : t('opsReadiness.drill.run')}
+          </button>
+        )}
       </div>
       <div className="grid grid-cols-2 gap-2">
         <Metric label={t('opsReadiness.data.databaseSize')} value={formatBytes(summary.data.databaseSize)} />
         <Metric label={t('opsReadiness.data.backupSize')} value={formatBytes(summary.data.totalBackupSize)} />
         <Metric label={t('opsReadiness.data.lastBackup')} value={formatTime(summary.data.lastBackupAt)} />
         <Metric label={t('opsReadiness.data.verified')} value={summary.data.lastBackupVerified ? t('common.yes') : t('common.no')} />
+        <Metric label={t('opsReadiness.data.restoreDrills')} value={String(summary.data.restoreDrills)} />
+        <Metric label={t('opsReadiness.data.lastDrill')} value={formatTime(summary.data.lastRestoreDrillAt)} />
+      </div>
+      <div className="mt-3 space-y-2">
+        <div className="text-xs font-medium text-text-tertiary">{t('opsReadiness.drill.recent')}</div>
+        {restoreDrills.length === 0 ? (
+          <div className="text-sm text-text-tertiary">{t('opsReadiness.drill.empty')}</div>
+        ) : restoreDrills.slice(0, 3).map((drill) => (
+          <div key={drill.id} className="rounded-lg bg-background border border-border px-3 py-2">
+            <div className="flex items-center justify-between gap-2">
+              <div className="min-w-0">
+                <div className="text-sm font-medium text-text-primary truncate">{drill.backup_filename}</div>
+                <div className="text-xs text-text-tertiary mt-1 truncate">
+                  {drill.verification_status} · {formatTime(drill.completed_at)}
+                </div>
+              </div>
+              <StatusPill status={drill.status === 'passed' ? 'ready' : drill.status === 'failed' ? 'blocked' : 'warning'} />
+            </div>
+          </div>
+        ))}
       </div>
     </section>
   );

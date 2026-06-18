@@ -1081,7 +1081,7 @@ P9d 收敛结果：
 P10 实施切片：
 
 - [x] P10a：生产治理就绪度只读清单，集中展示部署、运行、数据、发布和安全治理状态。
-- [ ] P10b：备份恢复演练记录，保存演练时间、操作者、结果和恢复验证证据。
+- [x] P10b：备份恢复演练记录，保存演练时间、操作者、结果和恢复验证证据。
 - [ ] P10c：容器删除重建恢复演练，把 compose 网络 alias、volume、healthcheck 和 Hermes Worker 状态纳入验证。
 - [ ] P10d：发布审计导出，按 release version 汇总 proposal、evaluation、staging replay、release guard、rollback event。
 - [ ] P10e：高风险发布治理，接入 change window 和双人审批策略。
@@ -1109,6 +1109,34 @@ P10a 收敛结果：
   - 按类别展示检查项。
   - 展示 Hermes Worker、数据持久化和环境摘要。
 - 当前边界：P10a 只读，不触发备份、恢复、容器重建或发布动作；演练记录和审计导出由 P10b/P10d 补齐。
+
+P10b 收敛结果：
+
+- 新增数据库表：
+  - `backup_restore_drills`。
+- 新增恢复演练记录能力：
+  - 记录 backup id / filename。
+  - 记录 drill type。
+  - 记录 passed / failed / warning。
+  - 记录 verification status。
+  - 记录操作者、创建时间、完成时间。
+  - 保存 evidence JSON。
+- 新增 API：
+  - `GET /api/backups/restore-drills`。
+  - `POST /api/backups/restore-drills`。
+- 演练执行方式：
+  - 使用最近或指定备份做 dry-run restore validation。
+  - 只读取备份文件并运行 SQLite integrity check。
+  - 计算/保留 checksum。
+  - 明确 `noDatabaseMutation=true`。
+  - 不覆盖当前数据库。
+  - 不触发 backend restart。
+- 生产就绪页面增强：
+  - 数据持久化卡片显示 restore drill 数量和最近演练时间。
+  - admin 可从页面发起“演练验证”。
+  - 页面显示最近恢复演练记录、验证状态和结果。
+  - readiness data 分组新增 `restore_drill_recorded` 检查项。
+- 当前边界：P10b 只做恢复演练证据记录，不执行真实数据库恢复；真实恢复仍使用现有 `/api/backups/restore/:id`，容器删除重建演练在 P10c 收敛。
 
 ## 最小可用版本
 
