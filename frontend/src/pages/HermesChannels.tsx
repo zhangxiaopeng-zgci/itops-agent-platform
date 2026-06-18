@@ -64,6 +64,13 @@ interface HermesChannel {
   max_tool_rounds: number;
   temperature?: number | null;
   policy_id?: string | null;
+  delegate_allowed: number;
+  max_concurrent_children: number;
+  max_spawn_depth: number;
+  allowed_worker_lanes: string[];
+  allowed_external_cli_workers: string[];
+  kanban_required_for_long_running: number;
+  circuit_breaker_threshold: number;
   enabled: number;
   health_status: string;
   last_checked_at?: string | null;
@@ -355,6 +362,13 @@ interface ChannelFormState {
   max_tool_rounds: number;
   temperature: number;
   policy_id: string;
+  delegate_allowed: boolean;
+  max_concurrent_children: number;
+  max_spawn_depth: number;
+  allowed_worker_lanes: string[];
+  allowed_external_cli_workers: string[];
+  kanban_required_for_long_running: boolean;
+  circuit_breaker_threshold: number;
   enabled: boolean;
   tools: string[];
   skills: string[];
@@ -492,6 +506,13 @@ export default function HermesChannels() {
         max_tool_rounds: form.max_tool_rounds,
         temperature: form.temperature,
         policy_id: form.policy_id || null,
+        delegate_allowed: form.delegate_allowed,
+        max_concurrent_children: form.max_concurrent_children,
+        max_spawn_depth: form.max_spawn_depth,
+        allowed_worker_lanes: form.allowed_worker_lanes,
+        allowed_external_cli_workers: form.allowed_external_cli_workers,
+        kanban_required_for_long_running: form.kanban_required_for_long_running,
+        circuit_breaker_threshold: form.circuit_breaker_threshold,
         enabled: form.enabled,
         tools: form.tools,
         skills: form.skills,
@@ -1912,6 +1933,71 @@ function ChannelDetails({
           <textarea disabled={!canManage} className={`${inputClass} resize-none h-20`} value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} />
         </Field>
 
+        <div className="mt-5 rounded-lg border border-border bg-background/70 p-4">
+          <div className="flex items-start justify-between gap-4 mb-4">
+            <div>
+              <h4 className="text-sm font-semibold text-text-primary">{t('hermesChannels.delegation.title')}</h4>
+              <p className="text-xs text-text-tertiary mt-1">{t('hermesChannels.delegation.desc')}</p>
+            </div>
+            <GitBranch className="w-5 h-5 text-primary" />
+          </div>
+
+          <label className={clsx('flex items-center gap-3 rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text-secondary', !canManage && 'opacity-75')}>
+            <input
+              type="checkbox"
+              disabled={!canManage}
+              checked={form.delegate_allowed}
+              onChange={(event) => setForm({ ...form, delegate_allowed: event.target.checked })}
+              className="h-4 w-4 rounded border-border text-primary focus:ring-primary/30"
+            />
+            {t('hermesChannels.delegation.delegateAllowed')}
+          </label>
+
+          <div className="mt-4 grid grid-cols-1 lg:grid-cols-3 gap-4">
+            <Field label={t('hermesChannels.delegation.maxConcurrentChildren')}>
+              <input disabled={!canManage} type="number" min="0" max="10" className={inputClass} value={form.max_concurrent_children} onChange={(event) => setForm({ ...form, max_concurrent_children: Number(event.target.value) })} />
+            </Field>
+            <Field label={t('hermesChannels.delegation.maxSpawnDepth')}>
+              <input disabled={!canManage} type="number" min="0" max="5" className={inputClass} value={form.max_spawn_depth} onChange={(event) => setForm({ ...form, max_spawn_depth: Number(event.target.value) })} />
+            </Field>
+            <Field label={t('hermesChannels.delegation.circuitBreakerThreshold')}>
+              <input disabled={!canManage} type="number" min="1" max="20" className={inputClass} value={form.circuit_breaker_threshold} onChange={(event) => setForm({ ...form, circuit_breaker_threshold: Number(event.target.value) })} />
+            </Field>
+          </div>
+
+          <div className="mt-4 grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <Field label={t('hermesChannels.delegation.workerLanes')}>
+              <input
+                disabled={!canManage}
+                className={inputClass}
+                value={form.allowed_worker_lanes.join(', ')}
+                onChange={(event) => setForm({ ...form, allowed_worker_lanes: splitCsv(event.target.value) })}
+                placeholder="evidence, logs, topology"
+              />
+            </Field>
+            <Field label={t('hermesChannels.delegation.externalCliWorkers')}>
+              <input
+                disabled={!canManage}
+                className={inputClass}
+                value={form.allowed_external_cli_workers.join(', ')}
+                onChange={(event) => setForm({ ...form, allowed_external_cli_workers: splitCsv(event.target.value) })}
+                placeholder="codex, claude-code"
+              />
+            </Field>
+          </div>
+
+          <label className={clsx('mt-4 flex items-center gap-3 rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text-secondary', !canManage && 'opacity-75')}>
+            <input
+              type="checkbox"
+              disabled={!canManage}
+              checked={form.kanban_required_for_long_running}
+              onChange={(event) => setForm({ ...form, kanban_required_for_long_running: event.target.checked })}
+              className="h-4 w-4 rounded border-border text-primary focus:ring-primary/30"
+            />
+            {t('hermesChannels.delegation.kanbanRequired')}
+          </label>
+        </div>
+
         {canManage && (
           <div className="flex justify-end mt-5">
             <button
@@ -2035,9 +2121,20 @@ function formFromChannel(channel: HermesChannel): ChannelFormState {
     max_tool_rounds: channel.max_tool_rounds || 3,
     temperature: channel.temperature ?? 0.2,
     policy_id: channel.policy_id || '',
+    delegate_allowed: channel.delegate_allowed === 1,
+    max_concurrent_children: channel.max_concurrent_children ?? 3,
+    max_spawn_depth: channel.max_spawn_depth ?? 1,
+    allowed_worker_lanes: channel.allowed_worker_lanes || [],
+    allowed_external_cli_workers: channel.allowed_external_cli_workers || [],
+    kanban_required_for_long_running: channel.kanban_required_for_long_running !== 0,
+    circuit_breaker_threshold: channel.circuit_breaker_threshold || 3,
     enabled: channel.enabled === 1,
     tools: (channel.tools || []).filter((tool) => tool.enabled === 1).map((tool) => tool.tool_name),
     skills: (channel.skills || []).filter((skill) => skill.enabled === 1 && skill.binding_enabled === 1).map((skill) => skill.skill_id),
     mcpServers: (channel.mcpServers || []).filter((server) => server.enabled === 1 && server.binding_enabled === 1).map((server) => server.mcp_server_id)
   };
+}
+
+function splitCsv(value: string): string[] {
+  return Array.from(new Set(value.split(',').map((item) => item.trim()).filter(Boolean)));
 }

@@ -318,6 +318,7 @@ Status:
 
 ```text
 Read-only bridge baseline implemented after Kubernetes asset baseline.
+Delegation policy baseline implemented at Hermes Channel level.
 ```
 
 Discovery document:
@@ -465,6 +466,20 @@ Recommended implementation slices:
 3B-3: Delegation policy baseline
   Add channel-level delegation limits, allowed lanes, and circuit-breaker settings.
   Render delegation capability summary in Capability Control Plane.
+  Implemented baseline:
+    hermes_channels.delegate_allowed
+    hermes_channels.max_concurrent_children
+    hermes_channels.max_spawn_depth
+    hermes_channels.allowed_worker_lanes
+    hermes_channels.allowed_external_cli_workers
+    hermes_channels.kanban_required_for_long_running
+    hermes_channels.circuit_breaker_threshold
+    Hermes runtime channel config exposes delegationPolicy
+    Hermes Channel console supports editing delegation policy
+  Boundary:
+    This phase defines governance and runtime metadata.
+    It does not yet perform real external Hermes Kanban scheduling.
+    Production-changing actions remain gated by AIOps approval/task controls.
 
 3B-4: Correlation bridge
   Write externalCardId/externalRunId onto Hermes sessions, proposals, tasks, and trace views.

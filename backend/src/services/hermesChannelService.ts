@@ -28,6 +28,13 @@ export interface HermesChannelRecord {
   max_tool_rounds: number;
   temperature: number | null;
   policy_id: string | null;
+  delegate_allowed: number;
+  max_concurrent_children: number;
+  max_spawn_depth: number;
+  allowed_worker_lanes: string[];
+  allowed_external_cli_workers: string[];
+  kanban_required_for_long_running: number;
+  circuit_breaker_threshold: number;
   enabled: number;
   health_status: string;
   last_checked_at: string | null;
@@ -60,6 +67,13 @@ export interface HermesChannelInput {
   max_tool_rounds?: number;
   temperature?: number | null;
   policy_id?: string | null;
+  delegate_allowed?: boolean | number;
+  max_concurrent_children?: number;
+  max_spawn_depth?: number;
+  allowed_worker_lanes?: string[];
+  allowed_external_cli_workers?: string[];
+  kanban_required_for_long_running?: boolean | number;
+  circuit_breaker_threshold?: number;
   enabled?: boolean | number;
   tools?: string[];
   skills?: string[];
@@ -80,6 +94,15 @@ export interface HermesRuntimeChannelConfig {
   mcpServers?: McpRuntimeContext[];
   temperature?: number;
   policyId?: string | null;
+  delegationPolicy?: {
+    delegateAllowed: boolean;
+    maxConcurrentChildren: number;
+    maxSpawnDepth: number;
+    allowedWorkerLanes: string[];
+    allowedExternalCliWorkers: string[];
+    kanbanRequiredForLongRunning: boolean;
+    circuitBreakerThreshold: number;
+  };
 }
 
 export function listHermesChannels(): HermesChannelRecord[] {
@@ -111,10 +134,14 @@ export function createHermesChannel(input: HermesChannelInput, createdBy?: strin
   db.prepare(`
     INSERT INTO hermes_channels (
       id, name, description, type, runtime_type, base_url, model, api_key_ref,
-      timeout_ms, max_tool_rounds, temperature, policy_id, enabled, created_by,
+      timeout_ms, max_tool_rounds, temperature, policy_id,
+      delegate_allowed, max_concurrent_children, max_spawn_depth,
+      allowed_worker_lanes, allowed_external_cli_workers,
+      kanban_required_for_long_running, circuit_breaker_threshold,
+      enabled, created_by,
       created_at, updated_at
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
   `).run(
     id,
     normalized.name,
@@ -128,6 +155,13 @@ export function createHermesChannel(input: HermesChannelInput, createdBy?: strin
     normalized.max_tool_rounds,
     normalized.temperature,
     normalized.policy_id,
+    normalized.delegate_allowed,
+    normalized.max_concurrent_children,
+    normalized.max_spawn_depth,
+    JSON.stringify(normalized.allowed_worker_lanes || []),
+    JSON.stringify(normalized.allowed_external_cli_workers || []),
+    normalized.kanban_required_for_long_running,
+    normalized.circuit_breaker_threshold,
     normalized.enabled,
     createdBy || null
   );
@@ -157,6 +191,13 @@ export function updateHermesChannel(id: string, input: HermesChannelInput): Herm
     max_tool_rounds: normalized.max_tool_rounds ?? current.max_tool_rounds,
     temperature: normalized.temperature !== undefined ? normalized.temperature : current.temperature,
     policy_id: normalized.policy_id !== undefined ? normalized.policy_id : current.policy_id,
+    delegate_allowed: normalized.delegate_allowed ?? current.delegate_allowed,
+    max_concurrent_children: normalized.max_concurrent_children ?? current.max_concurrent_children,
+    max_spawn_depth: normalized.max_spawn_depth ?? current.max_spawn_depth,
+    allowed_worker_lanes: normalized.allowed_worker_lanes ?? current.allowed_worker_lanes,
+    allowed_external_cli_workers: normalized.allowed_external_cli_workers ?? current.allowed_external_cli_workers,
+    kanban_required_for_long_running: normalized.kanban_required_for_long_running ?? current.kanban_required_for_long_running,
+    circuit_breaker_threshold: normalized.circuit_breaker_threshold ?? current.circuit_breaker_threshold,
     enabled: normalized.enabled ?? current.enabled
   };
 
@@ -173,6 +214,13 @@ export function updateHermesChannel(id: string, input: HermesChannelInput): Herm
         max_tool_rounds = ?,
         temperature = ?,
         policy_id = ?,
+        delegate_allowed = ?,
+        max_concurrent_children = ?,
+        max_spawn_depth = ?,
+        allowed_worker_lanes = ?,
+        allowed_external_cli_workers = ?,
+        kanban_required_for_long_running = ?,
+        circuit_breaker_threshold = ?,
         enabled = ?,
         updated_at = CURRENT_TIMESTAMP
     WHERE id = ?
@@ -188,6 +236,13 @@ export function updateHermesChannel(id: string, input: HermesChannelInput): Herm
     merged.max_tool_rounds,
     merged.temperature,
     merged.policy_id,
+    merged.delegate_allowed,
+    merged.max_concurrent_children,
+    merged.max_spawn_depth,
+    JSON.stringify(merged.allowed_worker_lanes || []),
+    JSON.stringify(merged.allowed_external_cli_workers || []),
+    merged.kanban_required_for_long_running,
+    merged.circuit_breaker_threshold,
     merged.enabled,
     id
   );
@@ -259,7 +314,16 @@ export function channelToRuntimeConfig(channel: HermesChannelRecord): HermesRunt
     skills,
     mcpServers,
     temperature: channel.temperature ?? undefined,
-    policyId: channel.policy_id
+    policyId: channel.policy_id,
+    delegationPolicy: {
+      delegateAllowed: channel.delegate_allowed === 1,
+      maxConcurrentChildren: channel.max_concurrent_children,
+      maxSpawnDepth: channel.max_spawn_depth,
+      allowedWorkerLanes: channel.allowed_worker_lanes,
+      allowedExternalCliWorkers: channel.allowed_external_cli_workers,
+      kanbanRequiredForLongRunning: channel.kanban_required_for_long_running === 1,
+      circuitBreakerThreshold: channel.circuit_breaker_threshold
+    }
   };
 }
 
@@ -296,6 +360,13 @@ function parseHermesChannel(row: Record<string, unknown>): HermesChannelRecord {
     max_tool_rounds: Number(row.max_tool_rounds || 3),
     temperature: nullableNumber(row.temperature),
     policy_id: nullableString(row.policy_id),
+    delegate_allowed: Number(row.delegate_allowed ?? 0),
+    max_concurrent_children: Number(row.max_concurrent_children || 3),
+    max_spawn_depth: Number(row.max_spawn_depth ?? 1),
+    allowed_worker_lanes: parseStringArray(row.allowed_worker_lanes),
+    allowed_external_cli_workers: parseStringArray(row.allowed_external_cli_workers),
+    kanban_required_for_long_running: Number(row.kanban_required_for_long_running ?? 1),
+    circuit_breaker_threshold: Number(row.circuit_breaker_threshold || 3),
     enabled: Number(row.enabled ?? 1),
     health_status: String(row.health_status || 'unknown'),
     last_checked_at: nullableString(row.last_checked_at),
@@ -393,6 +464,48 @@ function normalizeChannelInput(input: HermesChannelInput, requireName: boolean):
       : null;
   }
 
+  if (input.delegate_allowed !== undefined) {
+    normalized.delegate_allowed = input.delegate_allowed === true || input.delegate_allowed === 1 ? 1 : 0;
+  } else if (requireName) {
+    normalized.delegate_allowed = 0;
+  }
+
+  if (input.max_concurrent_children !== undefined) {
+    normalized.max_concurrent_children = clampNumber(input.max_concurrent_children, 0, 10, 3);
+  } else if (requireName) {
+    normalized.max_concurrent_children = 3;
+  }
+
+  if (input.max_spawn_depth !== undefined) {
+    normalized.max_spawn_depth = clampNumber(input.max_spawn_depth, 0, 5, 1);
+  } else if (requireName) {
+    normalized.max_spawn_depth = 1;
+  }
+
+  if (Array.isArray(input.allowed_worker_lanes)) {
+    normalized.allowed_worker_lanes = normalizeStringArray(input.allowed_worker_lanes);
+  } else if (requireName) {
+    normalized.allowed_worker_lanes = [];
+  }
+
+  if (Array.isArray(input.allowed_external_cli_workers)) {
+    normalized.allowed_external_cli_workers = normalizeStringArray(input.allowed_external_cli_workers);
+  } else if (requireName) {
+    normalized.allowed_external_cli_workers = [];
+  }
+
+  if (input.kanban_required_for_long_running !== undefined) {
+    normalized.kanban_required_for_long_running = input.kanban_required_for_long_running === false || input.kanban_required_for_long_running === 0 ? 0 : 1;
+  } else if (requireName) {
+    normalized.kanban_required_for_long_running = 1;
+  }
+
+  if (input.circuit_breaker_threshold !== undefined) {
+    normalized.circuit_breaker_threshold = clampNumber(input.circuit_breaker_threshold, 1, 20, 3);
+  } else if (requireName) {
+    normalized.circuit_breaker_threshold = 3;
+  }
+
   if (input.enabled !== undefined) {
     normalized.enabled = input.enabled === true || input.enabled === 1 ? 1 : 0;
   } else if (requireName) {
@@ -441,6 +554,30 @@ function nullableNumber(value: unknown): number | null {
   if (value === null || value === undefined || value === '') return null;
   const parsed = typeof value === 'number' ? value : Number(value);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+function parseStringArray(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return normalizeStringArray(value);
+  }
+
+  if (typeof value !== 'string' || value.trim().length === 0) {
+    return [];
+  }
+
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return Array.isArray(parsed) ? normalizeStringArray(parsed) : [];
+  } catch {
+    return value.split(',').map((item) => item.trim()).filter(Boolean);
+  }
+}
+
+function normalizeStringArray(values: unknown[]): string[] {
+  return Array.from(new Set(values
+    .filter((value): value is string => typeof value === 'string')
+    .map((value) => value.trim())
+    .filter(Boolean)));
 }
 
 function clampNumber(value: unknown, min: number, max: number, fallback: number): number {
