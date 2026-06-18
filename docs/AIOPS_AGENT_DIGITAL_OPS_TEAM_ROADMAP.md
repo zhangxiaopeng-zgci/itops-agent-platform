@@ -1283,7 +1283,7 @@ P11 实施切片：
 - [x] P11b：远端测试机真实验收，按矩阵执行并记录通过/失败证据。
 - [x] P11c：补齐验收中发现的小缺口，只做稳定化修复，不扩展大功能。
 - [x] P11d：运维交付手册，覆盖部署、备份恢复、容器重建、Hermes 配置、发布治理和回滚。
-- [ ] P11e：验收报告和版本标识，固化当前 commit、部署状态、已知边界和下一阶段建议。
+- [x] P11e：验收报告和版本标识，固化当前 commit、部署状态、已知边界和下一阶段建议。
 
 P11a 收敛结果：
 
@@ -1386,6 +1386,36 @@ P11d 收敛结果：
   - 三个 Hermes Worker healthy。
   - capability bundle、release audit、rollback 步骤可执行。
 - 当前边界：P11d 是文档和运维移交收口，不重新执行全量验收；P11e 负责把 P11a-P11d 的证据汇总成最终验收报告和版本标识。
+
+P11e 收敛结果：
+
+- 新增最终验收报告：
+  - `docs/AGENT_RUNTIME_STAGE_31_P11E_ACCEPTANCE_REPORT.md`。
+- 新增版本标识文件：
+  - `docs/AGENT_RUNTIME_STAGE_31_ACCEPTANCE_VERSION.md`。
+- 固化验收版本：
+  - `AIOps-Agent-P11-20260618.1`。
+  - package version：`3.0.5`。
+  - baseline commit：`7aeba45`。
+- 重新采集测试机运行快照：
+  - backend / frontend / hermes-diagnose / hermes-remediate / hermes-evolve 均 running + healthy。
+  - `/health` 返回 healthy。
+  - `/api/ops-readiness/summary` 返回 score=93，blockers=[]，warnings=[`active_release_tracking`]。
+  - 三个 Hermes Worker configured + healthy。
+  - 最近 restore drill `a50c91a4-4b78-4a18-b683-92a0fa22a2b7` passed。
+  - 最近 container rebuild drill `528a0cb7-b55c-4123-863e-da3b385444e0` passed。
+  - viewer / operator / admin 三类验收账号存在。
+- 验收判定：
+  - `PASS_WITH_WARNINGS`。
+  - required blockers：0。
+  - primary warning：`active_release_tracking`。
+- 已知边界：
+  - 当前没有 active release overlay。
+  - 测试机部署目录不是 git worktree，运行态以 Docker image id、API 快照和验收证据共同确认。
+  - MCP tool execution 仍保持保守边界。
+  - 当前交付目标是单机生产化部署，不是 HA 集群。
+- 下一阶段建议：
+  - P12 进入生产运营闭环，优先做完整发布演练、版本/镜像指纹写入 health、active release 运营视图、MCP 只读 tool execution 灰度、备份恢复自动演练和多环境发布流程。
 
 验收：
 
