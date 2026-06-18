@@ -28,6 +28,7 @@ ITOps Agent Platform 所有技术文档集合。
 - [自动修复设计](./AUTO_REMEDIATION_DESIGN.md) — 告警自动修复功能设计说明
 - [AIOps Agent 数字运维团队路线](./AIOPS_AGENT_DIGITAL_OPS_TEAM_ROADMAP.md) — 从单 Agent 工具升级为 Leader-Worker 数字运维团队的产品化计划
 - [平台功能收口评审](./PLATFORM_CLOSURE_REVIEW_20260618.md) — 运行态验证、重复入口梳理、测试基线和产品化收口建议
+- [平台信息架构收敛](./PLATFORM_INFORMATION_ARCHITECTURE_CONVERGENCE_20260618.md) — 按操作者任务重组诊断、执行、资产、控制台和进化治理入口
 
 ### 👩‍💻 开发文档
 

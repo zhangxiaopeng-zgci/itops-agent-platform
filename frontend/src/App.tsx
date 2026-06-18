@@ -10,6 +10,8 @@ import Layout from './components/layout/Layout';
 import Login from './pages/Login';
 import ForcePasswordChange from './pages/ForcePasswordChange';
 import Dashboard from './pages/Dashboard';
+import DiagnosisCenter from './pages/DiagnosisCenter';
+import ExecutionCenter from './pages/ExecutionCenter';
 import Servers from './pages/Servers';
 import Agents from './pages/Agents';
 import HermesAssistant from './pages/HermesAssistant';
@@ -84,6 +86,8 @@ function App() {
             <Route path="/" element={<ProtectedRoute><Layout /></ProtectedRoute>}>
               <Route index element={<Navigate to="/dashboard" replace />} />
               <Route path="dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+              <Route path="diagnosis-center" element={<ProtectedRoute><DiagnosisCenter /></ProtectedRoute>} />
+              <Route path="execution-center" element={<ProtectedRoute><ExecutionCenter /></ProtectedRoute>} />
               <Route path="servers" element={<ProtectedRoute><Servers /></ProtectedRoute>} />
               <Route path="ssh-keys" element={<ProtectedRoute><SSHKeys /></ProtectedRoute>} />
               <Route path="network-devices" element={<ProtectedRoute><NetworkDevices /></ProtectedRoute>} />

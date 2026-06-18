@@ -71,20 +71,10 @@ const navigationGroups: Array<{
     labelKey: 'nav.operatorWorkspace',
     icon: ServerCog,
     items: [
+      { labelKey: 'nav.diagnosisCenter', href: '/diagnosis-center', icon: AlertTriangle },
+      { labelKey: 'nav.executionCenter', href: '/execution-center', icon: Workflow },
       { labelKey: 'nav.servers', href: '/servers', icon: Server },
       { labelKey: 'nav.terminal', href: '/terminal', icon: Terminal },
-      { labelKey: 'nav.hermes', href: '/hermes', icon: Brain },
-      { labelKey: 'nav.remediationWorkbench', href: '/remediation-workbench', icon: Workflow },
-    ]
-  },
-  {
-    id: 'intelligence',
-    labelKey: 'nav.intelligence',
-    icon: AlertTriangle,
-    items: [
-      { labelKey: 'nav.alerts', href: '/alerts', icon: Bell },
-      { labelKey: 'nav.rootCause', href: '/root-cause-analysis', icon: Search },
-      { labelKey: 'nav.topology', href: '/topology', icon: Network },
     ]
   },
   {
@@ -107,6 +97,11 @@ const navigationGroups: Array<{
       { labelKey: 'nav.networkDevices', href: '/network-devices', icon: Network },
       { labelKey: 'nav.credentials', href: '/ssh-keys', icon: Key },
       { labelKey: 'nav.remoteDesktop', href: '/remote-desktop', icon: MonitorPlay },
+      { labelKey: 'nav.hermes', href: '/hermes', icon: Brain },
+      { labelKey: 'nav.remediationWorkbench', href: '/remediation-workbench', icon: Workflow },
+      { labelKey: 'nav.alerts', href: '/alerts', icon: Bell },
+      { labelKey: 'nav.rootCause', href: '/root-cause-analysis', icon: Search },
+      { labelKey: 'nav.topology', href: '/topology', icon: Network },
       { labelKey: 'nav.workflows', href: '/workflows', icon: GitBranch },
       { labelKey: 'nav.tasks', href: '/tasks', icon: Play },
       { labelKey: 'nav.toolApprovals', href: '/tool-approvals', icon: ShieldAlert },
@@ -131,7 +126,7 @@ const navigationGroups: Array<{
 
 export default function Layout() {
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(
-    new Set(['home', 'operatorWorkspace', 'intelligence', 'platformControl'])
+    new Set(['home', 'operatorWorkspace', 'platformControl'])
   );
 
   const toggleGroup = (groupId: string) => {
