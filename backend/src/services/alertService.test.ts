@@ -6,10 +6,8 @@ import db from '../models/database';
 describe('AlertService', () => {
   let alertService: AlertService;
 
-  beforeAll(() => {
-    // Initialize the database for tests
-    process.env.NODE_ENV = 'test';
-    initializeDatabase();
+  beforeAll(async () => {
+    await initializeDatabase();
   });
 
   beforeEach(() => {

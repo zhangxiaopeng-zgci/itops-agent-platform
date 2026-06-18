@@ -1,7 +1,6 @@
 import { randomUUID } from 'crypto';
 import db from '../models/database';
-import { executeAgentRun } from './agentExecutor';
-import { AgentRunResult } from './agentRuntime/types';
+import type { AgentRunResult } from './agentRuntime/types';
 import { buildExecutionEvidenceSummary } from './executionEvidenceService';
 import { createHermesSession } from './hermesSessionService';
 import { ensureStructuredPatchDescriptor } from './evolutionPatchService';
@@ -423,6 +422,7 @@ export async function generateEvolutionProposal(input: {
   };
 
   try {
+    const { executeAgentRun } = await import('./agentExecutor');
     runResult = await executeAgentRun(agent.id, evolutionPrompt, executionContext);
     output = runResult.output;
   } catch (error) {
@@ -563,6 +563,7 @@ export async function enrichEvolutionProposal(input: {
     if (!agent) {
       throw new Error(`${HERMES_EVOLVE_AGENT_NAME} is not enabled or not found`);
     }
+    const { executeAgentRun } = await import('./agentExecutor');
     runResult = await executeAgentRun(agent.id, prompt, executionContext);
     output = runResult.output;
   } catch (error) {

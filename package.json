@@ -17,7 +17,8 @@
     "docker:restart": "docker-compose down && docker-compose up -d",
     "docker:rebuild": "docker-compose down && docker-compose up -d --build",
     "docker:status": "docker-compose ps",
-    "docker:clean": "docker system prune -f"
+    "docker:clean": "docker system prune -f",
+    "smoke:api": "node scripts/smoke-api.mjs"
   },
   "keywords": ["itops", "agent", "automation", "devops"],
   "author": "",

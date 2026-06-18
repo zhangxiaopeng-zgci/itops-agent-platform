@@ -1,12 +1,44 @@
 import axios from 'axios';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import db, { initializeDatabase } from '../../models/database';
-import { HermesAgentRuntime } from './hermesRuntime';
+
+vi.mock('../toolApi/toolRegistry', () => ({
+  listTools: () => [{
+    name: 'run_workflow',
+    description: 'Run workflow through approval guard.',
+    riskLevel: 'high',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        workflowId: { type: 'string' }
+      }
+    }
+  }],
+  invokeTool: async () => ({
+    success: false,
+    tool: 'run_workflow',
+    decision: {
+      status: 'approval_required',
+      riskLevel: 'high',
+      reason: 'Tool execution requires approval'
+    },
+    data: {
+      approval: {
+        id: 'approval-hermes-runtime-test'
+      }
+    },
+    error: 'Tool execution requires approval',
+    approvalId: 'approval-hermes-runtime-test',
+    auditId: 'audit-hermes-runtime-test'
+  })
+}));
 
 describe('HermesAgentRuntime', () => {
+  let HermesAgentRuntime: typeof import('./hermesRuntime').HermesAgentRuntime;
+
   beforeAll(async () => {
-    process.env.NODE_ENV = 'test';
     await initializeDatabase();
+    ({ HermesAgentRuntime } = await import('./hermesRuntime'));
   });
 
   afterEach(() => {

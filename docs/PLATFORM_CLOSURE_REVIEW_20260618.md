@@ -92,8 +92,16 @@ Passed:
 
 ```text
 backend: npm exec tsc --noEmit
+backend: npm test
 frontend: npm exec tsc --noEmit
 frontend: npm run build
+```
+
+Backend Vitest baseline after closure hardening:
+
+```text
+test files: 7 passed
+tests: 100 passed
 ```
 
 Frontend production build warning:
@@ -105,6 +113,22 @@ main JS chunk is larger than 500 kB after minification
 This does not block operation, but it should be handled by route-level code splitting during product closure.
 
 ### API Smoke
+
+Added reusable smoke entry:
+
+```text
+npm run smoke:api
+```
+
+Latest test-host result:
+
+```text
+API_BASE=http://127.0.0.1:3001 SMOKE_PASSWORD=<admin-password> REQUIRE_ACTIVE_RELEASE=true npm run smoke:api
+passed: 33
+failed: 0
+semantic failures: none
+active releases: 1
+```
 
 Passed representative endpoints:
 
@@ -145,23 +169,18 @@ Passed representative endpoints:
 
 ### Browser Smoke
 
-Passed after topology fix:
+Passed after topology and navigation closure:
 
 ```text
-/dashboard
-/servers
-/agents
+login -> /dashboard
+navigation groups: Ops Workspace / Intelligence / Platform Control / Advanced
+advanced group collapsed by default
 /hermes
-/hermes-channels
-/evolution-proposals
-/ops-readiness
-/workflows
-/tasks
 /topology
-/settings
+/ops-readiness
 ```
 
-The browser test used a real login and checked for page rendering, login redirect, not-found state, and obvious render-error text.
+The browser test used a real login with Playwright and checked page rendering, navigation text, and obvious console/page errors.
 
 ## Fix Applied During Review
 
@@ -208,57 +227,57 @@ Commit:
 fa469d0 fix: normalize topology API data
 ```
 
-## Test Baseline Findings
+## Test Baseline Closure
 
-Backend Vitest currently does not fully pass as a suite.
-
-Observed:
+Completed:
 
 ```text
-84 tests passed
-15 tests failed
-2 suites failed
+backend/src/test/setup.ts
+backend/vitest.config.ts
+backend/src/services/alertService.test.ts
+backend/src/services/agentRuntime/hermesRuntime.test.ts
+backend/src/services/evolutionProposalService.ts
+scripts/smoke-api.mjs
 ```
 
-Failure groups:
-
-1. `alertService.test`
-
-The tests share database initialization state and can hit `Database not initialized` or `SQLITE_BUSY` when run as part of the whole suite. This is a test isolation issue.
-
-2. `hermesRuntime.test`
-
-The test can hit a circular runtime import path when Hermes tool execution dynamically imports the tool registry, which then imports evolution/agent executor code and initializes the runtime registry.
-
-Recommendation:
+Changes:
 
 ```text
-P0: add a Vitest setup file that initializes one isolated test DB per worker or forces single-worker DB tests.
-P0: split hermesRuntime tool-call test away from runtime registry imports by mocking toolRegistry or registering runtime lazily.
-P1: make npm test set NODE_ENV=test, JWT_SECRET and DATABASE_PATH automatically.
+Vitest now sets NODE_ENV, JWT_SECRET, LOG_LEVEL and isolated DATABASE_PATH automatically.
+Backend test files run single-threaded to avoid SQLite contention in the current test design.
+Mac resource-fork files are excluded from Vitest discovery.
+Alert tests await database initialization.
+Hermes runtime test mocks tool registry and imports runtime after mock setup.
+Evolution proposal service lazy-loads agentExecutor to break a real static import cycle.
+API smoke is reusable and checks active release when REQUIRE_ACTIVE_RELEASE=true.
+```
+
+Remaining non-blocking signal:
+
+```text
+healthService tests intentionally exercise the not-initialized DB path and log expected errors.
+Vitest reports MaxListenersExceededWarning from repeated process signal listeners in imported runtime code.
+Frontend production build still warns that the main JS chunk is larger than 500 kB.
 ```
 
 ## Current Product Shape
 
-Current frontend:
+Current frontend after navigation closure:
 
 ```text
 routes: 42
-navigation items: 34
+primary expanded groups: 4
+advanced group: collapsed by default
 ```
 
 Major capability groups:
 
 ```text
-1. Home and monitoring
-2. Server and remote access
-3. Agent / Workflow automation
-4. Hermes assistant and control plane
-5. Evolution proposal / release governance
-6. Alert / RCA / AI analysis
-7. Remediation / self-healing
-8. Knowledge / audit / reports
-9. System / users / settings / readiness
+1. Home
+2. Ops Workspace
+3. Intelligence
+4. Platform Control
+5. Advanced
 ```
 
 This is functionally rich but heavy for day-to-day operators.
@@ -366,26 +385,19 @@ This can be implemented as navigation grouping first, without deleting screens.
 
 ### C1 - Navigation Simplification
 
-Goal: reduce daily operator navigation from 34 items to around 12 primary items.
+Status: first closure pass completed.
 
-Proposed primary nav:
+Current primary nav:
 
 ```text
-Overview
-Servers
-Terminal
-Diagnose
-Remediate
-Workflows
-Tasks
-Hermes Console
-Evolution Releases
-Knowledge
-Audit
-Settings
+Home: Dashboard
+Ops Workspace: Servers, Terminal, Hermes Assistant, Self-healing Workbench, Workflows, Tasks, Tool Approvals
+Intelligence: Alerts, Root Cause, Service Topology, Knowledge Base
+Platform Control: Team Console, Agent Management, Evolution Proposals, Production Readiness, Settings
+Advanced: collapsed secondary/admin pages
 ```
 
-Move these into secondary/contextual links:
+Moved into Advanced:
 
 ```text
 Big Screen
@@ -402,7 +414,6 @@ Remediation Executions
 Scheduled Tasks
 Reports
 Users
-Ops Readiness
 ```
 
 ### C2 - Concept Consolidation
@@ -442,18 +453,23 @@ runtime consumption evidence
 
 ### C4 - Test Baseline Hardening
 
-Make these commands reliable:
+Status: backend test baseline and API smoke completed.
+
+Reliable now:
 
 ```text
-npm run test:backend
-npm run typecheck:backend
-npm run typecheck:frontend
-npm run build:frontend
-npm run smoke:api
-npm run smoke:browser
+npm test                  # from backend
+npm exec tsc --noEmit     # from backend
+npm run build             # from frontend
+npm run smoke:api         # from repo root
 ```
 
-Do this before more feature work.
+Still recommended:
+
+```text
+npm run smoke:browser
+route-level frontend code splitting
+```
 
 ### C5 - Production Build And Deployment Cleanup
 
@@ -472,14 +488,13 @@ Each command should write an evidence artifact under `docs/` or `artifacts/`.
 
 ## Recommended Next Step
 
-Start with C1 + C4:
+Continue closure rather than adding new features:
 
 ```text
-1. Add a platform closure plan doc to roadmap.
-2. Fix backend Vitest isolation.
-3. Add API smoke script.
-4. Add browser smoke script for 10 key routes.
-5. Collapse navigation groups behind role-aware primary entries.
+1. Add a committed browser smoke script for key routes.
+2. Split the largest frontend route chunks.
+3. Convert deployment/smoke commands into a repeatable Makefile or scripts/deploy-test.sh.
+4. Tighten role-aware navigation visibility after operator/admin workflow review.
 ```
 
-This gives the platform a stable acceptance loop and makes the product feel less like a collection of accumulated stages.
+The platform now has a stable API/test acceptance loop and a cleaner operator navigation shape.

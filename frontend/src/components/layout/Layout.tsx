@@ -39,7 +39,6 @@ import {
   ChevronRight,
   Home,
   ServerCog,
-  Zap,
   AlertTriangle,
   ShieldAlert,
   ShieldCheck,
@@ -65,88 +64,74 @@ const navigationGroups: Array<{
     icon: Home,
     items: [
       { labelKey: 'nav.dashboard', href: '/dashboard', icon: LayoutDashboard },
-      { labelKey: 'nav.bigScreen', href: '/big-screen', icon: Monitor },
     ]
   },
   {
-    id: 'serverOps',
-    labelKey: 'nav.serverOps',
+    id: 'operatorWorkspace',
+    labelKey: 'nav.operatorWorkspace',
     icon: ServerCog,
     items: [
       { labelKey: 'nav.servers', href: '/servers', icon: Server },
-      { labelKey: 'nav.networkDevices', href: '/network-devices', icon: Network },
-      { labelKey: 'nav.credentials', href: '/ssh-keys', icon: Key },
       { labelKey: 'nav.terminal', href: '/terminal', icon: Terminal },
-      { labelKey: 'nav.remoteDesktop', href: '/remote-desktop', icon: MonitorPlay },
-    ]
-  },
-  {
-    id: 'automation',
-    labelKey: 'nav.automation',
-    icon: Zap,
-    items: [
-      { labelKey: 'nav.agents', href: '/agents', icon: Bot },
       { labelKey: 'nav.hermes', href: '/hermes', icon: Brain },
-      { labelKey: 'nav.hermesChannels', href: '/hermes-channels', icon: Cable },
-      { labelKey: 'nav.evolutionProposals', href: '/evolution-proposals', icon: Lightbulb },
-      { labelKey: 'nav.toolApprovals', href: '/tool-approvals', icon: ShieldAlert },
+      { labelKey: 'nav.remediationWorkbench', href: '/remediation-workbench', icon: Workflow },
       { labelKey: 'nav.workflows', href: '/workflows', icon: GitBranch },
       { labelKey: 'nav.tasks', href: '/tasks', icon: Play },
-      { labelKey: 'nav.scripts', href: '/scripts', icon: FileCode },
-      { labelKey: 'nav.scheduledTasks', href: '/scheduled-tasks', icon: Clock },
+      { labelKey: 'nav.toolApprovals', href: '/tool-approvals', icon: ShieldAlert },
     ]
   },
   {
-    id: 'alertAi',
-    labelKey: 'nav.alertAi',
+    id: 'intelligence',
+    labelKey: 'nav.intelligence',
     icon: AlertTriangle,
     items: [
       { labelKey: 'nav.alerts', href: '/alerts', icon: Bell },
-      { labelKey: 'nav.alertMappings', href: '/alert-mappings', icon: Link2 },
-      { labelKey: 'nav.alertNoise', href: '/alert-noise', icon: Shield },
       { labelKey: 'nav.rootCause', href: '/root-cause-analysis', icon: Search },
-      { labelKey: 'nav.aiRootCause', href: '/ai-root-cause', icon: Brain },
       { labelKey: 'nav.topology', href: '/topology', icon: Network },
-      { labelKey: 'nav.aiInsights', href: '/ai-insights', icon: Lightbulb },
+      { labelKey: 'nav.knowledge', href: '/knowledge', icon: BookOpen },
     ]
   },
   {
-    id: 'remediation',
-    labelKey: 'nav.remediation',
-    icon: ShieldCheck,
+    id: 'platformControl',
+    labelKey: 'nav.platformControl',
+    icon: Cog,
     items: [
+      { labelKey: 'nav.hermesChannels', href: '/hermes-channels', icon: Cable },
+      { labelKey: 'nav.agents', href: '/agents', icon: Bot },
+      { labelKey: 'nav.evolutionProposals', href: '/evolution-proposals', icon: Lightbulb },
+      { labelKey: 'nav.opsReadiness', href: '/ops-readiness', icon: ShieldCheck },
+      { labelKey: 'nav.settings', href: '/settings', icon: Settings },
+    ]
+  },
+  {
+    id: 'advanced',
+    labelKey: 'nav.advanced',
+    icon: BookMarked,
+    items: [
+      { labelKey: 'nav.bigScreen', href: '/big-screen', icon: Monitor },
+      { labelKey: 'nav.networkDevices', href: '/network-devices', icon: Network },
+      { labelKey: 'nav.credentials', href: '/ssh-keys', icon: Key },
+      { labelKey: 'nav.remoteDesktop', href: '/remote-desktop', icon: MonitorPlay },
+      { labelKey: 'nav.scripts', href: '/scripts', icon: FileCode },
+      { labelKey: 'nav.scheduledTasks', href: '/scheduled-tasks', icon: Clock },
+      { labelKey: 'nav.alertMappings', href: '/alert-mappings', icon: Link2 },
+      { labelKey: 'nav.alertNoise', href: '/alert-noise', icon: Shield },
+      { labelKey: 'nav.aiRootCause', href: '/ai-root-cause', icon: Brain },
+      { labelKey: 'nav.aiInsights', href: '/ai-insights', icon: Lightbulb },
       { labelKey: 'nav.remediationPolicies', href: '/remediation-policies', icon: Wrench },
       { labelKey: 'nav.remediationDashboard', href: '/remediation-dashboard', icon: BarChart3 },
       { labelKey: 'nav.remediationExecutions', href: '/remediation-executions', icon: ListChecks },
-      { labelKey: 'nav.remediationWorkbench', href: '/remediation-workbench', icon: Workflow },
-    ]
-  },
-  {
-    id: 'knowledgeReports',
-    labelKey: 'nav.knowledgeReports',
-    icon: BookMarked,
-    items: [
-      { labelKey: 'nav.knowledge', href: '/knowledge', icon: BookOpen },
       { labelKey: 'nav.audit', href: '/audit', icon: Shield },
       { labelKey: 'nav.notifications', href: '/notifications', icon: MessageSquare },
       { labelKey: 'nav.reports', href: '/reports', icon: FileText },
-    ]
-  },
-  {
-    id: 'systemUsers',
-    labelKey: 'nav.systemUsers',
-    icon: Cog,
-    items: [
       { labelKey: 'nav.users', href: '/users', icon: Users },
-      { labelKey: 'nav.opsReadiness', href: '/ops-readiness', icon: ShieldCheck },
-      { labelKey: 'nav.settings', href: '/settings', icon: Settings },
     ]
   },
 ];
 
 export default function Layout() {
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(
-    new Set(navigationGroups.map((group) => group.id))
+    new Set(['home', 'operatorWorkspace', 'intelligence', 'platformControl'])
   );
 
   const toggleGroup = (groupId: string) => {
