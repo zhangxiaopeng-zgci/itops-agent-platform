@@ -122,6 +122,14 @@ interface ReleaseVersion {
   rollback_reason?: string | null;
 }
 
+interface ProposalEnrichmentResult {
+  proposal: EvolutionProposal;
+  mode: 'hermes' | 'deterministic_fallback';
+  agentExecutionId?: string | null;
+  hermesSessionId?: string | null;
+  error?: string | null;
+}
+
 interface EvolutionTask {
   id: string;
   name: string;
@@ -368,6 +376,23 @@ export default function EvolutionProposals() {
     }
   });
 
+  const enrichMutation = useMutation({
+    mutationFn: async (proposalId: string) => {
+      const res = await api.post(`/api/evolution-proposals/${proposalId}/enrich`);
+      return res.data.data as ProposalEnrichmentResult;
+    },
+    onSuccess: (result) => {
+      toast.success(t('evolution.toast.enriched', { mode: result.mode }));
+      setSelectedId(result.proposal.id);
+      queryClient.invalidateQueries({ queryKey: ['evolution-proposals'] });
+      queryClient.invalidateQueries({ queryKey: ['evolution-proposal-detail', result.proposal.id] });
+      queryClient.invalidateQueries({ queryKey: ['evolution-review-queue'] });
+    },
+    onError: (error: unknown) => {
+      toast.error(error instanceof Error ? error.message : t('evolution.toast.enrichFailed'));
+    }
+  });
+
   const publishMutation = useMutation({
     mutationFn: async (proposalId: string) => {
       const res = await api.post(`/api/evolution-proposals/${proposalId}/publish`, {
@@ -602,6 +627,12 @@ export default function EvolutionProposals() {
                     icon={<Gauge className="w-4 h-4" />}
                     disabled={!canGenerate || evaluateMutation.isPending}
                     onClick={() => evaluateMutation.mutate(activeProposal.id)}
+                  />
+                  <ActionButton
+                    label={enrichMutation.isPending ? t('evolution.enriching') : t('evolution.action.enrich')}
+                    icon={<Sparkles className="w-4 h-4" />}
+                    disabled={!canGenerate || enrichMutation.isPending}
+                    onClick={() => enrichMutation.mutate(activeProposal.id)}
                   />
                   <ActionButton
                     label={t('evolution.action.evalPending')}

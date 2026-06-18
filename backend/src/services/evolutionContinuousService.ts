@@ -9,6 +9,7 @@ import {
 } from './evolutionEvaluationService';
 import {
   createOrGetFeedbackDrivenProposal,
+  enrichEvolutionProposal,
   generateEvolutionProposal,
   getEvolutionProposal,
   type EvolutionProposalRecord,
@@ -20,6 +21,7 @@ export type EvolutionTaskKind =
   | 'weekly_report'
   | 'failure_review'
   | 'rejected_approval_review'
+  | 'proposal_enrichment'
   | 'proposal_promotion';
 
 export interface EvolutionContinuousTaskRecord {
@@ -254,6 +256,8 @@ class EvolutionContinuousService {
         return queueFailureEvidence();
       case 'rejected_approval_review':
         return queueRejectedApprovalEvidence();
+      case 'proposal_enrichment':
+        return enrichCandidateProposals();
       case 'proposal_promotion':
         return promoteHighValueProposals();
       default:
@@ -313,8 +317,9 @@ export function listEvolutionTasks(): EvolutionContinuousTaskRecord[] {
         WHEN 'weekly_report' THEN 2
         WHEN 'failure_review' THEN 3
         WHEN 'rejected_approval_review' THEN 4
-        WHEN 'proposal_promotion' THEN 5
-        ELSE 6
+        WHEN 'proposal_enrichment' THEN 5
+        WHEN 'proposal_promotion' THEN 6
+        ELSE 7
       END
   `).all() as Array<Record<string, unknown>>;
 
@@ -530,6 +535,66 @@ function queueRejectedApprovalEvidence(): Record<string, unknown> {
     generatedProposalId: Array.from(proposalIds)[0] || undefined,
     proposalIds: Array.from(proposalIds),
     rejectedApprovalCandidates: approvals.length
+  };
+}
+
+async function enrichCandidateProposals(): Promise<Record<string, unknown>> {
+  const rows = db.prepare(`
+    SELECT p.id, p.priority, p.status, p.source, p.created_at
+    FROM evolution_proposals p
+    WHERE p.source IN ('feedback_failure', 'verification_failure')
+      AND p.status IN ('draft', 'generated', 'eval_failed')
+      AND NOT EXISTS (
+        SELECT 1
+        FROM evolution_proposal_events e
+        WHERE e.proposal_id = p.id
+          AND e.event_type = 'enriched'
+      )
+    ORDER BY
+      CASE p.priority
+        WHEN 'P0' THEN 1
+        WHEN 'P1' THEN 2
+        WHEN 'P2' THEN 3
+        ELSE 4
+      END,
+      p.created_at DESC
+    LIMIT 3
+  `).all() as Array<{ id: string; priority: string; status: string; source: string; created_at: string }>;
+
+  let enriched = 0;
+  let fallback = 0;
+  let failed = 0;
+  const proposalIds: string[] = [];
+  const errors: Array<{ proposalId: string; error: string }> = [];
+
+  for (const row of rows) {
+    try {
+      const result = await enrichEvolutionProposal({
+        proposalId: row.id,
+        actorId: 'system',
+        userRole: 'operator'
+      });
+      enriched += 1;
+      if (result.mode === 'deterministic_fallback') {
+        fallback += 1;
+      }
+      proposalIds.push(result.proposal.id);
+    } catch (error) {
+      failed += 1;
+      errors.push({
+        proposalId: row.id,
+        error: error instanceof Error ? error.message : String(error)
+      });
+    }
+  }
+
+  return {
+    candidates: rows.length,
+    enriched,
+    fallback,
+    failed,
+    proposalIds,
+    errors
   };
 }
 

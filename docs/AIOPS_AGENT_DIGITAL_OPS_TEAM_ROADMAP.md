@@ -694,7 +694,7 @@ P7 实施切片：
 - [x] P7a：失败反馈确定性生成 Evolution Proposal 候选。
 - [x] P7b：Review Queue 运营视图增强，展示来源、失败原因、生成提案、评估状态和发布价值。
 - [x] P7c：同类问题聚合和重复发生识别，避免一事一提案的噪声。
-- [ ] P7d：复盘 Agent 消费候选证据，补充结构化 patch、评估计划和风险说明。
+- [x] P7d：复盘 Agent 消费候选证据，补充结构化 patch、评估计划和风险说明。
 - [ ] P7e：Proposal -> Evaluation -> Approval -> Release 的运营仪表盘收口。
 
 P7a 收敛结果：
@@ -751,6 +751,30 @@ P7c 收敛结果：
   - 最近样本
 - Evolution Proposal 页面展示“同类重复 N 次 / M 个提案”，帮助操作者识别重复问题和提案噪声。
 - 当前边界：P7c 只对新入队或再次扫描到的反馈写入 cluster；历史无 cluster 的旧数据不做破坏性回填。已 rejected/archived/published 的 proposal 不作为复用代表。
+
+P7d 收敛结果：
+
+- 新增 proposal enrichment 能力：
+  - 手动入口：`POST /api/evolution-proposals/:id/enrich`。
+  - 自动入口：持续进化任务 `proposal_enrichment`，默认每小时第 10 分钟运行。
+- Hermes 复盘进化 Agent 会消费候选 proposal、Review Queue、cluster、已有 evidence 和事件记录，补齐：
+  - Problem evidence
+  - Proposed structured change
+  - Evaluation plan
+  - Risk and rollback
+  - Release guard
+- enrichment 会更新 proposal：
+  - proposal body 追加 P7d enrichment 区块。
+  - evidence_refs 写入 `evolution.proposalEnrichment.v1`。
+  - target_descriptor 重新生成/校验 `evolution.patch.v1` structured patch。
+  - risk_notes 增加 enrichment 模式和治理边界。
+  - 记录 `enriched` event、agent execution 和 Hermes session。
+- Hermes 外部调用失败时不让队列卡死：
+  - 记录 agent execution error。
+  - 使用 deterministic fallback 生成最小可评估 enrichment。
+  - event metadata 标明 `mode=deterministic_fallback` 和 error。
+- Evolution Proposal 页面增加“复盘增强 / Enrich”操作。
+- 当前边界：P7d 只增强候选提案，不自动进入 eval_passed、approval_pending 或 published；是否推进仍由评估和审批决定。
 
 ### P8：Agent / Workflow 管理台产品化
 

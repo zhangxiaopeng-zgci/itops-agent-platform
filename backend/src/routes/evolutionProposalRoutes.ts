@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { requireRole } from '../middleware/auth';
 import {
   createEvolutionProposal,
+  enrichEvolutionProposal,
   generateEvolutionProposal,
   getEvolutionProposal,
   listEvolutionProposalEvents,
@@ -152,6 +153,21 @@ router.post('/:id/evaluate', requireRole('admin', 'operator'), (req: Authenticat
     return res.json({ success: true, data: evaluation });
   } catch (error) {
     return res.status(400).json({ success: false, error: error instanceof Error ? error.message : 'Failed to evaluate evolution proposal' });
+  }
+});
+
+router.post('/:id/enrich', requireRole('admin', 'operator'), async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const result = await enrichEvolutionProposal({
+      proposalId: req.params.id,
+      actorId: req.user?.id || null,
+      userRole: req.user?.role || null,
+      ipAddress: req.ip
+    });
+
+    return res.json({ success: true, data: result });
+  } catch (error) {
+    return res.status(400).json({ success: false, error: error instanceof Error ? error.message : 'Failed to enrich evolution proposal' });
   }
 });
 

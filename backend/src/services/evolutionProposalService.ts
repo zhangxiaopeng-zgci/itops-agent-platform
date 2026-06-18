@@ -86,6 +86,14 @@ export interface FeedbackDrivenProposalInput {
   createdBy?: string | null;
 }
 
+export interface EvolutionProposalEnrichmentResult {
+  proposal: EvolutionProposalRecord;
+  mode: 'hermes' | 'deterministic_fallback';
+  agentExecutionId: string | null;
+  hermesSessionId: string | null;
+  error: string | null;
+}
+
 const PROPOSAL_TYPES = new Set<EvolutionProposalType>([
   'skill_update',
   'workflow_template_update',
@@ -507,6 +515,189 @@ export async function generateEvolutionProposal(input: {
   return proposal;
 }
 
+export async function enrichEvolutionProposal(input: {
+  proposalId: string;
+  actorId?: string | null;
+  userRole?: string | null;
+  ipAddress?: string | null;
+}): Promise<EvolutionProposalEnrichmentResult> {
+  const proposal = getEvolutionProposal(input.proposalId);
+  if (!proposal) {
+    throw new Error('Evolution proposal not found');
+  }
+  if (['approved', 'published', 'rejected', 'archived'].includes(proposal.status)) {
+    throw new Error(`Cannot enrich proposal in ${proposal.status} status`);
+  }
+
+  const evidencePackage = collectProposalEnrichmentEvidence(proposal);
+  const agent = db.prepare(`
+    SELECT id, name
+    FROM agents
+    WHERE name = ?
+      AND enabled = 1
+    LIMIT 1
+  `).get(HERMES_EVOLVE_AGENT_NAME) as { id: string; name: string } | undefined;
+
+  const correlationId = proposal.correlation_id || `evolution-enrich-${randomUUID()}`;
+  const prompt = buildProposalEnrichmentPrompt(proposal, evidencePackage);
+  const executionId = randomUUID();
+  const startTime = Date.now();
+  let runResult: AgentRunResult | null = null;
+  let output = '';
+  let errorMessage: string | null = null;
+  let executionStatus = 'success';
+  let mode: EvolutionProposalEnrichmentResult['mode'] = 'hermes';
+  const executionContext = {
+    source: 'evolution_proposal_enrichment',
+    mode: 'review',
+    userId: input.actorId || undefined,
+    userRole: input.userRole || 'operator',
+    ipAddress: input.ipAddress,
+    correlationId,
+    agentExecutionId: executionId,
+    proposalId: proposal.id,
+    proposalType: proposal.type
+  };
+
+  try {
+    if (!agent) {
+      throw new Error(`${HERMES_EVOLVE_AGENT_NAME} is not enabled or not found`);
+    }
+    runResult = await executeAgentRun(agent.id, prompt, executionContext);
+    output = runResult.output;
+  } catch (error) {
+    mode = 'deterministic_fallback';
+    executionStatus = 'error';
+    errorMessage = error instanceof Error ? error.message : String(error);
+    output = buildDeterministicEnrichmentOutput(proposal, evidencePackage, errorMessage);
+  }
+
+  const agentExecutionId = agent ? executionId : null;
+  if (agent) {
+    db.prepare(`
+      INSERT INTO agent_executions (
+        id, agent_id, agent_name, input_text, output_text, status, error_message,
+        execution_time_ms, metadata, created_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+    `).run(
+      executionId,
+      agent.id,
+      agent.name,
+      prompt,
+      output,
+      executionStatus,
+      errorMessage,
+      Date.now() - startTime,
+      JSON.stringify({
+        source: 'evolution_proposal_enrichment',
+        correlationId,
+        proposalId: proposal.id,
+        proposalType: proposal.type,
+        runtime: runResult?.metadata?.runtime || 'hermes',
+        runtimeMetadata: runResult?.metadata || {},
+        executionEvidence: buildExecutionEvidenceSummary({
+          inputText: prompt,
+          outputText: output,
+          errorMessage,
+          status: executionStatus,
+          context: executionContext,
+          trace: runResult?.trace || [],
+          runtimeMetadata: runResult?.metadata || {},
+          agentId: agent.id,
+          agentName: agent.name
+        }),
+        trace: runResult?.trace || []
+      })
+    );
+  }
+
+  const hermesSession = agent ? createHermesSession({
+    agentExecutionId: executionId,
+    agentId: agent.id,
+    agentName: agent.name,
+    mode: 'review',
+    input: prompt,
+    output,
+    selectedContext: {
+      source: 'evolution_proposal_enrichment',
+      proposalId: proposal.id,
+      evidencePackage
+    },
+    trace: runResult?.trace || [],
+    correlationId,
+    status: executionStatus,
+    createdBy: input.actorId || null
+  }) : null;
+
+  const enrichedBody = mergeEnrichedProposalBody(proposal.proposal_body, output, mode);
+  const enrichedEvidenceRefs = mergeProposalEvidenceRefs(proposal.evidence_refs, {
+    schemaVersion: 'evolution.proposalEnrichment.v1',
+    mode,
+    proposalId: proposal.id,
+    agentExecutionId,
+    hermesSessionId: hermesSession?.id || null,
+    error: errorMessage,
+    evidencePackage,
+    enrichedAt: new Date().toISOString()
+  });
+  const targetDescriptor = ensureStructuredPatchDescriptor({
+    proposalType: proposal.type,
+    title: proposal.title,
+    proposalBody: enrichedBody,
+    targetDescriptor: proposal.target_descriptor,
+    evidenceRefs: enrichedEvidenceRefs
+  });
+  const riskNotes = buildEnrichedRiskNotes(proposal.risk_notes, mode, errorMessage);
+  const nextStatus = proposal.status === 'draft' ? 'generated' : proposal.status;
+
+  db.prepare(`
+    UPDATE evolution_proposals
+    SET proposal_body = ?,
+        evidence_refs = ?,
+        risk_notes = ?,
+        target_descriptor = ?,
+        status = ?,
+        agent_execution_id = COALESCE(?, agent_execution_id),
+        hermes_session_id = COALESCE(?, hermes_session_id),
+        updated_at = CURRENT_TIMESTAMP
+    WHERE id = ?
+  `).run(
+    enrichedBody,
+    JSON.stringify(enrichedEvidenceRefs),
+    riskNotes,
+    JSON.stringify(targetDescriptor),
+    nextStatus,
+    agentExecutionId,
+    hermesSession?.id || null,
+    proposal.id
+  );
+
+  appendProposalEvent(
+    proposal.id,
+    'enriched',
+    input.actorId || null,
+    mode === 'hermes'
+      ? 'Proposal enriched by Hermes Evolve from candidate evidence'
+      : 'Proposal enriched with deterministic fallback after Hermes Evolve failed',
+    {
+      mode,
+      agentExecutionId,
+      hermesSessionId: hermesSession?.id || null,
+      error: errorMessage,
+      queueItemCount: Array.isArray(evidencePackage.reviewQueue) ? evidencePackage.reviewQueue.length : 0
+    }
+  );
+
+  return {
+    proposal: getEvolutionProposal(proposal.id)!,
+    mode,
+    agentExecutionId,
+    hermesSessionId: hermesSession?.id || null,
+    error: errorMessage
+  };
+}
+
 function inferFeedbackProposalType(sourceType: string): EvolutionProposalType {
   if (sourceType === 'tool_approval') return 'tool_policy_update';
   if (sourceType === 'task' || sourceType === 'workflow_task') return 'workflow_template_update';
@@ -586,6 +777,193 @@ function buildFeedbackImprovementDirection(type: EvolutionProposalType, sourceTy
     return `- Review the related skill guidance for ${sourceType.replace(/_/g, ' ')} and add evidence, fallback, or verification instructions.`;
   }
   return '- Review the relevant runtime capability and propose a minimal controlled improvement.';
+}
+
+function collectProposalEnrichmentEvidence(proposal: EvolutionProposalRecord): Record<string, unknown> {
+  const queueItems = db.prepare(`
+    SELECT id, source_type, source_id, reason, priority, status, correlation_id,
+           generated_proposal_id, cluster_key, normalized_reason, created_at, reviewed_at
+    FROM evolution_review_queue
+    WHERE generated_proposal_id = ?
+    ORDER BY created_at DESC
+    LIMIT 20
+  `).all(proposal.id) as Array<Record<string, unknown>>;
+
+  const clusterKey = queueItems.find(item => typeof item.cluster_key === 'string')?.cluster_key as string | undefined;
+  const clusterItems = clusterKey ? db.prepare(`
+    SELECT id, source_type, source_id, reason, priority, status, correlation_id,
+           generated_proposal_id, cluster_key, normalized_reason, created_at, reviewed_at
+    FROM evolution_review_queue
+    WHERE cluster_key = ?
+    ORDER BY created_at DESC
+    LIMIT 20
+  `).all(clusterKey) as Array<Record<string, unknown>> : [];
+
+  const events = db.prepare(`
+    SELECT event_type, actor_id, comment, metadata, created_at
+    FROM evolution_proposal_events
+    WHERE proposal_id = ?
+    ORDER BY created_at DESC
+    LIMIT 20
+  `).all(proposal.id) as Array<Record<string, unknown>>;
+
+  return sanitizeValue({
+    schemaVersion: 'evolution.proposalEnrichmentEvidence.v1',
+    proposal: {
+      id: proposal.id,
+      title: proposal.title,
+      type: proposal.type,
+      status: proposal.status,
+      priority: proposal.priority,
+      source: proposal.source,
+      sourceRef: proposal.source_ref,
+      correlationId: proposal.correlation_id,
+      createdAt: proposal.created_at
+    },
+    targetDescriptor: proposal.target_descriptor,
+    evidenceRefs: proposal.evidence_refs,
+    reviewQueue: queueItems.map(formatQueueEvidenceItem),
+    cluster: {
+      key: clusterKey || null,
+      occurrenceCount: clusterItems.length || queueItems.length,
+      normalizedReason: nullableString(queueItems.find(item => item.normalized_reason)?.normalized_reason),
+      samples: clusterItems.map(formatQueueEvidenceItem)
+    },
+    recentEvents: events.map(event => ({
+      eventType: event.event_type,
+      actorId: event.actor_id || null,
+      comment: event.comment || null,
+      metadata: parseJsonField(event.metadata, null),
+      createdAt: event.created_at || null
+    }))
+  }) as Record<string, unknown>;
+}
+
+function formatQueueEvidenceItem(item: Record<string, unknown>): Record<string, unknown> {
+  return {
+    id: item.id,
+    sourceType: item.source_type,
+    sourceId: item.source_id,
+    reason: item.reason,
+    priority: item.priority,
+    status: item.status,
+    correlationId: item.correlation_id,
+    clusterKey: item.cluster_key,
+    normalizedReason: item.normalized_reason,
+    createdAt: item.created_at
+  };
+}
+
+function buildProposalEnrichmentPrompt(
+  proposal: EvolutionProposalRecord,
+  evidencePackage: Record<string, unknown>
+): string {
+  return [
+    'You are Hermes Evolve. Enrich an existing evolution proposal using the candidate evidence below.',
+    'Do not apply changes. Do not execute tools that alter production. Produce markdown only.',
+    '',
+    'Your output must include these exact sections:',
+    '## Problem evidence',
+    '## Proposed structured change',
+    '## Evaluation plan',
+    '## Risk and rollback',
+    '## Release guard',
+    '',
+    'Rules:',
+    '- Cite concrete sourceType/sourceId, correlationId, cluster key, failed node, rejected approval, or execution evidence when present.',
+    '- Keep the change proposal-only and human-approved.',
+    '- Prefer one minimal Skill / Workflow / Tool Policy / Prompt improvement, matching the proposal type.',
+    '- Include verification steps and rollback boundary.',
+    '',
+    `Proposal id: ${proposal.id}`,
+    `Proposal type: ${proposal.type}`,
+    `Priority: ${proposal.priority}`,
+    `Current title: ${proposal.title}`,
+    '',
+    'Current proposal body:',
+    proposal.proposal_body,
+    '',
+    'Candidate evidence package:',
+    JSON.stringify(evidencePackage, null, 2)
+  ].join('\n');
+}
+
+function buildDeterministicEnrichmentOutput(
+  proposal: EvolutionProposalRecord,
+  evidencePackage: Record<string, unknown>,
+  errorMessage: string
+): string {
+  const cluster = objectOrEmpty(evidencePackage.cluster);
+  const queueItems = Array.isArray(evidencePackage.reviewQueue) ? evidencePackage.reviewQueue as Array<Record<string, unknown>> : [];
+  const firstItem = queueItems[0] || {};
+  const sourceLine = [
+    firstItem.sourceType ? `sourceType=${firstItem.sourceType}` : null,
+    firstItem.sourceId ? `sourceId=${firstItem.sourceId}` : null,
+    firstItem.correlationId ? `correlationId=${firstItem.correlationId}` : null
+  ].filter(Boolean).join(', ') || 'No queue source was available.';
+
+  return [
+    '## Problem evidence',
+    `- Candidate source: ${sourceLine}`,
+    `- Cluster: ${cluster.key || '-'} (${cluster.occurrenceCount || queueItems.length || 1} occurrence(s))`,
+    `- Normalized reason: ${cluster.normalizedReason || firstItem.normalizedReason || firstItem.reason || proposal.title}`,
+    `- Hermes enrichment fallback reason: ${errorMessage}`,
+    '',
+    '## Proposed structured change',
+    `- Refine the ${proposal.type.replace(/_/g, ' ')} guidance using the candidate evidence above.`,
+    '- Keep the improvement limited to evidence capture, operator guidance, validation, or rollback wording.',
+    '- Do not apply runtime changes directly; keep this proposal in proposal_only mode.',
+    '',
+    '## Evaluation plan',
+    '- Run deterministic proposal evaluation.',
+    '- Confirm the proposal cites the failed source and cluster evidence.',
+    '- Re-run or replay a representative failed case before moving to approval_pending.',
+    '',
+    '## Risk and rollback',
+    '- Risk level: controlled proposal-only change.',
+    '- Roll back by archiving this proposal or rolling back the published release overlay.',
+    '',
+    '## Release guard',
+    '- Requires human review, deterministic evaluation, admin approval, and release versioning before any runtime effect.'
+  ].join('\n');
+}
+
+function mergeEnrichedProposalBody(
+  existingBody: string,
+  enrichmentOutput: string,
+  mode: EvolutionProposalEnrichmentResult['mode']
+): string {
+  const marker = '<!-- evolution-enrichment:p7d -->';
+  const base = existingBody.includes(marker)
+    ? existingBody.split(marker)[0].trim()
+    : existingBody.trim();
+  return [
+    base,
+    '',
+    marker,
+    '',
+    `# P7d retrospective enrichment (${mode})`,
+    '',
+    enrichmentOutput.trim()
+  ].join('\n').slice(0, 20000);
+}
+
+function mergeProposalEvidenceRefs(existingEvidence: unknown, enrichment: Record<string, unknown>): Record<string, unknown> {
+  const existing = objectOrEmpty(existingEvidence);
+  return sanitizeValue({
+    ...existing,
+    enrichment
+  }) as Record<string, unknown>;
+}
+
+function buildEnrichedRiskNotes(existingRiskNotes: string | null, mode: EvolutionProposalEnrichmentResult['mode'], errorMessage: string | null): string {
+  const notes = [
+    existingRiskNotes || 'Generated from real execution feedback. This proposal remains proposal-only.',
+    `P7d enrichment mode: ${mode}.`,
+    errorMessage ? `Hermes enrichment error: ${errorMessage}` : null,
+    'No runtime behavior is changed by enrichment. Evaluation, approval, release publication, and rollback remain required.'
+  ].filter(Boolean).join(' ');
+  return notes.slice(0, 5000);
 }
 
 function buildVerificationFailureEvidence(input: VerificationFailureCandidateInput): Record<string, unknown> {

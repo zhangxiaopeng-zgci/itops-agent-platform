@@ -20,6 +20,7 @@ import v018AddEvolutionContinuousTasks from './v018_add_evolution_continuous_tas
 import v019AddAgentTeams from './v019_add_agent_teams';
 import v020AddSkillOperationalSemantics from './v020_add_skill_operational_semantics';
 import v021AddEvolutionFeedbackClusters from './v021_add_evolution_feedback_clusters';
+import v022AddEvolutionProposalEnrichmentTask from './v022_add_evolution_proposal_enrichment_task';
 
 export const ALL_MIGRATIONS: Migration[] = [
   v001InitialSchema,
@@ -43,6 +44,7 @@ export const ALL_MIGRATIONS: Migration[] = [
   v019AddAgentTeams,
   v020AddSkillOperationalSemantics,
   v021AddEvolutionFeedbackClusters,
+  v022AddEvolutionProposalEnrichmentTask,
 ];
 
 export function createMigrationManager(db: any): MigrationManager {
