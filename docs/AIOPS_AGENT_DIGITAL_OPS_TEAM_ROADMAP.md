@@ -1224,6 +1224,81 @@ P10e 收敛结果：
   - 新增高风险治理检查项的中英文文案。
 - 当前边界：P10e 复用现有 proposal approval 字段实现双人审批，不新增多级审批表；后续如需要 N 人会签或 change calendar，可在 governance service 后面接表驱动策略。
 
+### P11：生产验收、稳定化和运维移交
+
+目标：
+
+- 不再继续扩大功能面，先把 P1-P10 已实现的 Hermes、Agent / Workflow、持续进化、发布治理和生产部署能力串成可验收、可交付、可运维的版本。
+
+原则：
+
+- 优先验证真实操作者路径，而不是继续堆新页面。
+- 优先发现断链、权限缺口、状态不一致、文案不完整和部署恢复问题。
+- 所有验收结论必须能回到证据：页面、API、trace、release、audit、backup、container drill。
+- P11 允许补小缺口，但不引入新的大架构能力。
+
+工作项：
+
+- 全链路验收：
+  - Hermes 诊断、修复编排、复盘进化三个 worker。
+  - Hermes 运维助手页面。
+  - Agent 管理、Workflow 管理、Team 控制台。
+  - 进化提案生成、增强、评估、staging replay、发布、回滚。
+  - Release Guard、高风险发布治理、审计导出。
+  - 生产就绪页面、备份恢复演练、容器重建演练。
+- 角色和权限验收：
+  - viewer：只读诊断、查看结果、不能执行高风险动作。
+  - operator：可诊断、可提交审批、可执行低风险操作。
+  - admin：可审批、可发布、可配置 runtime / channel / skill / mcp。
+  - 高风险发布必须满足 change window、双人审批、rollback plan。
+- UI/产品稳定化：
+  - 中英文切换全页面复测。
+  - 深色 / 浅色 / 跟随系统复测。
+  - 监控大屏、Agent 管理、Hermes 控制台、进化提案、生产就绪页面复测。
+  - 关键页面无 console error。
+  - 页面文案从“开发描述”收敛为“操作者语言”。
+- 部署和数据验收：
+  - frontend 使用 nginx 静态生产包。
+  - backend 使用生产 build。
+  - backend / frontend / 3 Hermes Worker compose 重启后健康。
+  - 删除重建容器不丢数据库和备份。
+  - backup restore drill 和 container rebuild drill 都有最近通过记录。
+  - compose 网络 alias、volume、healthcheck 固化。
+- 运维交付手册：
+  - 启动、停止、升级。
+  - 备份、恢复、恢复演练。
+  - 容器重建和重建后验证。
+  - Hermes API key / model / worker 配置。
+  - Channel / Skill / MCP 管理。
+  - change window 配置。
+  - release guard blocked 处理。
+  - rollback 操作。
+- 平台版本和验收报告：
+  - 记录当前部署 commit、部署时间、验收状态。
+  - 输出验收报告：能力清单、已验证项、已知边界、风险项、下一轮建议。
+
+P11 实施切片：
+
+- [ ] P11a：验收清单和测试矩阵，固化角色、页面、API、部署、数据、发布治理检查项。
+- [ ] P11b：远端测试机真实验收，按矩阵执行并记录通过/失败证据。
+- [ ] P11c：补齐验收中发现的小缺口，只做稳定化修复，不扩展大功能。
+- [ ] P11d：运维交付手册，覆盖部署、备份恢复、容器重建、Hermes 配置、发布治理和回滚。
+- [ ] P11e：验收报告和版本标识，固化当前 commit、部署状态、已知边界和下一阶段建议。
+
+验收：
+
+- 操作者可以按文档完成一次诊断、修复审批、任务追踪、复盘改进。
+- 管理员可以按文档完成一次 release guard 检查、发布审计导出和回滚。
+- 生产就绪页面没有 blocked 项，warning 项有明确解释。
+- 测试机 `10.1.132.58` 上 backend、frontend、3 个 Hermes Worker 全部 healthy。
+- 关键页面无 console error。
+- 数据库、备份、trace、proposal、release、audit 在容器重建后仍可用。
+
+当前边界：
+
+- P11 是交付和验收阶段，不以新增大能力为目标。
+- 如果验收中发现架构性问题，应先记录为 P12 候选，不在 P11 内临时扩张。
+
 ## 最小可用版本
 
 建议先做一个最小闭环，而不是一次性铺开全部能力：
