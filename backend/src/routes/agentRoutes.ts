@@ -8,6 +8,7 @@ import { inferLegacyRuntimeType } from '../services/agentRuntime/registry';
 import { requireRole } from '../middleware/auth';
 import { AgentRunResult } from '../services/agentRuntime/types';
 import { createHermesSession, HermesSessionRecord } from '../services/hermesSessionService';
+import { attachAgentCapabilitySummaries, summarizeAgentCapability } from '../services/agentCapabilityService';
 
 const router = Router();
 
@@ -77,7 +78,7 @@ router.get('/', (req: Request, res: Response) => {
       ...agent,
       tags: agent.tags ? JSON.parse(agent.tags) : []
     }));
-    res.json({ success: true, data: processedAgents });
+    res.json({ success: true, data: attachAgentCapabilitySummaries(processedAgents) });
   } catch {
     res.status(500).json({ success: false, error: 'Failed to fetch agents' });
   }
@@ -138,7 +139,11 @@ router.get('/:id', (req: Request, res: Response) => {
       return res.status(404).json({ success: false, error: 'Agent not found' });
     }
     const processedAgent = { ...(agent as { id: string; name: string; role: string; tags?: string; [key: string]: unknown }), tags: (agent as { tags?: string })?.tags ? JSON.parse((agent as { tags?: string }).tags!) : [] };
-    res.json({ success: true, data: processedAgent });
+    const agentWithCapability = {
+      ...processedAgent,
+      capability_summary: summarizeAgentCapability(processedAgent)
+    };
+    res.json({ success: true, data: agentWithCapability });
   } catch {
     res.status(500).json({ success: false, error: 'Failed to fetch agent' });
   }

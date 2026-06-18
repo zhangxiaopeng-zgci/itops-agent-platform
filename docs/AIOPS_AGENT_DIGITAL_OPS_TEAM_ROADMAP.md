@@ -829,6 +829,26 @@ P7e 收敛结果：
 - 管理员不需要理解底层 Hermes 细节，也能管理能力。
 - Agent/Workflow/Hermes 控制台之间的关系一致。
 
+P8 实施切片：
+
+- [x] P8a：Agent 管理页能力摘要，展示 Team、Channel、Skill、MCP、Tool、风险边界和最近执行质量。
+- [ ] P8b：Workflow 管理页增强，展示 Hermes-enhanced、Agent Team、Skill/MCP 依赖、审批/验证和最近成功率。
+- [ ] P8c：Hermes 控制台产品化汇总，把 Team 拓扑、Channel 健康、Skill 覆盖、MCP 健康、执行质量和 Evolution 反馈组织成统一管理视图。
+
+P8a 收敛结果：
+
+- 新增 Agent capability summary：
+  - teams：Agent 所属 Team，以及通过 Channel type 隐式参与的 Team。
+  - channel：绑定的 Hermes Channel、Channel type 和健康状态。
+  - skills：Channel 绑定且启用的 Skill 数量和名称摘要。
+  - mcpServers：Channel 绑定且启用的 MCP Server 数量、健康/异常数量和名称摘要。
+  - tools：Channel 允许的 Tool 数量、高风险 Tool 数量和名称摘要。
+  - risk：autonomy_level、tool_policy_id、是否需要审批。
+  - executionQuality：最近 10 次执行的成功率、最后状态、最后执行时间和平均耗时。
+- `/api/agents` 列表和 `/api/agents/:id` 详情都返回 `capability_summary`，前端无需重复推断。
+- Agent 管理页卡片增加紧凑能力摘要，详情页增加完整能力摘要面板。
+- 当前边界：P8a 只做只读管理可视化，不新增 Skill/MCP/Tool 绑定操作，不改变 Agent 执行逻辑或权限策略。
+
 ### P9：评估与回归测试体系
 
 目标：

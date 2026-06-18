@@ -35,6 +35,46 @@ interface Agent {
   autonomy_level?: string;
   tool_policy_id?: string;
   channel_id?: string | null;
+  capability_summary?: AgentCapabilitySummary;
+}
+
+interface AgentCapabilitySummary {
+  teams: Array<{ id: string; name: string; role: string }>;
+  channel: {
+    id: string;
+    name: string;
+    type: string;
+    health_status: string;
+  } | null;
+  skills: {
+    count: number;
+    names: string[];
+  };
+  mcpServers: {
+    count: number;
+    healthy: number;
+    unhealthy: number;
+    names: string[];
+  };
+  tools: {
+    count: number;
+    highRisk: number;
+    names: string[];
+  };
+  risk: {
+    autonomy_level: string;
+    tool_policy_id: string | null;
+    approval_required: boolean;
+  };
+  executionQuality: {
+    recentTotal: number;
+    recentSuccess: number;
+    recentFailure: number;
+    successRate: number | null;
+    lastStatus: string | null;
+    lastExecutedAt: string | null;
+    averageLatencyMs: number | null;
+  };
 }
 
 interface AIModel {
@@ -336,6 +376,100 @@ function getAgentExecutionEvidence(exec: AgentExecution): Record<string, unknown
   return evidence && typeof evidence === 'object' && !Array.isArray(evidence) ? evidence as Record<string, unknown> : null;
 }
 
+function AgentCapabilitySummaryView({ summary, compact = false }: { summary?: AgentCapabilitySummary; compact?: boolean }) {
+  const { t } = useLocale();
+  if (!summary) return null;
+
+  const quality = summary.executionQuality;
+  const successRate = quality.successRate === null ? '-' : `${quality.successRate}%`;
+  const items = [
+    {
+      key: 'channel',
+      label: t('agents.capability.channel'),
+      value: summary.channel?.name || t('agents.capability.none'),
+      sub: summary.channel ? `${summary.channel.type} · ${summary.channel.health_status}` : t('agents.capability.noChannel')
+    },
+    {
+      key: 'teams',
+      label: t('agents.capability.teams'),
+      value: String(summary.teams.length),
+      sub: summary.teams.length > 0 ? summary.teams.map((team) => team.name).slice(0, 2).join(', ') : t('agents.capability.none')
+    },
+    {
+      key: 'skills',
+      label: t('agents.capability.skills'),
+      value: String(summary.skills.count),
+      sub: summary.skills.names.length > 0 ? summary.skills.names.join(', ') : t('agents.capability.none')
+    },
+    {
+      key: 'mcp',
+      label: t('agents.capability.mcp'),
+      value: String(summary.mcpServers.count),
+      sub: summary.mcpServers.unhealthy > 0
+        ? t('agents.capability.unhealthyMcp', { count: summary.mcpServers.unhealthy })
+        : t('agents.capability.healthy')
+    },
+    {
+      key: 'tools',
+      label: t('agents.capability.tools'),
+      value: String(summary.tools.count),
+      sub: summary.tools.highRisk > 0
+        ? t('agents.capability.highRiskTools', { count: summary.tools.highRisk })
+        : summary.tools.names.slice(0, 3).join(', ') || t('agents.capability.none')
+    },
+    {
+      key: 'quality',
+      label: t('agents.capability.quality'),
+      value: successRate,
+      sub: quality.recentTotal > 0
+        ? t('agents.capability.recentRuns', { count: quality.recentTotal })
+        : t('agents.noExecutions')
+    }
+  ];
+
+  return (
+    <div className={clsx(
+      compact ? 'mt-4 pt-3 border-t border-border' : `${panelClass} p-6`
+    )}>
+      {!compact && (
+        <h2 className="text-lg font-bold text-text-primary mb-4 flex items-center gap-2">
+          <BrainCircuit className="w-5 h-5 text-primary" />
+          {t('agents.capability.title')}
+        </h2>
+      )}
+      <div className={clsx(
+        'grid gap-2',
+        compact ? 'grid-cols-2' : 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3'
+      )}>
+        {items.map((item) => (
+          <div key={item.key} className="rounded-lg bg-background border border-border px-3 py-2 min-w-0">
+            <div className="text-[11px] uppercase tracking-normal text-text-tertiary">{item.label}</div>
+            <div className="mt-1 text-sm font-semibold text-text-primary truncate">{item.value}</div>
+            <div className="mt-0.5 text-xs text-text-tertiary truncate">{item.sub}</div>
+          </div>
+        ))}
+      </div>
+      <div className="mt-3 flex flex-wrap gap-1.5">
+        <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-surface border border-border text-xs text-text-secondary">
+          <ShieldCheck className="w-3.5 h-3.5" />
+          {summary.risk.autonomy_level}
+        </span>
+        {summary.risk.approval_required && (
+          <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-amber-500/10 border border-amber-500/20 text-xs text-amber-300">
+            <AlertTriangle className="w-3.5 h-3.5" />
+            {t('agents.capability.approvalRequired')}
+          </span>
+        )}
+        {summary.risk.tool_policy_id && (
+          <span className="px-2 py-1 rounded-md bg-primary/10 border border-primary/20 text-xs text-primary">
+            {t('agents.capability.policy')}: {summary.risk.tool_policy_id}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function Agents() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
@@ -630,6 +764,8 @@ export default function Agents() {
                     </div>
                   )}
                 </div>
+
+                <AgentCapabilitySummaryView summary={agent.capability_summary} compact />
 
                 <div className="flex items-center justify-between gap-2 pt-3 border-t border-border">
                   <span
@@ -970,6 +1106,8 @@ function AgentDetailInner({ agentId, onBack, deleteMutation }: AgentDetailInnerP
             </div>
           )}
         </div>
+
+        <AgentCapabilitySummaryView summary={agent.capability_summary} />
 
         <div className={`${panelClass} p-6`}>
           <h2 className="text-lg font-bold text-text-primary mb-4 flex items-center gap-2">
