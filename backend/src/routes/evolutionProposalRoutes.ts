@@ -19,6 +19,7 @@ import {
   publishEvolutionProposal,
   rollbackEvolutionReleaseVersion
 } from '../services/evolutionReleaseService';
+import { summarizeEvolutionProposalLifecycle } from '../services/evolutionLifecycleService';
 
 interface AuthenticatedRequest extends Request {
   user?: {
@@ -38,7 +39,16 @@ router.get('/', requireRole('admin', 'operator', 'viewer'), (req: Request, res: 
       offset: req.query.offset ? parseInt(req.query.offset as string, 10) : undefined
     });
 
-    res.json({ success: true, data: result });
+    res.json({
+      success: true,
+      data: {
+        ...result,
+        proposals: result.proposals.map(proposal => ({
+          ...proposal,
+          lifecycle_summary: summarizeEvolutionProposalLifecycle(proposal)
+        }))
+      }
+    });
   } catch (error) {
     res.status(500).json({ success: false, error: error instanceof Error ? error.message : 'Failed to list evolution proposals' });
   }
@@ -91,7 +101,10 @@ router.get('/:id', requireRole('admin', 'operator', 'viewer'), (req: Request, re
     return res.json({
       success: true,
       data: {
-        proposal,
+        proposal: {
+          ...proposal,
+          lifecycle_summary: summarizeEvolutionProposalLifecycle(proposal)
+        },
         events: listEvolutionProposalEvents(req.params.id),
         evaluations: listEvolutionProposalEvaluations(req.params.id),
         releases: listEvolutionReleaseVersions({ proposalId: req.params.id })

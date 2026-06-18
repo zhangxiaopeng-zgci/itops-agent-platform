@@ -39,6 +39,24 @@ interface EvolutionProposal {
   hermes_session_id?: string | null;
   created_at: string;
   updated_at: string;
+  lifecycle_summary?: EvolutionLifecycleSummary;
+}
+
+interface EvolutionLifecycleSummary {
+  stage: 'candidate' | 'evaluation' | 'approval' | 'release' | 'published' | 'closed';
+  next_action: 'enrich' | 'evaluate' | 'fix_findings' | 'submit_approval' | 'approve' | 'publish' | 'monitor' | 'none';
+  readiness_score: number;
+  blockers: string[];
+  signals: {
+    enriched: boolean;
+    patch_valid: boolean;
+    evaluation_passed: boolean;
+    evaluation_score?: number | null;
+    approval_ready: boolean;
+    approved: boolean;
+    published: boolean;
+    active_release_id?: string | null;
+  };
 }
 
 interface StructuredPatchOperation {
@@ -593,6 +611,16 @@ export default function EvolutionProposals() {
                     <div className="min-w-0">
                       <div className="text-sm font-medium text-text-primary truncate">{proposal.title}</div>
                       <div className="text-xs text-text-tertiary mt-1 truncate">{typeLabel(proposal.type)} · {proposal.priority}</div>
+                      {proposal.lifecycle_summary && (
+                        <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px] text-text-tertiary">
+                          <span className="rounded-md bg-surface border border-border px-1.5 py-0.5">
+                            {t(`evolution.lifecycle.stage.${proposal.lifecycle_summary.stage}` as MessageKey)}
+                          </span>
+                          <span>{proposal.lifecycle_summary.readiness_score}%</span>
+                          <span>·</span>
+                          <span>{t(`evolution.lifecycle.action.${proposal.lifecycle_summary.next_action}` as MessageKey)}</span>
+                        </div>
+                      )}
                     </div>
                     <StatusBadge status={proposal.status} />
                   </div>
@@ -691,6 +719,8 @@ export default function EvolutionProposals() {
 
               <InfoGrid proposal={activeProposal} />
 
+              <LifecyclePanel summary={activeProposal.lifecycle_summary} />
+
               <EvaluationPanel evaluations={detail?.evaluations || []} />
 
               <StructuredPatchPanel proposal={activeProposal} />
@@ -787,6 +817,66 @@ function StructuredPatchPanel({ proposal }: { proposal: EvolutionProposal }) {
           </div>
         </div>
       )}
+    </DetailSection>
+  );
+}
+
+function LifecyclePanel({ summary }: { summary?: EvolutionLifecycleSummary }) {
+  const { t } = useLocale();
+  if (!summary) {
+    return null;
+  }
+
+  const signalItems = [
+    ['enriched', summary.signals.enriched],
+    ['patch', summary.signals.patch_valid],
+    ['evaluation', summary.signals.evaluation_passed],
+    ['approval', summary.signals.approval_ready],
+    ['approved', summary.signals.approved],
+    ['published', summary.signals.published]
+  ] as const;
+
+  return (
+    <DetailSection title={t('evolution.lifecycle.title')} icon={<Gauge className="w-4 h-4" />}>
+      <div className="grid grid-cols-1 lg:grid-cols-[180px_minmax(0,1fr)] gap-4">
+        <div className="rounded-lg bg-background border border-border p-4">
+          <div className="text-xs text-text-tertiary">{t('evolution.lifecycle.readiness')}</div>
+          <div className="text-3xl font-semibold text-text-primary mt-1">{summary.readiness_score}%</div>
+          <div className="mt-2 text-xs text-text-secondary">
+            {t(`evolution.lifecycle.stage.${summary.stage}` as MessageKey)}
+          </div>
+          <div className="mt-1 text-xs text-primary">
+            {t(`evolution.lifecycle.action.${summary.next_action}` as MessageKey)}
+          </div>
+        </div>
+        <div className="space-y-3">
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+            {signalItems.map(([key, ok]) => (
+              <div key={key} className="rounded-lg bg-background border border-border px-3 py-2">
+                <div className="text-xs text-text-tertiary">{t(`evolution.lifecycle.signal.${key}` as MessageKey)}</div>
+                <div className={clsx(
+                  'mt-1 text-sm font-medium',
+                  ok ? 'text-status-success' : 'text-text-tertiary'
+                )}>
+                  {ok ? t('evolution.lifecycle.ready') : t('evolution.lifecycle.pending')}
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="rounded-lg bg-background border border-border px-3 py-2">
+            <div className="text-xs text-text-tertiary">{t('evolution.lifecycle.blockers')}</div>
+            <div className="mt-1 flex flex-wrap gap-1.5">
+              {summary.blockers.length === 0 ? (
+                <span className="text-sm text-status-success">{t('evolution.lifecycle.noBlockers')}</span>
+              ) : summary.blockers.map((blocker) => (
+                <span key={blocker} className="rounded-md bg-status-warning/10 text-status-warning border border-status-warning/20 px-2 py-0.5 text-xs">
+                  {t(`evolution.lifecycle.blocker.${blocker}` as MessageKey)}
+                </span>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
     </DetailSection>
   );
 }

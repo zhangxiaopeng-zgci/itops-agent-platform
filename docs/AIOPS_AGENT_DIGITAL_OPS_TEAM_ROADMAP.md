@@ -695,7 +695,7 @@ P7 实施切片：
 - [x] P7b：Review Queue 运营视图增强，展示来源、失败原因、生成提案、评估状态和发布价值。
 - [x] P7c：同类问题聚合和重复发生识别，避免一事一提案的噪声。
 - [x] P7d：复盘 Agent 消费候选证据，补充结构化 patch、评估计划和风险说明。
-- [ ] P7e：Proposal -> Evaluation -> Approval -> Release 的运营仪表盘收口。
+- [x] P7e：Proposal -> Evaluation -> Approval -> Release 的运营仪表盘收口。
 
 P7a 收敛结果：
 
@@ -775,6 +775,23 @@ P7d 收敛结果：
   - event metadata 标明 `mode=deterministic_fallback` 和 error。
 - Evolution Proposal 页面增加“复盘增强 / Enrich”操作。
 - 当前边界：P7d 只增强候选提案，不自动进入 eval_passed、approval_pending 或 published；是否推进仍由评估和审批决定。
+
+P7e 收敛结果：
+
+- 新增只读 lifecycle summary：
+  - stage：candidate / evaluation / approval / release / published / closed。
+  - next_action：enrich / evaluate / fix_findings / submit_approval / approve / publish / monitor / none。
+  - readiness_score：按 enrichment、structured patch、evaluation、approval、release 计算。
+  - blockers：needs_enrichment、invalid_structured_patch、missing_evaluation、evaluation_failed、awaiting_admin_approval。
+  - signals：enriched、patch_valid、evaluation_passed、approval_ready、approved、published、active_release_id。
+- Evolution Proposal API 的列表和详情都返回 `lifecycle_summary`，前端无需重新推断链路状态。
+- Evolution Proposal 页面增加闭环状态面板：
+  - 显示就绪度。
+  - 显示下一步动作。
+  - 显示增强、Patch、评估、审批、批准、发布信号灯。
+  - 显示阻塞原因。
+- Proposal 列表卡片也显示 stage / readiness / next action，便于批量扫视。
+- 当前边界：P7e 只做运营视图收口，不自动改变 proposal 状态，不绕过评估、审批或发布规则。
 
 ### P8：Agent / Workflow 管理台产品化
 
