@@ -24,6 +24,7 @@ import v022AddEvolutionProposalEnrichmentTask from './v022_add_evolution_proposa
 import v023AddBackupRestoreDrills from './v023_add_backup_restore_drills';
 import v024AddContainerRebuildDrills from './v024_add_container_rebuild_drills';
 import v025AddKubernetesAssets from './v025_add_kubernetes_assets';
+import v026AddHermesDashboardBridge from './v026_add_hermes_dashboard_bridge';
 
 export const ALL_MIGRATIONS: Migration[] = [
   v001InitialSchema,
@@ -51,6 +52,7 @@ export const ALL_MIGRATIONS: Migration[] = [
   v023AddBackupRestoreDrills,
   v024AddContainerRebuildDrills,
   v025AddKubernetesAssets,
+  v026AddHermesDashboardBridge,
 ];
 
 export function createMigrationManager(db: any): MigrationManager {

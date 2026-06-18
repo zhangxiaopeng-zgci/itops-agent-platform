@@ -317,7 +317,7 @@ Kubernetes clusters are manageable assets and can be correlated with underlying 
 Status:
 
 ```text
-Discovery baseline documented after Kubernetes asset baseline.
+Read-only bridge baseline implemented after Kubernetes asset baseline.
 ```
 
 Discovery document:
@@ -454,6 +454,13 @@ Recommended implementation slices:
 3B-2: Read-only bridge
   Add settings, health probe, navigation link, and external link table.
   Show Hermes Dashboard link/embed from Hermes Assistant, Evolution Proposals, and Capability Control Plane.
+  Implemented baseline:
+    /api/hermes-dashboard/settings
+    /api/hermes-dashboard/health
+    /api/hermes-dashboard/external-links
+    hermes_external_links table
+    /hermes-dashboard page
+    Capability Control Plane navigation entry
 
 3B-3: Delegation policy baseline
   Add channel-level delegation limits, allowed lanes, and circuit-breaker settings.

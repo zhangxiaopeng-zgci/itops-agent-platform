@@ -45,6 +45,7 @@ import {
   BookMarked,
   Cog,
   Languages,
+  KanbanSquare,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { useAuth } from '../../contexts/AuthContext';
@@ -82,6 +83,7 @@ const navigationGroups: Array<{
     icon: Cog,
     items: [
       { labelKey: 'nav.hermesChannels', href: '/hermes-channels', icon: Cable },
+      { labelKey: 'nav.hermesDashboard', href: '/hermes-dashboard', icon: KanbanSquare },
       { labelKey: 'nav.agents', href: '/agents', icon: Bot },
       { labelKey: 'nav.evolutionProposals', href: '/evolution-proposals', icon: Lightbulb },
       { labelKey: 'nav.settings', href: '/settings', icon: Settings },
