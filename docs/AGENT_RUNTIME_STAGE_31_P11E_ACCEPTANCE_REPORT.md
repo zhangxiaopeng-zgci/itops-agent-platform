@@ -287,10 +287,48 @@ Warning：
 ## 12. 已知边界
 
 - 测试机部署目录当前不是 git worktree，部署代码指纹通过 Docker image id、已推送 commit 和运行快照共同确认。
-- 当前 active release 数量为 0，后续需要一次完整 evaluation / staging replay / approval / publish 才会自然消除 `active_release_tracking` warning。
+- 原始验收快照中 active release 数量为 0；已在验收后通过一次完整 evaluation / staging replay / approval / publish 自然消除 `active_release_tracking` warning。
 - MCP Server 目前主要作为注册、绑定和上下文能力管理入口，MCP tool execution 仍保持保守边界。
 - P11 没有引入高可用数据库或多节点部署；当前交付目标是单机生产化部署。
 - Hermes 自我进化已经具备 proposal / evaluation / staging / release / rollback 链路，但生产发布仍需要人类治理和审批。
+
+## 12.1 后置发布演练
+
+2026-06-18 已执行一次受控发布演练，完整链路如下：
+
+```text
+evaluation -> staging replay -> approval -> publish
+```
+
+演练结果：
+
+```text
+Proposal: 9897ac35-6c09-4c9c-8a99-e3cbede7e65d
+Evaluation: f4999d9c-a003-4e1a-ab9d-da105ef25e23
+Evaluation Score: 100
+Staging Replay: 17 / 17 passed
+noProductionMutation: true
+Release Guard Before Approval: blocked by proposal_approved
+Release Guard After Approval: passed
+Release Version: 4c03471e-8cbb-4c35-8bac-62d87246890c
+Release Status: active
+Audit Schema: evolution-release-audit/v1
+Ops Readiness: ready / 100
+Warnings: none
+Runtime Overlay Consumed By Hermes Diagnosis: yes
+```
+
+运行态验证：
+
+```text
+Hermes Diagnosis Execution: 7e294b26-8fe7-4eb9-b451-df6a8e08105d
+Hermes Session: 119b0d20-8b54-4853-8532-56f8e7cd5c0a
+releaseOverlayVersionIds: 4c03471e-8cbb-4c35-8bac-62d87246890c
+```
+
+详见：
+
+- `docs/AGENT_RUNTIME_STAGE_31_RELEASE_SMOKE_EVIDENCE.md`
 
 ## 13. P12 候选建议
 
@@ -317,3 +355,12 @@ Ops Handoff Ready: yes
 Recommended Next Stage: P12 production operations closure
 ```
 
+Post-acceptance operational closure:
+
+```text
+Release Smoke: PASS
+Current Readiness: ready
+Current Readiness Score: 100
+Current Warnings: 0
+Active Releases: 1
+```

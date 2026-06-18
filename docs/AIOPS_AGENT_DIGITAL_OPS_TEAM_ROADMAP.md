@@ -1522,3 +1522,22 @@ P10a：生产治理、备份恢复、发布审计
 经验可沉淀
 进化可发布和回滚
 ```
+
+## P11 后置发布演练
+
+2026-06-18 已完成一次受控 release smoke：
+
+```text
+evaluation -> staging replay -> approval -> publish
+```
+
+结果：
+
+```text
+Proposal: 9897ac35-6c09-4c9c-8a99-e3cbede7e65d
+Release Version: 4c03471e-8cbb-4c35-8bac-62d87246890c
+Ops Readiness: ready / 100
+Warnings: none
+Hermes Runtime Overlay: consumed by diagnosis Agent
+Evidence: docs/AGENT_RUNTIME_STAGE_31_RELEASE_SMOKE_EVIDENCE.md
+```
