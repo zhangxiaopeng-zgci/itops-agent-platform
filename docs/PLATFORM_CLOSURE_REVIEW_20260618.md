@@ -267,6 +267,7 @@ Current frontend after navigation closure:
 ```text
 routes: 42
 primary expanded groups: 4
+default visible entries: 12
 advanced group: collapsed by default
 ```
 
@@ -280,7 +281,7 @@ Major capability groups:
 5. Advanced
 ```
 
-This is functionally rich but heavy for day-to-day operators.
+The default operator view is now compact. Secondary/admin capabilities remain available under Advanced or from contextual pages.
 
 ## Redundancy And Simplification Candidates
 
@@ -385,15 +386,15 @@ This can be implemented as navigation grouping first, without deleting screens.
 
 ### C1 - Navigation Simplification
 
-Status: first closure pass completed.
+Status: second closure pass completed. The default visible navigation is now 12 entries.
 
 Current primary nav:
 
 ```text
 Home: Dashboard
-Ops Workspace: Servers, Terminal, Hermes Assistant, Self-healing Workbench, Workflows, Tasks, Tool Approvals
-Intelligence: Alerts, Root Cause, Service Topology, Knowledge Base
-Platform Control: Team Console, Agent Management, Evolution Proposals, Production Readiness, Settings
+Ops Workspace: Servers, Terminal, Hermes Assistant, Self-healing Workbench
+Intelligence: Alerts, Root Cause, Service Topology
+Platform Control: Team Console, Agent Management, Evolution Proposals, Settings
 Advanced: collapsed secondary/admin pages
 ```
 
@@ -404,6 +405,11 @@ Big Screen
 Network Devices
 Credentials
 Remote Desktop
+Workflows
+Task Runs
+Tool Approvals
+Knowledge Base
+Production Readiness
 Alert Mappings
 Alert Noise
 Root Cause Analysis

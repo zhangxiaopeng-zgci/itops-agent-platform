@@ -75,9 +75,6 @@ const navigationGroups: Array<{
       { labelKey: 'nav.terminal', href: '/terminal', icon: Terminal },
       { labelKey: 'nav.hermes', href: '/hermes', icon: Brain },
       { labelKey: 'nav.remediationWorkbench', href: '/remediation-workbench', icon: Workflow },
-      { labelKey: 'nav.workflows', href: '/workflows', icon: GitBranch },
-      { labelKey: 'nav.tasks', href: '/tasks', icon: Play },
-      { labelKey: 'nav.toolApprovals', href: '/tool-approvals', icon: ShieldAlert },
     ]
   },
   {
@@ -88,7 +85,6 @@ const navigationGroups: Array<{
       { labelKey: 'nav.alerts', href: '/alerts', icon: Bell },
       { labelKey: 'nav.rootCause', href: '/root-cause-analysis', icon: Search },
       { labelKey: 'nav.topology', href: '/topology', icon: Network },
-      { labelKey: 'nav.knowledge', href: '/knowledge', icon: BookOpen },
     ]
   },
   {
@@ -99,7 +95,6 @@ const navigationGroups: Array<{
       { labelKey: 'nav.hermesChannels', href: '/hermes-channels', icon: Cable },
       { labelKey: 'nav.agents', href: '/agents', icon: Bot },
       { labelKey: 'nav.evolutionProposals', href: '/evolution-proposals', icon: Lightbulb },
-      { labelKey: 'nav.opsReadiness', href: '/ops-readiness', icon: ShieldCheck },
       { labelKey: 'nav.settings', href: '/settings', icon: Settings },
     ]
   },
@@ -112,6 +107,9 @@ const navigationGroups: Array<{
       { labelKey: 'nav.networkDevices', href: '/network-devices', icon: Network },
       { labelKey: 'nav.credentials', href: '/ssh-keys', icon: Key },
       { labelKey: 'nav.remoteDesktop', href: '/remote-desktop', icon: MonitorPlay },
+      { labelKey: 'nav.workflows', href: '/workflows', icon: GitBranch },
+      { labelKey: 'nav.tasks', href: '/tasks', icon: Play },
+      { labelKey: 'nav.toolApprovals', href: '/tool-approvals', icon: ShieldAlert },
       { labelKey: 'nav.scripts', href: '/scripts', icon: FileCode },
       { labelKey: 'nav.scheduledTasks', href: '/scheduled-tasks', icon: Clock },
       { labelKey: 'nav.alertMappings', href: '/alert-mappings', icon: Link2 },
@@ -121,6 +119,8 @@ const navigationGroups: Array<{
       { labelKey: 'nav.remediationPolicies', href: '/remediation-policies', icon: Wrench },
       { labelKey: 'nav.remediationDashboard', href: '/remediation-dashboard', icon: BarChart3 },
       { labelKey: 'nav.remediationExecutions', href: '/remediation-executions', icon: ListChecks },
+      { labelKey: 'nav.knowledge', href: '/knowledge', icon: BookOpen },
+      { labelKey: 'nav.opsReadiness', href: '/ops-readiness', icon: ShieldCheck },
       { labelKey: 'nav.audit', href: '/audit', icon: Shield },
       { labelKey: 'nav.notifications', href: '/notifications', icon: MessageSquare },
       { labelKey: 'nav.reports', href: '/reports', icon: FileText },
