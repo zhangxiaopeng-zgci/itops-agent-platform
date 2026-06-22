@@ -547,7 +547,7 @@ export default function Tasks() {
                   </div>
                 </div>
 
-                <TaskExecutionPreflightPanel preflight={getTaskExecutionPreflight(selectedTask)} />
+                <TaskExecutionPreflightPanel task={selectedTask} preflight={getTaskExecutionPreflight(selectedTask)} />
 
                 <div className="flex gap-2 overflow-x-auto pb-2">
                   {(() => {
@@ -1117,8 +1117,9 @@ function getTaskExecutionPreflight(task: Task): TaskExecutionPreflightSnapshot |
   };
 }
 
-function TaskExecutionPreflightPanel({ preflight }: { preflight: TaskExecutionPreflightSnapshot | null }) {
+function TaskExecutionPreflightPanel({ task, preflight }: { task: Task; preflight: TaskExecutionPreflightSnapshot | null }) {
   const { locale, t } = useLocale();
+  const navigate = useNavigate();
   const browserLocale = locale === 'zh-CN' ? 'zh-CN' : 'en-US';
   if (!preflight) return null;
 
@@ -1171,9 +1172,10 @@ function TaskExecutionPreflightPanel({ preflight }: { preflight: TaskExecutionPr
           label={t('tasks.preflight.reasons')}
           values={preflight.reasons.map((reason) => formatPreflightReason(reason, t))}
         />
-        <EvidenceList
+        <PreflightLinkList
           label={t('tasks.preflight.actions')}
-          values={preflight.actions.map((action) => formatPreflightAction(action, t))}
+          items={preflight.actions.map((action) => buildPreflightActionLink(action, task, t))}
+          onNavigate={navigate}
         />
         <EvidenceList
           label={t('tasks.preflight.runtime')}
@@ -1184,6 +1186,15 @@ function TaskExecutionPreflightPanel({ preflight }: { preflight: TaskExecutionPr
           ]}
         />
       </div>
+      {preflight.reasons.length > 0 && (
+        <div className="mt-3">
+          <PreflightLinkList
+            label={t('tasks.preflight.ownerLinks')}
+            items={preflight.reasons.map((reason) => buildPreflightReasonLink(reason, task, t))}
+            onNavigate={navigate}
+          />
+        </div>
+      )}
     </div>
   );
 }
@@ -1222,6 +1233,112 @@ function formatPreflightAction(action: string, t: (key: MessageKey) => string) {
     review_recent_failures: 'tasks.preflight.action.review_recent_failures'
   };
   return labels[action] ? t(labels[action]) : action;
+}
+
+interface PreflightLinkItem {
+  id: string;
+  text: string;
+  href: string;
+  target: string;
+}
+
+function PreflightLinkList({
+  label,
+  items,
+  onNavigate
+}: {
+  label: string;
+  items: PreflightLinkItem[];
+  onNavigate: (path: string) => void;
+}) {
+  const { t } = useLocale();
+  const normalized = dedupePreflightLinks(items).slice(0, 8);
+  return (
+    <div className="rounded-lg border border-border bg-background px-3 py-2 min-w-0">
+      <div className="text-xs text-text-tertiary mb-2">{label}</div>
+      <div className="space-y-2">
+        {normalized.length === 0 && <span className="text-xs text-text-tertiary">{t('tasks.evidence.empty')}</span>}
+        {normalized.map((item) => (
+          <div key={item.id} className="rounded-md border border-border bg-surface px-2 py-2">
+            <div className="text-xs text-text-secondary">{item.text}</div>
+            <button
+              type="button"
+              onClick={() => onNavigate(item.href)}
+              className="mt-2 inline-flex items-center gap-1.5 rounded-md border border-primary/20 bg-primary/10 px-2 py-1 text-xs text-primary hover:bg-primary/15 transition-colors"
+            >
+              <ExternalLink className="w-3 h-3" />
+              {t('tasks.preflight.openTarget', { target: item.target })}
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+type TaskTranslator = (key: MessageKey, params?: Record<string, string | number>) => string;
+
+function buildPreflightReasonLink(reason: string, task: Task, t: TaskTranslator): PreflightLinkItem {
+  const target = getPreflightReasonTarget(reason, task, t);
+  return {
+    id: `reason:${reason}:${target.href}`,
+    text: formatPreflightReason(reason, t),
+    ...target
+  };
+}
+
+function buildPreflightActionLink(action: string, task: Task, t: TaskTranslator): PreflightLinkItem {
+  const target = getPreflightActionTarget(action, task, t);
+  return {
+    id: `action:${action}:${target.href}`,
+    text: formatPreflightAction(action, t),
+    ...target
+  };
+}
+
+function getPreflightReasonTarget(reason: string, task: Task, t: (key: MessageKey) => string): { href: string; target: string } {
+  if (['capability_bundle_needs_review', 'capability_bundle_policy_risk', 'mcp_server_unhealthy'].includes(reason)) {
+    return { href: '/hermes-channels', target: t('tasks.preflight.target.channels') };
+  }
+  if (['workflow_requires_approval', 'workflow_requires_verification', 'high_risk_tools_require_approval'].includes(reason)) {
+    return { href: `/workflows/${encodeURIComponent(task.workflow_id)}`, target: t('tasks.preflight.target.workflow') };
+  }
+  if (reason === 'recent_workflow_failures') {
+    return { href: '/tasks', target: t('tasks.preflight.target.tasks') };
+  }
+  if (reason === 'role_viewer_cannot_execute') {
+    return { href: '/users', target: t('tasks.preflight.target.users') };
+  }
+  return { href: '/execution-center', target: t('tasks.preflight.target.executionCenter') };
+}
+
+function getPreflightActionTarget(action: string, task: Task, t: (key: MessageKey) => string): { href: string; target: string } {
+  if (['review_capability_bundle', 'review_channel_policy', 'check_mcp_server_health'].includes(action)) {
+    return { href: '/hermes-channels', target: t('tasks.preflight.target.channels') };
+  }
+  if (action === 'prepare_tool_approval') {
+    return { href: '/tool-approvals', target: t('tasks.preflight.target.approvals') };
+  }
+  if (action === 'prepare_verification_plan') {
+    return { href: `/workflows/${encodeURIComponent(task.workflow_id)}`, target: t('tasks.preflight.target.workflow') };
+  }
+  if (action === 'review_recent_failures') {
+    return { href: '/tasks', target: t('tasks.preflight.target.tasks') };
+  }
+  if (action === 'switch_operator_or_admin') {
+    return { href: '/users', target: t('tasks.preflight.target.users') };
+  }
+  return { href: '/execution-center', target: t('tasks.preflight.target.executionCenter') };
+}
+
+function dedupePreflightLinks(items: PreflightLinkItem[]): PreflightLinkItem[] {
+  const seen = new Set<string>();
+  return items.filter((item) => {
+    const key = `${item.text}:${item.href}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 function normalizeRecommendedSkillIds(value: unknown): string[] {
