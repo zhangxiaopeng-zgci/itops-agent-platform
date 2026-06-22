@@ -94,6 +94,9 @@ interface CorrelationTrace {
   auditLogs: Array<Record<string, unknown>>;
   teamRuns: Array<Record<string, unknown>>;
   workerRuns: Array<Record<string, unknown>>;
+  proposals: Array<Record<string, unknown>>;
+  externalLinks: Array<Record<string, unknown>>;
+  boardFeedback: Array<Record<string, unknown>>;
   executionEvidence: Array<Record<string, unknown>>;
   executionEvidenceSummary?: Record<string, unknown>;
 }
@@ -689,6 +692,15 @@ function CorrelationTraceSection({
     ...summaryStringList(trace, 'taskIds'),
     ...trace.tasks.map((task) => stringValue(task.id))
   ]);
+  const proposalIds = uniqueStrings([
+    ...summaryStringList(trace, 'proposalIds'),
+    ...trace.proposals.map((proposal) => stringValue(proposal.id)),
+    ...trace.boardFeedback.map((feedback) => stringValue(feedback.generated_proposal_id))
+  ]);
+  const externalCardIds = uniqueStrings([
+    ...summaryStringList(trace, 'externalCardIds'),
+    ...trace.externalLinks.map((link) => stringValue(link.external_card_id) || stringValue(link.external_run_id))
+  ]);
   const latestEvidenceAt = stringValue(trace.executionEvidenceSummary?.latestEvidenceAt);
 
   return (
@@ -703,9 +715,12 @@ function CorrelationTraceSection({
           <TraceMetric label={t('hermesDashboard.trace.teamRuns')} value={trace.teamRuns.length} />
           <TraceMetric label={t('hermesDashboard.trace.auditLogs')} value={trace.auditLogs.length} />
           <TraceMetric label={t('hermesDashboard.trace.evidence')} value={trace.executionEvidence.length} />
+          <TraceMetric label={t('hermesDashboard.trace.proposals')} value={trace.proposals.length} />
+          <TraceMetric label={t('hermesDashboard.trace.externalLinks')} value={trace.externalLinks.length} />
+          <TraceMetric label={t('hermesDashboard.trace.boardFeedback')} value={trace.boardFeedback.length} />
         </div>
 
-        {(riskLevels.length > 0 || toolCalls.length > 0 || latestEvidenceAt) && (
+        {(riskLevels.length > 0 || toolCalls.length > 0 || proposalIds.length > 0 || externalCardIds.length > 0 || latestEvidenceAt) && (
           <div className="rounded-lg border border-border bg-background/70 p-3">
             <div className="space-y-2 text-xs">
               {riskLevels.length > 0 && (
@@ -713,6 +728,12 @@ function CorrelationTraceSection({
               )}
               {toolCalls.length > 0 && (
                 <TraceChipRow label={t('hermesDashboard.trace.toolCalls')} values={toolCalls} />
+              )}
+              {proposalIds.length > 0 && (
+                <TraceChipRow label={t('hermesDashboard.trace.proposalIds')} values={proposalIds.map(shortId)} />
+              )}
+              {externalCardIds.length > 0 && (
+                <TraceChipRow label={t('hermesDashboard.trace.externalCards')} values={externalCardIds.map(shortId)} />
               )}
               {latestEvidenceAt && (
                 <div className="flex flex-wrap gap-2">
@@ -746,6 +767,77 @@ function CorrelationTraceSection({
                     ))}
                   </div>
                 </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {(trace.proposals.length > 0 || trace.externalLinks.length > 0 || trace.boardFeedback.length > 0) && (
+          <div className="rounded-lg border border-border bg-background/70 p-3">
+            <div className="space-y-3 text-xs">
+              {trace.proposals.length > 0 && (
+                <TraceRecordList
+                  title={t('hermesDashboard.trace.linkedProposals')}
+                  records={trace.proposals.slice(0, 5)}
+                  render={(proposal) => (
+                    <Link
+                      to={`/evolution-proposals?proposalId=${encodeURIComponent(stringValue(proposal.id))}`}
+                      className="block rounded-md border border-border bg-surface px-3 py-2 hover:border-primary/40 hover:bg-primary/5"
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="font-medium text-text-primary line-clamp-1">{stringValue(proposal.title) || shortId(stringValue(proposal.id))}</span>
+                        <span className="shrink-0 text-text-tertiary">{stringValue(proposal.status) || '-'}</span>
+                      </div>
+                      <div className="mt-1 flex flex-wrap gap-2 text-text-tertiary">
+                        <span>{stringValue(proposal.priority) || '-'}</span>
+                        <span>{stringValue(proposal.source) || '-'}</span>
+                        <span>{formatTime(stringValue(proposal.updated_at) || stringValue(proposal.created_at))}</span>
+                      </div>
+                    </Link>
+                  )}
+                />
+              )}
+              {trace.externalLinks.length > 0 && (
+                <TraceRecordList
+                  title={t('hermesDashboard.trace.externalLinks')}
+                  records={trace.externalLinks.slice(0, 5)}
+                  render={(link) => (
+                    <a
+                      href={stringValue(link.external_url)}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="block rounded-md border border-border bg-surface px-3 py-2 hover:border-primary/40 hover:bg-primary/5"
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="font-medium text-text-primary line-clamp-1">{stringValue(link.title) || stringValue(link.external_card_id) || stringValue(link.external_system)}</span>
+                        <span className="shrink-0 text-text-tertiary">{stringValue(link.external_state) || '-'}</span>
+                      </div>
+                      <p className="mt-1 break-all text-text-tertiary">{stringValue(link.external_url)}</p>
+                    </a>
+                  )}
+                />
+              )}
+              {trace.boardFeedback.length > 0 && (
+                <TraceRecordList
+                  title={t('hermesDashboard.trace.boardFeedback')}
+                  records={trace.boardFeedback.slice(0, 5)}
+                  render={(feedback) => (
+                    <div className="rounded-md border border-border bg-surface px-3 py-2">
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="font-medium text-text-primary">{stringValue(feedback.category) || '-'}</span>
+                        <span className="shrink-0 text-text-tertiary">{formatTime(stringValue(feedback.created_at))}</span>
+                      </div>
+                      {stringValue(feedback.generated_proposal_id) && (
+                        <Link
+                          to={`/evolution-proposals?proposalId=${encodeURIComponent(stringValue(feedback.generated_proposal_id))}`}
+                          className="mt-2 inline-flex rounded-md border border-primary/25 bg-primary/10 px-2 py-1 text-primary hover:bg-primary/15"
+                        >
+                          {t('hermesDashboard.trace.openFeedbackProposal')}
+                        </Link>
+                      )}
+                    </div>
+                  )}
+                />
               )}
             </div>
           </div>
@@ -921,6 +1013,21 @@ function TraceChipRow({ label, values, warning = false }: { label: string; value
       <div className="flex flex-wrap gap-2">
         {values.slice(0, 8).map((value) => (
           <Chip key={value} value={value} warning={warning} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function TraceRecordList({ title, records, render }: { title: string; records: Array<Record<string, unknown>>; render: (record: Record<string, unknown>) => ReactNode }) {
+  return (
+    <div>
+      <p className="mb-2 font-medium text-text-primary">{title}</p>
+      <div className="space-y-2">
+        {records.map((record, index) => (
+          <div key={stringValue(record.id) || `${title}-${index}`}>
+            {render(record)}
+          </div>
         ))}
       </div>
     </div>

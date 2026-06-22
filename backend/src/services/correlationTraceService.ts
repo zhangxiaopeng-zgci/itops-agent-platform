@@ -10,6 +10,9 @@ export interface CorrelationTraceResult {
   auditLogs: Array<Record<string, unknown>>;
   teamRuns: Array<Record<string, unknown>>;
   workerRuns: Array<Record<string, unknown>>;
+  proposals: Array<Record<string, unknown>>;
+  externalLinks: Array<Record<string, unknown>>;
+  boardFeedback: Array<Record<string, unknown>>;
   executionEvidence: Array<Record<string, unknown>>;
   executionEvidenceSummary: Record<string, unknown>;
 }
@@ -78,6 +81,37 @@ export function getCorrelationTrace(correlationId: string): CorrelationTraceResu
     LIMIT 50
   `).all(correlationId).map((row) => row as Record<string, unknown>);
 
+  const proposals = db.prepare(`
+    SELECT
+      id, title, type, status, priority, source, source_ref, target_descriptor,
+      evidence_refs, risk_notes, eval_summary, correlation_id, hermes_session_id,
+      created_by, reviewed_by, reviewed_at, created_at, updated_at
+    FROM evolution_proposals
+    WHERE correlation_id = ?
+       OR IFNULL(source_ref, '') ${likeSql}
+       OR IFNULL(evidence_refs, '') ${likeSql}
+       OR IFNULL(proposal_body, '') ${likeSql}
+       OR IFNULL(risk_notes, '') ${likeSql}
+    ORDER BY updated_at DESC, created_at DESC
+    LIMIT 30
+  `).all(correlationId, pattern, pattern, pattern, pattern).map(parseEvolutionProposal);
+
+  const externalLinks = db.prepare(`
+    SELECT *
+    FROM hermes_external_links
+    WHERE correlation_id = ?
+    ORDER BY updated_at DESC, created_at DESC
+    LIMIT 30
+  `).all(correlationId).map(parseExternalLink);
+
+  const boardFeedback = db.prepare(`
+    SELECT *
+    FROM hermes_board_feedback
+    WHERE correlation_id = ?
+    ORDER BY created_at DESC
+    LIMIT 30
+  `).all(correlationId).map(parseBoardFeedback);
+
   const executionEvidence = collectExecutionEvidence(agentExecutions, tasks);
 
   return {
@@ -89,6 +123,9 @@ export function getCorrelationTrace(correlationId: string): CorrelationTraceResu
     auditLogs,
     teamRuns,
     workerRuns,
+    proposals,
+    externalLinks,
+    boardFeedback,
     executionEvidence,
     executionEvidenceSummary: buildExecutionEvidenceSummary({
       correlationId,
@@ -99,6 +136,9 @@ export function getCorrelationTrace(correlationId: string): CorrelationTraceResu
       auditLogs,
       teamRuns,
       workerRuns,
+      proposals,
+      externalLinks,
+      boardFeedback,
       executionEvidence
     })
   };
@@ -156,12 +196,17 @@ function buildExecutionEvidenceSummary(input: {
   auditLogs: Array<Record<string, unknown>>;
   teamRuns: Array<Record<string, unknown>>;
   workerRuns: Array<Record<string, unknown>>;
+  proposals: Array<Record<string, unknown>>;
+  externalLinks: Array<Record<string, unknown>>;
+  boardFeedback: Array<Record<string, unknown>>;
   executionEvidence: Array<Record<string, unknown>>;
 }): Record<string, unknown> {
   const riskLevels = new Set<string>();
   const toolCalls = new Set<string>();
   const approvalIds = new Set<string>();
   const taskIds = new Set<string>();
+  const proposalIds = new Set<string>();
+  const externalCardIds = new Set<string>();
   const correlationIds = new Set<string>([input.correlationId]);
   const traceIds = new Set<string>();
   const releaseOverlayVersionIds = new Set<string>();
@@ -188,6 +233,19 @@ function buildExecutionEvidenceSummary(input: {
   input.tasks.forEach((task) => addString(task.id, taskIds));
   input.teamRuns.forEach((run) => addString(run.correlation_id, correlationIds));
   input.workerRuns.forEach((run) => addString(run.correlation_id, correlationIds));
+  input.proposals.forEach((proposal) => {
+    addString(proposal.id, proposalIds);
+    addString(proposal.correlation_id, correlationIds);
+  });
+  input.externalLinks.forEach((link) => {
+    addString(link.external_card_id, externalCardIds);
+    addString(link.external_run_id, externalCardIds);
+    addString(link.correlation_id, correlationIds);
+  });
+  input.boardFeedback.forEach((feedback) => {
+    addString(feedback.generated_proposal_id, proposalIds);
+    addString(feedback.correlation_id, correlationIds);
+  });
   const evidenceTimes = input.executionEvidence
     .map(item => typeof item.generatedAt === 'string' ? item.generatedAt : null)
     .filter((item): item is string => Boolean(item))
@@ -204,16 +262,46 @@ function buildExecutionEvidenceSummary(input: {
       tasks: input.tasks.length,
       teamRuns: input.teamRuns.length,
       workerRuns: input.workerRuns.length,
+      proposals: input.proposals.length,
+      externalLinks: input.externalLinks.length,
+      boardFeedback: input.boardFeedback.length,
       auditLogs: input.auditLogs.length
     },
     riskLevels: Array.from(riskLevels),
     toolCalls: Array.from(toolCalls),
     approvalIds: Array.from(approvalIds),
     taskIds: Array.from(taskIds),
+    proposalIds: Array.from(proposalIds),
+    externalCardIds: Array.from(externalCardIds),
     correlationIds: Array.from(correlationIds),
     traceIds: Array.from(traceIds),
     releaseOverlayVersionIds: Array.from(releaseOverlayVersionIds),
     latestEvidenceAt: evidenceTimes.length > 0 ? evidenceTimes[evidenceTimes.length - 1] : null
+  };
+}
+
+function parseEvolutionProposal(row: unknown): Record<string, unknown> {
+  const record = row as Record<string, unknown>;
+  return {
+    ...record,
+    evidence_refs: parseJson(record.evidence_refs, null),
+    eval_summary: parseJson(record.eval_summary, null)
+  };
+}
+
+function parseExternalLink(row: unknown): Record<string, unknown> {
+  const record = row as Record<string, unknown>;
+  return {
+    ...record,
+    metadata: parseJson(record.metadata, null)
+  };
+}
+
+function parseBoardFeedback(row: unknown): Record<string, unknown> {
+  const record = row as Record<string, unknown>;
+  return {
+    ...record,
+    evidence_refs: parseJson(record.evidence_refs, null)
   };
 }
 
