@@ -44,6 +44,7 @@ export interface HermesChannelRecord {
   tools: HermesChannelToolRecord[];
   skills: HermesChannelSkillRecord[];
   mcpServers: HermesChannelMcpServerRecord[];
+  effectiveBundle: HermesChannelEffectiveBundle;
 }
 
 export interface HermesChannelToolRecord {
@@ -53,6 +54,103 @@ export interface HermesChannelToolRecord {
   enabled: number;
   risk_level_override: string | null;
   created_at: string;
+}
+
+export interface HermesChannelEffectiveBundleAgent {
+  id: string;
+  name: string;
+  role: string | null;
+  runtime: string | null;
+  enabled: number;
+}
+
+export interface HermesChannelEffectiveBundleRelease {
+  id: string;
+  proposal_id: string;
+  object_type: string;
+  target_id: string | null;
+  version_label: string;
+  status: string;
+  published_at: string | null;
+}
+
+export interface HermesChannelEffectiveBundle {
+  schemaVersion: 'hermes.channel.effectiveBundle.v1';
+  channelId: string;
+  channelName: string;
+  channelType: string;
+  runtime: {
+    runtimeType: string;
+    model: string;
+    baseUrl: string | null;
+    apiKeyRef: string;
+    timeoutMs: number;
+    maxToolRounds: number;
+    temperature: number | null;
+  };
+  policy: {
+    policyId: string | null;
+    mode: 'policy_bound' | 'default_guardrails';
+    approvalRequired: boolean;
+    highRiskToolCount: number;
+  };
+  agents: HermesChannelEffectiveBundleAgent[];
+  tools: Array<{
+    name: string;
+    riskLevel: string;
+    enabled: boolean;
+  }>;
+  skills: Array<{
+    id: string;
+    skillId: string;
+    name: string;
+    category: string;
+    version: string;
+    riskLevel: string;
+    approvalPolicy: string;
+    versionStatus: string;
+    enabled: boolean;
+  }>;
+  mcpServers: Array<{
+    id: string;
+    mcpServerId: string;
+    name: string;
+    transport: string;
+    healthStatus: string;
+    toolImportMode: string;
+    enabled: boolean;
+  }>;
+  delegation: {
+    delegateAllowed: boolean;
+    maxConcurrentChildren: number;
+    maxSpawnDepth: number;
+    workerLanes: string[];
+    externalCliWorkers: string[];
+    kanbanRequiredForLongRunning: boolean;
+    circuitBreakerThreshold: number;
+  };
+  releaseOverlays: HermesChannelEffectiveBundleRelease[];
+  quality: {
+    workerRole: string | null;
+    runs24h: number;
+    successRuns24h: number;
+    failedRuns24h: number;
+    fallbackRuns24h: number;
+    avgLatencyMs: number | null;
+    lastRunAt: string | null;
+    successRate: number | null;
+  };
+  summary: {
+    agents: number;
+    tools: number;
+    highRiskTools: number;
+    skills: number;
+    mcpServers: number;
+    unhealthyMcpServers: number;
+    releaseOverlays: number;
+    ready: boolean;
+    warnings: string[];
+  };
 }
 
 export interface HermesChannelInput {
@@ -347,7 +445,7 @@ function replaceHermesChannelTools(channelId: string, tools: string[]): void {
 
 function parseHermesChannel(row: Record<string, unknown>): HermesChannelRecord {
   const channelId = String(row.id);
-  return {
+  const channel = {
     id: channelId,
     name: String(row.name || ''),
     description: nullableString(row.description),
@@ -377,6 +475,11 @@ function parseHermesChannel(row: Record<string, unknown>): HermesChannelRecord {
     skills: listChannelSkills(channelId),
     mcpServers: listChannelMcpServers(channelId)
   };
+
+  return {
+    ...channel,
+    effectiveBundle: buildEffectiveBundle(channel)
+  };
 }
 
 function listHermesChannelTools(channelId: string): HermesChannelToolRecord[] {
@@ -393,6 +496,236 @@ function listHermesChannelTools(channelId: string): HermesChannelToolRecord[] {
     risk_level_override: nullableString(row.risk_level_override),
     created_at: String(row.created_at || '')
   }));
+}
+
+function buildEffectiveBundle(channel: Omit<HermesChannelRecord, 'effectiveBundle'>): HermesChannelEffectiveBundle {
+  const agents = listChannelAgents(channel.id);
+  const enabledTools = channel.tools.filter((tool) => tool.enabled === 1).map((tool) => ({
+    name: tool.tool_name,
+    riskLevel: normalizeRiskLevel(tool.risk_level_override || inferToolRiskLevel(tool.tool_name)),
+    enabled: true
+  }));
+  const enabledSkills = channel.skills
+    .filter((skill) => skill.enabled === 1 && skill.binding_enabled === 1)
+    .map((skill) => ({
+      id: skill.id,
+      skillId: skill.skill_id,
+      name: skill.name,
+      category: skill.category,
+      version: skill.version,
+      riskLevel: skill.risk_level,
+      approvalPolicy: skill.approval_policy,
+      versionStatus: skill.version_status,
+      enabled: true
+    }));
+  const enabledMcpServers = channel.mcpServers
+    .filter((server) => server.enabled === 1 && server.binding_enabled === 1)
+    .map((server) => ({
+      id: server.id,
+      mcpServerId: server.mcp_server_id,
+      name: server.name,
+      transport: server.transport,
+      healthStatus: server.health_status,
+      toolImportMode: server.tool_import_mode,
+      enabled: true
+    }));
+  const highRiskTools = enabledTools.filter((tool) => isHighRisk(tool.riskLevel));
+  const releaseOverlays = listEffectiveReleaseOverlays(channel, agents);
+  const quality = buildChannelQuality(channel.type);
+  const unhealthyMcpServers = enabledMcpServers.filter((server) => ['failed', 'unhealthy'].includes(server.healthStatus)).length;
+  const warnings: string[] = [];
+
+  if (channel.enabled !== 1) warnings.push('channel_disabled');
+  if (agents.length === 0) warnings.push('no_bound_agent');
+  if (enabledTools.length === 0) warnings.push('no_enabled_tool');
+  if (highRiskTools.length > 0 && !channel.policy_id) warnings.push('high_risk_tools_without_policy');
+  if (unhealthyMcpServers > 0) warnings.push('unhealthy_mcp_server');
+  if (quality.failedRuns24h > 0) warnings.push('recent_failed_runs');
+  if (quality.fallbackRuns24h > 0) warnings.push('recent_fallback_runs');
+
+  const ready = warnings.filter((warning) => warning !== 'recent_failed_runs' && warning !== 'recent_fallback_runs').length === 0;
+
+  return {
+    schemaVersion: 'hermes.channel.effectiveBundle.v1',
+    channelId: channel.id,
+    channelName: channel.name,
+    channelType: channel.type,
+    runtime: {
+      runtimeType: channel.runtime_type,
+      model: channel.model,
+      baseUrl: channel.base_url,
+      apiKeyRef: channel.api_key_ref,
+      timeoutMs: channel.timeout_ms,
+      maxToolRounds: channel.max_tool_rounds,
+      temperature: channel.temperature
+    },
+    policy: {
+      policyId: channel.policy_id,
+      mode: channel.policy_id ? 'policy_bound' : 'default_guardrails',
+      approvalRequired: Boolean(channel.policy_id || highRiskTools.length > 0),
+      highRiskToolCount: highRiskTools.length
+    },
+    agents,
+    tools: enabledTools,
+    skills: enabledSkills,
+    mcpServers: enabledMcpServers,
+    delegation: {
+      delegateAllowed: channel.delegate_allowed === 1,
+      maxConcurrentChildren: channel.max_concurrent_children,
+      maxSpawnDepth: channel.max_spawn_depth,
+      workerLanes: channel.allowed_worker_lanes,
+      externalCliWorkers: channel.allowed_external_cli_workers,
+      kanbanRequiredForLongRunning: channel.kanban_required_for_long_running === 1,
+      circuitBreakerThreshold: channel.circuit_breaker_threshold
+    },
+    releaseOverlays,
+    quality,
+    summary: {
+      agents: agents.length,
+      tools: enabledTools.length,
+      highRiskTools: highRiskTools.length,
+      skills: enabledSkills.length,
+      mcpServers: enabledMcpServers.length,
+      unhealthyMcpServers,
+      releaseOverlays: releaseOverlays.length,
+      ready,
+      warnings
+    }
+  };
+}
+
+function listChannelAgents(channelId: string): HermesChannelEffectiveBundleAgent[] {
+  const rows = db.prepare(`
+    SELECT id, name, role, runtime, enabled
+    FROM agents
+    WHERE channel_id = ?
+    ORDER BY enabled DESC, name ASC
+  `).all(channelId) as Array<Record<string, unknown>>;
+
+  return rows.map((row) => ({
+    id: String(row.id),
+    name: String(row.name || ''),
+    role: nullableString(row.role),
+    runtime: nullableString(row.runtime),
+    enabled: Number(row.enabled ?? 0)
+  }));
+}
+
+function listEffectiveReleaseOverlays(
+  channel: Omit<HermesChannelRecord, 'effectiveBundle'>,
+  agents: HermesChannelEffectiveBundleAgent[]
+): HermesChannelEffectiveBundleRelease[] {
+  const skillIds = new Set(channel.skills.map((skill) => skill.skill_id));
+  const mcpServerIds = new Set(channel.mcpServers.map((server) => server.mcp_server_id));
+  const agentIds = new Set(agents.map((agent) => agent.id));
+  const candidateTargets = new Set<string>([
+    channel.id,
+    channel.type,
+    ...(channel.policy_id ? [channel.policy_id] : [])
+  ]);
+
+  const rows = db.prepare(`
+    SELECT id, proposal_id, object_type, target_id, version_label, status, published_at
+    FROM evolution_release_versions
+    WHERE status = 'active'
+    ORDER BY published_at DESC, created_at DESC
+    LIMIT 100
+  `).all() as Array<Record<string, unknown>>;
+
+  return rows
+    .filter((row) => {
+      const objectType = String(row.object_type || '');
+      const targetId = nullableString(row.target_id);
+      if (!targetId) return objectType === 'global';
+      if (candidateTargets.has(targetId)) return true;
+      if (objectType === 'skill') return skillIds.has(targetId);
+      if (objectType === 'mcp_binding') return mcpServerIds.has(targetId);
+      if (objectType === 'agent_prompt') return agentIds.has(targetId);
+      if (objectType === 'tool_policy') return targetId === channel.policy_id || targetId === channel.id;
+      return false;
+    })
+    .slice(0, 8)
+    .map((row) => ({
+      id: String(row.id),
+      proposal_id: String(row.proposal_id || ''),
+      object_type: String(row.object_type || ''),
+      target_id: nullableString(row.target_id),
+      version_label: String(row.version_label || ''),
+      status: String(row.status || ''),
+      published_at: nullableString(row.published_at)
+    }));
+}
+
+function buildChannelQuality(channelType: string): HermesChannelEffectiveBundle['quality'] {
+  const workerRole = channelTypeToWorkerRole(channelType);
+  if (!workerRole) {
+    return {
+      workerRole: null,
+      runs24h: 0,
+      successRuns24h: 0,
+      failedRuns24h: 0,
+      fallbackRuns24h: 0,
+      avgLatencyMs: null,
+      lastRunAt: null,
+      successRate: null
+    };
+  }
+
+  const row = db.prepare(`
+    SELECT
+      COUNT(*) AS runs24h,
+      SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) AS successRuns24h,
+      SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failedRuns24h,
+      SUM(CASE WHEN fallback_used = 1 THEN 1 ELSE 0 END) AS fallbackRuns24h,
+      AVG(latency_ms) AS avgLatencyMs,
+      MAX(created_at) AS lastRunAt
+    FROM hermes_worker_runs
+    WHERE worker_role = ?
+      AND created_at >= datetime('now', '-24 hours')
+  `).get(workerRole) as Record<string, unknown> | undefined;
+
+  const runs24h = Number(row?.runs24h || 0);
+  const successRuns24h = Number(row?.successRuns24h || 0);
+  return {
+    workerRole,
+    runs24h,
+    successRuns24h,
+    failedRuns24h: Number(row?.failedRuns24h || 0),
+    fallbackRuns24h: Number(row?.fallbackRuns24h || 0),
+    avgLatencyMs: nullableNumber(row?.avgLatencyMs),
+    lastRunAt: nullableString(row?.lastRunAt),
+    successRate: runs24h > 0 ? Math.round((successRuns24h / runs24h) * 100) : null
+  };
+}
+
+function channelTypeToWorkerRole(channelType: string): string | null {
+  if (channelType === 'diagnose') return 'diagnose';
+  if (channelType === 'remediate') return 'remediate';
+  if (channelType === 'review') return 'evolve';
+  return null;
+}
+
+function inferToolRiskLevel(toolName: string): string {
+  const normalized = toolName.toLowerCase();
+  if (normalized.includes('execute') || normalized.includes('run_workflow') || normalized.includes('restart')) {
+    return 'high';
+  }
+  if (normalized.includes('approval') || normalized.includes('task') || normalized.includes('workflow')) {
+    return 'medium';
+  }
+  return 'inherit';
+}
+
+function normalizeRiskLevel(value: string): string {
+  const normalized = value.toLowerCase();
+  if (['critical', 'high', 'medium', 'low', 'inherit'].includes(normalized)) {
+    return normalized;
+  }
+  return 'inherit';
+}
+
+function isHighRisk(riskLevel: string): boolean {
+  return riskLevel === 'high' || riskLevel === 'critical';
 }
 
 function normalizeChannelInput(input: HermesChannelInput, requireName: boolean): HermesChannelInput & { enabled?: number } {

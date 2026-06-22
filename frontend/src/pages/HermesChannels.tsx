@@ -51,6 +51,99 @@ interface HermesChannelMcpServer {
   tool_import_mode: string;
 }
 
+interface HermesChannelEffectiveBundle {
+  schemaVersion: string;
+  channelId: string;
+  channelName: string;
+  channelType: string;
+  runtime: {
+    runtimeType: string;
+    model: string;
+    baseUrl?: string | null;
+    apiKeyRef: string;
+    timeoutMs: number;
+    maxToolRounds: number;
+    temperature?: number | null;
+  };
+  policy: {
+    policyId?: string | null;
+    mode: string;
+    approvalRequired: boolean;
+    highRiskToolCount: number;
+  };
+  agents: Array<{
+    id: string;
+    name: string;
+    role?: string | null;
+    runtime?: string | null;
+    enabled: number;
+  }>;
+  tools: Array<{
+    name: string;
+    riskLevel: string;
+    enabled: boolean;
+  }>;
+  skills: Array<{
+    id: string;
+    skillId: string;
+    name: string;
+    category: string;
+    version: string;
+    riskLevel: string;
+    approvalPolicy: string;
+    versionStatus: string;
+    enabled: boolean;
+  }>;
+  mcpServers: Array<{
+    id: string;
+    mcpServerId: string;
+    name: string;
+    transport: string;
+    healthStatus: string;
+    toolImportMode: string;
+    enabled: boolean;
+  }>;
+  delegation: {
+    delegateAllowed: boolean;
+    maxConcurrentChildren: number;
+    maxSpawnDepth: number;
+    workerLanes: string[];
+    externalCliWorkers: string[];
+    kanbanRequiredForLongRunning: boolean;
+    circuitBreakerThreshold: number;
+  };
+  releaseOverlays: Array<{
+    id: string;
+    proposal_id: string;
+    object_type: string;
+    target_id?: string | null;
+    version_label: string;
+    status: string;
+    published_at?: string | null;
+  }>;
+  quality: {
+    workerRole?: string | null;
+    runs24h: number;
+    successRuns24h: number;
+    failedRuns24h: number;
+    fallbackRuns24h: number;
+    avgLatencyMs?: number | null;
+    lastRunAt?: string | null;
+    successRate?: number | null;
+  };
+  summary: {
+    agents: number;
+    tools: number;
+    highRiskTools: number;
+    skills: number;
+    mcpServers: number;
+    unhealthyMcpServers: number;
+    releaseOverlays: number;
+    ready: boolean;
+    warnings: string[];
+  };
+}
+
 interface HermesChannel {
   id: string;
   name: string;
@@ -77,6 +170,7 @@ interface HermesChannel {
   tools: HermesChannelTool[];
   skills: HermesChannelSkill[];
   mcpServers: HermesChannelMcpServer[];
+  effectiveBundle?: HermesChannelEffectiveBundle;
 }
 
 interface ToolDescriptor {
@@ -763,6 +857,21 @@ export default function HermesChannels() {
                       <span className="px-2 py-1 rounded-md bg-background border border-border text-text-secondary">
                         {(channel.mcpServers || []).filter((server) => server.enabled === 1 && server.binding_enabled === 1).length} MCP
                       </span>
+                      {channel.effectiveBundle && (
+                        <>
+                          <span className={clsx(
+                            'px-2 py-1 rounded-md border',
+                            channel.effectiveBundle.summary.ready
+                              ? 'bg-emerald-500/10 border-emerald-500/25 text-emerald-600 dark:text-emerald-300'
+                              : 'bg-amber-500/10 border-amber-500/25 text-amber-600 dark:text-amber-300'
+                          )}>
+                            {channel.effectiveBundle.summary.ready ? t('hermesChannels.bundle.ready') : t('hermesChannels.bundle.needsReview')}
+                          </span>
+                          <span className="px-2 py-1 rounded-md bg-background border border-border text-text-secondary">
+                            {t('hermesChannels.bundle.releasesShort', { count: channel.effectiveBundle.summary.releaseOverlays })}
+                          </span>
+                        </>
+                      )}
                     </div>
                   </button>
                 ))}
@@ -1581,6 +1690,181 @@ function MetricChip({ label, value }: { label: string; value: string }) {
   );
 }
 
+function CapabilityBundlePanel({ bundle }: { bundle: HermesChannelEffectiveBundle }) {
+  const { t } = useLocale();
+  const successRate = bundle.quality.successRate == null ? '-' : `${bundle.quality.successRate}%`;
+
+  return (
+    <div className={`${panelClass} p-5`}>
+      <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4">
+        <div>
+          <div className="flex items-center gap-2">
+            <Cable className="w-5 h-5 text-primary" />
+            <h3 className="text-sm font-semibold text-text-primary">{t('hermesChannels.bundle.title')}</h3>
+          </div>
+          <p className="text-xs text-text-tertiary mt-1">{t('hermesChannels.bundle.desc')}</p>
+        </div>
+        <div className="flex flex-wrap gap-2 text-xs">
+          <SemanticChip
+            value={bundle.summary.ready ? t('hermesChannels.bundle.ready') : t('hermesChannels.bundle.needsReview')}
+            tone={bundle.summary.ready ? 'normal' : 'warning'}
+          />
+          <SemanticChip value={bundle.policy.mode === 'policy_bound' ? t('hermesChannels.bundle.policyBound') : t('hermesChannels.bundle.defaultGuardrails')} />
+          <SemanticChip
+            value={bundle.policy.approvalRequired ? t('hermesChannels.bundle.approvalRequired') : t('hermesChannels.bundle.noApprovalRequired')}
+            tone={bundle.policy.approvalRequired ? 'warning' : 'normal'}
+          />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 lg:grid-cols-6 gap-3 mt-5">
+        <MetricChip label={t('hermesChannels.bundle.agents')} value={String(bundle.summary.agents)} />
+        <MetricChip label={t('hermesChannels.bundle.tools')} value={`${bundle.summary.tools}/${bundle.summary.highRiskTools}`} />
+        <MetricChip label={t('hermesChannels.bundle.skills')} value={String(bundle.summary.skills)} />
+        <MetricChip label={t('hermesChannels.bundle.mcp')} value={`${bundle.summary.mcpServers}/${bundle.summary.unhealthyMcpServers}`} />
+        <MetricChip label={t('hermesChannels.bundle.releases')} value={String(bundle.summary.releaseOverlays)} />
+        <MetricChip label={t('hermesChannels.bundle.successRate')} value={successRate} />
+      </div>
+
+      {bundle.summary.warnings.length > 0 && (
+        <div className="mt-4 rounded-lg border border-amber-500/25 bg-amber-500/10 p-3">
+          <div className="text-xs font-semibold text-amber-700 dark:text-amber-300">{t('hermesChannels.bundle.warnings')}</div>
+          <div className="mt-2 flex flex-wrap gap-2 text-xs">
+            {bundle.summary.warnings.map((warning) => (
+              <span key={warning} className="px-2 py-1 rounded-md bg-surface border border-border text-text-secondary">
+                {bundleWarningText(warning, t)}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 mt-5">
+        <BundleSection title={t('hermesChannels.bundle.boundAgents')} icon={<Bot className="w-4 h-4" />}>
+          <BundleChipList
+            emptyText={t('hermesChannels.bundle.noAgents')}
+            items={bundle.agents.map((agent) => ({
+              key: agent.id,
+              label: agent.name,
+              meta: agent.role || agent.runtime || '-',
+              tone: agent.enabled === 1 ? 'normal' : 'warning'
+            }))}
+          />
+        </BundleSection>
+
+        <BundleSection title={t('hermesChannels.bundle.runtimePolicy')} icon={<ShieldCheck className="w-4 h-4" />}>
+          <div className="grid grid-cols-2 gap-2">
+            <MetricChip label={t('hermesChannels.model')} value={bundle.runtime.model} />
+            <MetricChip label={t('hermesChannels.bundle.workerRole')} value={bundle.quality.workerRole || '-'} />
+            <MetricChip label={t('hermesChannels.bundle.runs24h')} value={String(bundle.quality.runs24h)} />
+            <MetricChip label={t('hermesChannels.workerFallbacks')} value={String(bundle.quality.fallbackRuns24h)} />
+          </div>
+          <div className="mt-3 flex flex-wrap gap-2 text-xs">
+            <SemanticChip value={bundle.delegation.delegateAllowed ? t('hermesChannels.bundle.delegationOn') : t('hermesChannels.bundle.delegationOff')} />
+            <SemanticChip value={t('hermesChannels.bundle.maxChildren', { count: bundle.delegation.maxConcurrentChildren })} />
+            <SemanticChip value={t('hermesChannels.bundle.maxDepth', { count: bundle.delegation.maxSpawnDepth })} />
+          </div>
+        </BundleSection>
+
+        <BundleSection title={t('hermesChannels.bundle.capabilities')} icon={<Wrench className="w-4 h-4" />}>
+          <BundleChipList
+            emptyText={t('hermesChannels.bundle.noTools')}
+            items={bundle.tools.slice(0, 12).map((tool) => ({
+              key: tool.name,
+              label: tool.name,
+              meta: tool.riskLevel,
+              tone: tool.riskLevel === 'high' || tool.riskLevel === 'critical' ? 'warning' : 'normal'
+            }))}
+          />
+          {bundle.skills.length > 0 && (
+            <div className="mt-3 flex flex-wrap gap-2 text-xs">
+              {bundle.skills.slice(0, 8).map((skill) => (
+                <SemanticChip
+                  key={skill.id}
+                  value={`${skill.name} ${skill.version}`}
+                  tone={skill.riskLevel === 'high' ? 'warning' : 'normal'}
+                />
+              ))}
+            </div>
+          )}
+        </BundleSection>
+
+        <BundleSection title={t('hermesChannels.bundle.connectorsAndReleases')} icon={<PlugZap className="w-4 h-4" />}>
+          <BundleChipList
+            emptyText={t('hermesChannels.bundle.noMcp')}
+            items={bundle.mcpServers.map((server) => ({
+              key: server.id,
+              label: server.name,
+              meta: `${server.transport}/${server.healthStatus}`,
+              tone: ['failed', 'unhealthy'].includes(server.healthStatus) ? 'warning' : 'normal'
+            }))}
+          />
+          {bundle.releaseOverlays.length > 0 ? (
+            <div className="mt-3 space-y-2">
+              {bundle.releaseOverlays.slice(0, 4).map((release) => (
+                <div key={release.id} className="rounded-md bg-background border border-border px-3 py-2 text-xs text-text-secondary">
+                  <div className="font-medium text-text-primary truncate">{release.version_label}</div>
+                  <div className="mt-0.5 truncate">{release.object_type} / {release.target_id || 'global'}</div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="mt-3 text-xs text-text-tertiary">{t('hermesChannels.bundle.noReleases')}</div>
+          )}
+        </BundleSection>
+      </div>
+    </div>
+  );
+}
+
+function BundleSection({ title, icon, children }: { title: string; icon: ReactNode; children: ReactNode }) {
+  return (
+    <div className="rounded-lg border border-border bg-background/70 p-4">
+      <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-text-tertiary mb-3">
+        {icon}
+        <span>{title}</span>
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function BundleChipList({
+  items,
+  emptyText
+}: {
+  items: Array<{ key: string; label: string; meta: string; tone?: 'normal' | 'warning' }>;
+  emptyText: string;
+}) {
+  if (items.length === 0) {
+    return <div className="text-xs text-text-tertiary">{emptyText}</div>;
+  }
+
+  return (
+    <div className="flex flex-wrap gap-2 text-xs">
+      {items.map((item) => (
+        <span
+          key={item.key}
+          className={clsx(
+            'inline-flex max-w-full items-center gap-1.5 rounded-md border px-2 py-1',
+            item.tone === 'warning'
+              ? 'bg-amber-500/10 border-amber-500/25 text-amber-700 dark:text-amber-300'
+              : 'bg-surface border-border text-text-secondary'
+          )}
+        >
+          <span className="truncate">{item.label}</span>
+          <span className="text-text-tertiary truncate">{item.meta}</span>
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function bundleWarningText(warning: string, t: ReturnType<typeof useLocale>['t']) {
+  const key = `hermesChannels.bundle.warning.${warning}` as MessageKey;
+  return t(key);
+}
+
 function ChannelDetails({
   channel,
   tools,
@@ -1695,6 +1979,8 @@ function ChannelDetails({
           <InfoTile label={t('hermesChannels.lastChecked')} value={channel.last_checked_at || '-'} />
         </div>
       </div>
+
+      {channel.effectiveBundle && <CapabilityBundlePanel bundle={channel.effectiveBundle} />}
 
       <div className={`${panelClass} p-5`}>
         <div className="flex items-center justify-between mb-4">
