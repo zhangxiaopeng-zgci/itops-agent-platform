@@ -661,6 +661,25 @@ Make topology nodes actionable: diagnose, execute, view details.
 Infer blast radius for node/server/service failures.
 ```
 
+Implemented first slice:
+
+```text
+Topology API now merges servers, network devices, Kubernetes clusters, nodes, namespaces, workloads, pods, and services into one graph.
+Kubernetes nodes connect to backing servers through server_id first, then read-only name/IP inference.
+Kubernetes hierarchy is rendered as Cluster -> Namespace -> Workload -> Pod, Cluster -> Node -> Pod, Node -> Server, and Service -> Workload where selectors can be inferred.
+The topology page shows asset scope metrics and renders node type labels so operators can distinguish host, network, and cloud-native assets.
+No runtime data mutation is introduced in this slice; missing namespace records are represented as synthetic read-only topology nodes.
+```
+
+Remaining:
+
+```text
+Add alert, task, and Hermes session asset links.
+Add actionable node drill-downs into Diagnosis Center and Execution Center.
+Add blast-radius query APIs that traverse cloud-native and server dependency paths.
+Add explicit Server <-> Network Device relationships once a durable network topology model is introduced.
+```
+
 Acceptance:
 
 ```text

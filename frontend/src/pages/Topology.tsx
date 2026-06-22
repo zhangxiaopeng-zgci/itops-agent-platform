@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Network, RefreshCw, Plus, ArrowDown, X } from 'lucide-react';
 import clsx from 'clsx';
@@ -6,6 +6,7 @@ import api from '../lib/api';
 import TopologyGraph from '../components/TopologyGraph';
 import type { TopologyNode, TopologyEdge } from '../components/TopologyGraph';
 import { useToast } from '../contexts/ToastContext';
+import { useLocale, type MessageKey } from '../contexts/LocaleContext';
 
 interface Dependency {
   id?: string;
@@ -30,8 +31,9 @@ interface ApiTopologyNode {
   server_ip?: string;
   name?: string;
   ip?: string;
-  status?: TopologyNode['status'];
+  status?: string;
   type?: string;
+  metadata?: Record<string, unknown>;
   x?: number;
   y?: number;
 }
@@ -69,15 +71,10 @@ const statusColors: Record<string, string> = {
   degraded: 'bg-yellow-100 text-yellow-700',
 };
 
-const statusLabels: Record<string, string> = {
-  active: '正常',
-  inactive: '断开',
-  degraded: '降级',
-};
-
 function DeleteDependencyButton({ dependencyId }: { dependencyId: string }) {
   const queryClient = useQueryClient();
   const toast = useToast();
+  const { t } = useLocale();
   
   const deleteMutation = useMutation({
     mutationFn: async () => {
@@ -86,10 +83,10 @@ function DeleteDependencyButton({ dependencyId }: { dependencyId: string }) {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['topology'] });
-      toast.success('依赖删除成功');
+      toast.success(t('topology.toast.dependencyDeleted'));
     },
     onError: (err: any) => {
-      toast.error(err.response?.data?.error || '删除失败');
+      toast.error(err.response?.data?.error || t('topology.toast.deleteFailed'));
     },
   });
 
@@ -99,7 +96,7 @@ function DeleteDependencyButton({ dependencyId }: { dependencyId: string }) {
       disabled={deleteMutation.isPending}
       className="px-3 py-1 text-xs bg-red-500/10 text-red-400 hover:bg-red-500/20 rounded transition-colors disabled:opacity-50"
     >
-      {deleteMutation.isPending ? '删除中...' : '删除'}
+      {deleteMutation.isPending ? t('topology.action.deleting') : t('common.delete')}
     </button>
   );
 }
@@ -107,6 +104,7 @@ function DeleteDependencyButton({ dependencyId }: { dependencyId: string }) {
 export default function Topology() {
   const queryClient = useQueryClient();
   const toast = useToast();
+  const { t } = useLocale();
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [formData, setFormData] = useState({
     source_server_id: '',
@@ -141,6 +139,13 @@ export default function Topology() {
     },
   });
 
+  const assetSummary = useMemo(() => buildAssetSummary(topologyData, t), [topologyData, t]);
+  const localizedStatusLabels = useMemo(() => ({
+    active: t('topology.status.active'),
+    inactive: t('topology.status.inactive'),
+    degraded: t('topology.status.degraded'),
+  }), [t]);
+
   const addDependencyMutation = useMutation({
     mutationFn: async (data: typeof formData) => {
       const res = await api.post('/api/topology/dependency', data);
@@ -148,7 +153,7 @@ export default function Topology() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['topology'] });
-      toast.success('依赖添加成功');
+      toast.success(t('topology.toast.dependencyAdded'));
       setIsAddModalOpen(false);
       setFormData({
         source_server_id: '',
@@ -159,13 +164,13 @@ export default function Topology() {
       });
     },
     onError: (err: any) => {
-      toast.error(err.response?.data?.error || '添加失败');
+      toast.error(err.response?.data?.error || t('topology.toast.addFailed'));
     },
   });
 
   const handleDiscoverDependencies = async () => {
     if (!servers || servers.length === 0) {
-      toast.warning('没有可发现依赖的服务器');
+      toast.warning(t('topology.toast.noServers'));
       return;
     }
     
@@ -179,9 +184,9 @@ export default function Topology() {
         }
       }
       queryClient.invalidateQueries({ queryKey: ['topology'] });
-      toast.success('依赖发现完成');
+      toast.success(t('topology.toast.discoveryDone'));
     } catch (err: any) {
-      toast.error(err.response?.data?.error || '依赖发现失败');
+      toast.error(err.response?.data?.error || t('topology.toast.discoveryFailed'));
     } finally {
       setIsDiscovering(false);
     }
@@ -193,8 +198,8 @@ export default function Topology() {
         <div className="flex items-center gap-3">
           <Network className="w-7 h-7 text-primary" />
           <div>
-            <h1 className="text-2xl font-bold text-text-primary">服务拓扑</h1>
-            <p className="text-text-secondary text-sm mt-0.5">查看服务间依赖关系和调用链路</p>
+            <h1 className="text-2xl font-bold text-text-primary">{t('topology.title')}</h1>
+            <p className="text-text-secondary text-sm mt-0.5">{t('topology.subtitle')}</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -204,7 +209,7 @@ export default function Topology() {
             className="px-3 py-2 text-text-secondary hover:text-text-primary hover:bg-background rounded-lg flex items-center gap-2 text-sm disabled:opacity-50 transition-colors"
           >
             <RefreshCw className={clsx('w-4 h-4', topologyLoading && 'animate-spin')} />
-            刷新
+            {t('common.refresh')}
           </button>
           <button
             onClick={handleDiscoverDependencies}
@@ -212,14 +217,14 @@ export default function Topology() {
             className="px-3 py-2 text-text-secondary hover:text-text-primary hover:bg-background rounded-lg flex items-center gap-2 text-sm disabled:opacity-50 transition-colors"
           >
             <ArrowDown className={clsx('w-4 h-4', isDiscovering && 'animate-spin')} />
-            发现依赖
+            {t('topology.action.discover')}
           </button>
           <button 
             onClick={() => setIsAddModalOpen(true)}
             className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 flex items-center gap-2 text-sm font-medium transition-colors"
           >
             <Plus className="w-4 h-4" />
-            添加
+            {t('topology.action.add')}
           </button>
         </div>
       </div>
@@ -229,7 +234,7 @@ export default function Topology() {
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-surface rounded-xl p-6 w-full max-w-md">
             <div className="flex items-center justify-between mb-6">
-              <h3 className="text-lg font-semibold text-text-primary">添加服务依赖</h3>
+              <h3 className="text-lg font-semibold text-text-primary">{t('topology.modal.addDependency')}</h3>
               <button
                 onClick={() => setIsAddModalOpen(false)}
                 className="p-2 hover:bg-background rounded-lg transition-colors"
@@ -240,13 +245,13 @@ export default function Topology() {
 
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-text-secondary mb-2">源服务器</label>
+                <label className="block text-sm font-medium text-text-secondary mb-2">{t('topology.field.sourceServer')}</label>
                 <select
                   value={formData.source_server_id}
                   onChange={(e) => setFormData({ ...formData, source_server_id: e.target.value })}
                   className="w-full px-4 py-2 bg-background border border-border rounded-lg text-text-primary focus:outline-none focus:border-primary"
                 >
-                  <option value="">请选择源服务器</option>
+                  <option value="">{t('topology.placeholder.selectSource')}</option>
                   {servers?.map((server) => (
                     <option key={server.id} value={server.id}>{server.name}</option>
                   ))}
@@ -254,13 +259,13 @@ export default function Topology() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-text-secondary mb-2">目标服务器</label>
+                <label className="block text-sm font-medium text-text-secondary mb-2">{t('topology.field.targetServer')}</label>
                 <select
                   value={formData.target_server_id}
                   onChange={(e) => setFormData({ ...formData, target_server_id: e.target.value })}
                   className="w-full px-4 py-2 bg-background border border-border rounded-lg text-text-primary focus:outline-none focus:border-primary"
                 >
-                  <option value="">请选择目标服务器</option>
+                  <option value="">{t('topology.placeholder.selectTarget')}</option>
                   {servers?.map((server) => (
                     <option key={server.id} value={server.id}>{server.name}</option>
                   ))}
@@ -268,19 +273,19 @@ export default function Topology() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-text-secondary mb-2">依赖类型</label>
+                <label className="block text-sm font-medium text-text-secondary mb-2">{t('topology.field.dependencyType')}</label>
                 <input
                   type="text"
                   value={formData.dependency_type}
                   onChange={(e) => setFormData({ ...formData, dependency_type: e.target.value })}
-                  placeholder="例如：network, database, api"
+                  placeholder={t('topology.placeholder.dependencyType')}
                   className="w-full px-4 py-2 bg-background border border-border rounded-lg text-text-primary focus:outline-none focus:border-primary"
                 />
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-text-secondary mb-2">协议</label>
+                  <label className="block text-sm font-medium text-text-secondary mb-2">{t('topology.field.protocol')}</label>
                   <select
                     value={formData.protocol}
                     onChange={(e) => setFormData({ ...formData, protocol: e.target.value })}
@@ -297,7 +302,7 @@ export default function Topology() {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-text-secondary mb-2">端口</label>
+                  <label className="block text-sm font-medium text-text-secondary mb-2">{t('topology.field.port')}</label>
                   <input
                     type="number"
                     value={formData.port}
@@ -312,14 +317,14 @@ export default function Topology() {
                   onClick={() => setIsAddModalOpen(false)}
                   className="flex-1 px-4 py-2 text-text-secondary hover:text-text-primary hover:bg-background rounded-lg transition-colors"
                 >
-                  取消
+                  {t('common.cancel')}
                 </button>
                 <button
                   onClick={() => addDependencyMutation.mutate(formData)}
                   disabled={addDependencyMutation.isPending || !formData.source_server_id || !formData.target_server_id || !formData.dependency_type}
                   className="flex-1 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 disabled:opacity-50 transition-colors"
                 >
-                  {addDependencyMutation.isPending ? '添加中...' : '添加'}
+                  {addDependencyMutation.isPending ? t('topology.action.adding') : t('topology.action.add')}
                 </button>
               </div>
             </div>
@@ -328,8 +333,18 @@ export default function Topology() {
       )}
 
       <div className="grid gap-6">
+        <div className="grid gap-3 md:grid-cols-5">
+          {assetSummary.map((item) => (
+            <div key={item.key} className="rounded-lg border border-border bg-surface p-4">
+              <div className="text-xs text-text-secondary">{item.label}</div>
+              <div className="mt-2 text-2xl font-semibold text-text-primary">{item.value}</div>
+              <div className="mt-1 text-xs text-text-tertiary">{item.helper}</div>
+            </div>
+          ))}
+        </div>
+
         <div className="bg-surface rounded-xl border border-border p-4">
-          <h2 className="text-sm font-semibold text-text-primary mb-3">拓扑视图</h2>
+          <h2 className="text-sm font-semibold text-text-primary mb-3">{t('topology.view.title')}</h2>
           {topologyLoading ? (
             <div className="flex items-center justify-center py-20">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
@@ -345,7 +360,7 @@ export default function Topology() {
 
         <div className="bg-surface rounded-xl border border-border">
           <div className="p-4 border-b border-border">
-            <h2 className="text-sm font-semibold text-text-primary">依赖列表</h2>
+            <h2 className="text-sm font-semibold text-text-primary">{t('topology.dependencies.title')}</h2>
           </div>
           {depsLoading ? (
             <div className="flex items-center justify-center py-12">
@@ -356,12 +371,12 @@ export default function Topology() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-border">
-                    <th className="text-left px-4 py-3 font-medium text-text-secondary">源服务</th>
-                    <th className="text-left px-4 py-3 font-medium text-text-secondary">目标服务</th>
-                    <th className="text-left px-4 py-3 font-medium text-text-secondary">类型</th>
-                    <th className="text-left px-4 py-3 font-medium text-text-secondary">协议</th>
-                    <th className="text-left px-4 py-3 font-medium text-text-secondary">状态</th>
-                    <th className="text-right px-4 py-3 font-medium text-text-secondary">操作</th>
+                    <th className="text-left px-4 py-3 font-medium text-text-secondary">{t('topology.table.source')}</th>
+                    <th className="text-left px-4 py-3 font-medium text-text-secondary">{t('topology.table.target')}</th>
+                    <th className="text-left px-4 py-3 font-medium text-text-secondary">{t('topology.table.type')}</th>
+                    <th className="text-left px-4 py-3 font-medium text-text-secondary">{t('topology.table.protocol')}</th>
+                    <th className="text-left px-4 py-3 font-medium text-text-secondary">{t('topology.table.status')}</th>
+                    <th className="text-right px-4 py-3 font-medium text-text-secondary">{t('topology.table.actions')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -383,7 +398,7 @@ export default function Topology() {
                         </td>
                         <td className="px-4 py-3">
                           <span className={clsx('px-2 py-0.5 rounded-full text-xs font-medium', statusColors[dep.status] || 'bg-gray-100 text-gray-700')}>
-                            {statusLabels[dep.status] || dep.status}
+                            {localizedStatusLabels[dep.status] || dep.status}
                           </span>
                         </td>
                         <td className="px-4 py-3 text-right">
@@ -397,7 +412,7 @@ export default function Topology() {
                   {dependencies?.length === 0 && (
                     <tr>
                       <td colSpan={6} className="px-4 py-12 text-center text-text-secondary">
-                        暂无依赖数据
+                        {t('topology.empty.dependencies')}
                       </td>
                     </tr>
                   )}
@@ -419,8 +434,10 @@ function normalizeTopologyData(value: unknown): TopologyData {
       ? data.nodes.map((node) => ({
         id: node.id,
         name: node.name || node.server_name || node.server_id || node.id,
-        status: node.status || 'online',
+        status: normalizeGraphStatus(node.status),
         ip: node.ip || node.server_ip,
+        assetType: node.type || 'server',
+        metadata: node.metadata,
         x: node.x,
         y: node.y
       }))
@@ -434,6 +451,55 @@ function normalizeTopologyData(value: unknown): TopologyData {
       }))
       : []
   };
+}
+
+function normalizeGraphStatus(status?: string): TopologyNode['status'] {
+  const normalized = String(status || '').toLowerCase();
+  if (normalized === 'root_cause' || normalized === 'affected') return normalized;
+  if (['online', 'offline', 'warning', 'error'].includes(normalized)) return normalized as TopologyNode['status'];
+  if (['active', 'healthy', 'ready', 'running', 'succeeded'].includes(normalized)) return 'online';
+  if (['failed', 'unhealthy', 'notready'].includes(normalized)) return 'error';
+  if (['disabled', 'stopped', 'terminated'].includes(normalized)) return 'offline';
+  return 'warning';
+}
+
+function buildAssetSummary(topologyData: TopologyData | undefined, t: (key: MessageKey) => string): Array<{ key: string; label: string; value: number; helper: string }> {
+  const nodes = topologyData?.nodes || [];
+  const edges = topologyData?.edges || [];
+  const count = (predicate: (node: TopologyNode) => boolean) => nodes.filter(predicate).length;
+
+  return [
+    {
+      key: 'servers',
+      label: t('topology.summary.servers'),
+      value: count((node) => node.assetType === 'server'),
+      helper: t('topology.summary.serversHelper'),
+    },
+    {
+      key: 'network',
+      label: t('topology.summary.network'),
+      value: count((node) => node.assetType === 'network_device'),
+      helper: t('topology.summary.networkHelper'),
+    },
+    {
+      key: 'clusters',
+      label: t('topology.summary.clusters'),
+      value: count((node) => node.assetType === 'kubernetes_cluster'),
+      helper: t('topology.summary.clustersHelper'),
+    },
+    {
+      key: 'kubernetes',
+      label: t('topology.summary.kubernetes'),
+      value: count((node) => String(node.assetType || '').startsWith('kubernetes_') && node.assetType !== 'kubernetes_cluster'),
+      helper: t('topology.summary.kubernetesHelper'),
+    },
+    {
+      key: 'edges',
+      label: t('topology.summary.edges'),
+      value: edges.length,
+      helper: t('topology.summary.edgesHelper'),
+    },
+  ];
 }
 
 function normalizeDependencies(value: unknown): Dependency[] {

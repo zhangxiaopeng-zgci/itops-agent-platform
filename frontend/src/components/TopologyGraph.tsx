@@ -1,11 +1,14 @@
 import { useRef, useState, useCallback, useEffect, useMemo } from 'react';
 import clsx from 'clsx';
+import { useLocale } from '../contexts/LocaleContext';
 
 export interface TopologyNode {
   id: string;
   name: string;
   status: 'online' | 'offline' | 'warning' | 'error' | 'root_cause' | 'affected';
   ip?: string;
+  assetType?: string;
+  metadata?: Record<string, unknown>;
   x?: number;
   y?: number;
 }
@@ -24,8 +27,8 @@ interface TopologyGraphProps {
   height?: number;
 }
 
-const NODE_WIDTH = 160;
-const NODE_HEIGHT = 60;
+const NODE_WIDTH = 176;
+const NODE_HEIGHT = 72;
 const PADDING = 60;
 
 const statusColors: Record<string, string> = {
@@ -37,19 +40,40 @@ const statusColors: Record<string, string> = {
   affected: '#f97316',
 };
 
-const statusLabels: Record<string, string> = {
-  online: '正常',
-  offline: '离线',
-  warning: '警告',
-  error: '异常',
-  root_cause: '根因',
-  affected: '受影响',
+const assetTypeColors: Record<string, { fill: string; text: string; stroke: string }> = {
+  server: { fill: '#ecfdf5', text: '#047857', stroke: '#86efac' },
+  network_device: { fill: '#fef3c7', text: '#92400e', stroke: '#fcd34d' },
+  kubernetes_cluster: { fill: '#eff6ff', text: '#1d4ed8', stroke: '#93c5fd' },
+  kubernetes_node: { fill: '#eef2ff', text: '#4338ca', stroke: '#a5b4fc' },
+  kubernetes_namespace: { fill: '#f0fdfa', text: '#0f766e', stroke: '#5eead4' },
+  kubernetes_workload: { fill: '#fdf2f8', text: '#be185d', stroke: '#f9a8d4' },
+  kubernetes_pod: { fill: '#f7fee7', text: '#4d7c0f', stroke: '#bef264' },
+  kubernetes_service: { fill: '#fff7ed', text: '#c2410c', stroke: '#fdba74' },
 };
 
 export default function TopologyGraph({ nodes, edges, width = 1200, height = 600 }: TopologyGraphProps) {
+  const { t } = useLocale();
   const svgRef = useRef<SVGSVGElement>(null);
   const [tooltip, setTooltip] = useState<{ x: number; y: number; node: TopologyNode } | null>(null);
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
+  const statusLabels: Record<string, string> = {
+    online: t('topology.status.online'),
+    offline: t('topology.status.offline'),
+    warning: t('topology.status.warning'),
+    error: t('topology.status.error'),
+    root_cause: t('topology.status.rootCause'),
+    affected: t('topology.status.affected'),
+  };
+  const assetTypeLabels: Record<string, string> = {
+    server: t('topology.asset.server'),
+    network_device: t('topology.asset.networkDevice'),
+    kubernetes_cluster: t('topology.asset.kubernetesCluster'),
+    kubernetes_node: t('topology.asset.kubernetesNode'),
+    kubernetes_namespace: t('topology.asset.kubernetesNamespace'),
+    kubernetes_workload: t('topology.asset.kubernetesWorkload'),
+    kubernetes_pod: t('topology.asset.kubernetesPod'),
+    kubernetes_service: t('topology.asset.kubernetesService'),
+  };
 
   const nodeMap = useMemo(() => {
     const map = new Map<string, TopologyNode>();
@@ -162,7 +186,7 @@ export default function TopologyGraph({ nodes, edges, width = 1200, height = 600
               <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />
             </svg>
           </div>
-          <p className="text-text-secondary">暂无拓扑数据</p>
+          <p className="text-text-secondary">{t('topology.empty.graph')}</p>
         </div>
       </div>
     );
@@ -260,6 +284,8 @@ export default function TopologyGraph({ nodes, edges, width = 1200, height = 600
             e => (e.source === selectedNode && e.target === node.id) ||
                  (e.target === selectedNode && e.source === node.id)
           );
+          const typeStyle = assetTypeColors[node.assetType || 'server'] || { fill: '#f8fafc', text: '#475569', stroke: '#cbd5e1' };
+          const label = assetTypeLabels[node.assetType || 'server'] || node.assetType || t('topology.asset.generic');
 
           return (
             <g
@@ -278,10 +304,10 @@ export default function TopologyGraph({ nodes, edges, width = 1200, height = 600
                 y={-NODE_HEIGHT / 2}
                 width={NODE_WIDTH}
                 height={NODE_HEIGHT}
-                rx={12}
-                ry={12}
+                rx={8}
+                ry={8}
                 fill={isSelected ? '#1e293b' : '#ffffff'}
-                stroke={statusColors[node.status] || '#94a3b8'}
+                stroke={isSelected ? statusColors[node.status] || '#94a3b8' : typeStyle.stroke}
                 strokeWidth={isSelected || isHighlighted ? 3 : 2}
                 filter={node.status === 'root_cause' ? 'url(#node-glow)' : 'url(#node-shadow)'}
                 className={clsx(
@@ -289,33 +315,54 @@ export default function TopologyGraph({ nodes, edges, width = 1200, height = 600
                   isSelected && 'scale-105'
                 )}
               />
+              <rect
+                x={NODE_WIDTH / 2 - 72}
+                y={-NODE_HEIGHT / 2 + 8}
+                width={60}
+                height={18}
+                rx={6}
+                ry={6}
+                fill={isSelected ? '#334155' : typeStyle.fill}
+                stroke={isSelected ? '#475569' : typeStyle.stroke}
+              />
+              <text
+                x={NODE_WIDTH / 2 - 42}
+                y={-NODE_HEIGHT / 2 + 17}
+                textAnchor="middle"
+                dominantBaseline="middle"
+                fontSize="10"
+                fontWeight="600"
+                fill={isSelected ? '#e2e8f0' : typeStyle.text}
+              >
+                {label.length > 8 ? label.slice(0, 8) : label}
+              </text>
               <circle
                 cx={-NODE_WIDTH / 2 + 16}
-                cy={0}
+                cy={-4}
                 r={6}
                 fill={statusColors[node.status] || '#94a3b8'}
               />
               <text
-                x={8}
-                y={-4}
+                x={4}
+                y={-7}
                 textAnchor="middle"
                 dominantBaseline="middle"
                 fontSize="14"
                 fontWeight="500"
-                fill="#0f172a"
+                fill={isSelected ? '#f8fafc' : '#0f172a'}
               >
-                {node.name.length > 12 ? node.name.slice(0, 11) + '...' : node.name}
+                {node.name.length > 15 ? node.name.slice(0, 14) + '...' : node.name}
               </text>
               {node.ip && (
                 <text
-                  x={8}
-                  y={14}
+                  x={4}
+                  y={13}
                   textAnchor="middle"
                   dominantBaseline="middle"
                   fontSize="12"
-                  fill="#64748b"
+                  fill={isSelected ? '#cbd5e1' : '#64748b'}
                 >
-                  {node.ip}
+                  {node.ip.length > 20 ? node.ip.slice(0, 19) + '...' : node.ip}
                 </text>
               )}
             </g>
@@ -340,11 +387,14 @@ export default function TopologyGraph({ nodes, edges, width = 1200, height = 600
               />
               <span className="font-medium text-text-primary">{tooltip.node.name}</span>
             </div>
+            <div className="text-xs text-text-secondary">
+              {t('topology.tooltip.type')}: {assetTypeLabels[tooltip.node.assetType || 'server'] || tooltip.node.assetType || t('topology.asset.generic')}
+            </div>
             {tooltip.node.ip && (
-              <div className="text-xs text-text-secondary">IP: {tooltip.node.ip}</div>
+              <div className="text-xs text-text-secondary">{t('topology.tooltip.ip')}: {tooltip.node.ip}</div>
             )}
             <div className="text-xs text-text-secondary">
-              状态: {statusLabels[tooltip.node.status] || tooltip.node.status}
+              {t('topology.tooltip.status')}: {statusLabels[tooltip.node.status] || tooltip.node.status}
             </div>
           </div>
         </div>
