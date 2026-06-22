@@ -63,6 +63,19 @@ interface HermesSession {
   created_at: string;
 }
 
+interface CorrelationTrace {
+  correlationId: string;
+  hermesSessions: Array<Record<string, unknown>>;
+  agentExecutions: Array<Record<string, unknown>>;
+  approvals: Array<Record<string, unknown>>;
+  tasks: Array<Record<string, unknown>>;
+  auditLogs: Array<Record<string, unknown>>;
+  teamRuns: Array<Record<string, unknown>>;
+  workerRuns: Array<Record<string, unknown>>;
+  executionEvidence: Array<Record<string, unknown>>;
+  executionEvidenceSummary?: Record<string, unknown>;
+}
+
 type BoardSelection =
   | { type: 'run'; item: HermesWorkerRun }
   | { type: 'session'; item: HermesSession };
@@ -411,6 +424,15 @@ function BoardDetailDrawer({ selection, onClose }: { selection: BoardSelection; 
     ? session.correlation_id || session.extracted_refs.correlationIds[0]
     : run?.correlation_id || null;
   const title = isRun ? t('hermesDashboard.detail.runTitle') : t('hermesDashboard.detail.sessionTitle');
+  const { data: correlationTrace, isFetching: traceFetching, isError: traceError } = useQuery({
+    queryKey: ['hermes-correlation-trace', correlationId],
+    queryFn: async () => {
+      const res = await api.get(`/api/correlations/${encodeURIComponent(correlationId as string)}`);
+      return res.data.data as CorrelationTrace;
+    },
+    enabled: Boolean(correlationId),
+    staleTime: 30000
+  });
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-black/35" onClick={onClose}>
@@ -495,6 +517,13 @@ function BoardDetailDrawer({ selection, onClose }: { selection: BoardSelection; 
             </>
           )}
 
+          <CorrelationTraceSection
+            correlationId={correlationId}
+            trace={correlationTrace}
+            isFetching={traceFetching}
+            isError={traceError}
+          />
+
           <DetailSection title={t('hermesDashboard.detail.nextActions')}>
             <div className="flex flex-wrap gap-2 text-xs">
               <Link to="/tool-approvals" className="rounded-md border border-border bg-background px-3 py-2 text-text-secondary hover:text-primary">
@@ -510,6 +539,148 @@ function BoardDetailDrawer({ selection, onClose }: { selection: BoardSelection; 
           </DetailSection>
         </div>
       </aside>
+    </div>
+  );
+}
+
+function CorrelationTraceSection({
+  correlationId,
+  trace,
+  isFetching,
+  isError
+}: {
+  correlationId: string | null;
+  trace?: CorrelationTrace;
+  isFetching: boolean;
+  isError: boolean;
+}) {
+  const { t } = useLocale();
+
+  if (!correlationId) {
+    return (
+      <DetailSection title={t('hermesDashboard.trace.title')}>
+        <div className="rounded-lg border border-border bg-background/70 p-3 text-sm text-text-tertiary">
+          {t('hermesDashboard.trace.unavailable')}
+        </div>
+      </DetailSection>
+    );
+  }
+
+  if (isFetching && !trace) {
+    return (
+      <DetailSection title={t('hermesDashboard.trace.title')}>
+        <div className="flex items-center gap-2 rounded-lg border border-border bg-background/70 p-3 text-sm text-text-secondary">
+          <Loader2 className="h-4 w-4 animate-spin text-primary" />
+          {t('common.loading')}
+        </div>
+      </DetailSection>
+    );
+  }
+
+  if (isError || !trace) {
+    return (
+      <DetailSection title={t('hermesDashboard.trace.title')}>
+        <div className="rounded-lg border border-red-500/20 bg-red-500/10 p-3 text-sm text-red-500">
+          {t('hermesDashboard.trace.loadFailed')}
+        </div>
+      </DetailSection>
+    );
+  }
+
+  const riskLevels = summaryStringList(trace, 'riskLevels');
+  const toolCalls = summaryStringList(trace, 'toolCalls');
+  const approvalIds = uniqueStrings([
+    ...summaryStringList(trace, 'approvalIds'),
+    ...trace.approvals.map((approval) => stringValue(approval.id))
+  ]);
+  const taskIds = uniqueStrings([
+    ...summaryStringList(trace, 'taskIds'),
+    ...trace.tasks.map((task) => stringValue(task.id))
+  ]);
+  const latestEvidenceAt = stringValue(trace.executionEvidenceSummary?.latestEvidenceAt);
+
+  return (
+    <DetailSection title={t('hermesDashboard.trace.title')}>
+      <div className="space-y-3">
+        <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
+          <TraceMetric label={t('hermesDashboard.trace.workerRuns')} value={trace.workerRuns.length} />
+          <TraceMetric label={t('hermesDashboard.trace.sessions')} value={trace.hermesSessions.length} />
+          <TraceMetric label={t('hermesDashboard.trace.approvals')} value={trace.approvals.length} />
+          <TraceMetric label={t('hermesDashboard.trace.tasks')} value={trace.tasks.length} />
+          <TraceMetric label={t('hermesDashboard.trace.agentExecutions')} value={trace.agentExecutions.length} />
+          <TraceMetric label={t('hermesDashboard.trace.teamRuns')} value={trace.teamRuns.length} />
+          <TraceMetric label={t('hermesDashboard.trace.auditLogs')} value={trace.auditLogs.length} />
+          <TraceMetric label={t('hermesDashboard.trace.evidence')} value={trace.executionEvidence.length} />
+        </div>
+
+        {(riskLevels.length > 0 || toolCalls.length > 0 || latestEvidenceAt) && (
+          <div className="rounded-lg border border-border bg-background/70 p-3">
+            <div className="space-y-2 text-xs">
+              {riskLevels.length > 0 && (
+                <TraceChipRow label={t('hermesDashboard.trace.riskLevels')} values={riskLevels} warning />
+              )}
+              {toolCalls.length > 0 && (
+                <TraceChipRow label={t('hermesDashboard.trace.toolCalls')} values={toolCalls} />
+              )}
+              {latestEvidenceAt && (
+                <div className="flex flex-wrap gap-2">
+                  <span className="text-text-tertiary">{t('hermesDashboard.trace.latestEvidence')}</span>
+                  <span className="text-text-secondary">{formatTime(latestEvidenceAt)}</span>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {(approvalIds.length > 0 || taskIds.length > 0) && (
+          <div className="rounded-lg border border-border bg-background/70 p-3">
+            <div className="space-y-3 text-xs">
+              {approvalIds.length > 0 && (
+                <div>
+                  <p className="mb-2 font-medium text-text-primary">{t('hermesDashboard.trace.linkedApprovals')}</p>
+                  <div className="flex flex-wrap gap-2">
+                    {approvalIds.slice(0, 8).map((approvalId) => (
+                      <EvidenceLink key={approvalId} to={`/tool-approvals?approvalId=${encodeURIComponent(approvalId)}`} value={`approval:${shortId(approvalId)}`} />
+                    ))}
+                  </div>
+                </div>
+              )}
+              {taskIds.length > 0 && (
+                <div>
+                  <p className="mb-2 font-medium text-text-primary">{t('hermesDashboard.trace.linkedTasks')}</p>
+                  <div className="flex flex-wrap gap-2">
+                    {taskIds.slice(0, 8).map((taskId) => (
+                      <EvidenceLink key={taskId} to={`/tasks?taskId=${encodeURIComponent(taskId)}`} value={`task:${shortId(taskId)}`} />
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    </DetailSection>
+  );
+}
+
+function TraceMetric({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded-lg border border-border bg-background/70 px-3 py-2">
+      <p className="truncate text-xs text-text-tertiary">{label}</p>
+      <p className="mt-1 text-sm font-semibold text-text-primary">{value}</p>
+    </div>
+  );
+}
+
+function TraceChipRow({ label, values, warning = false }: { label: string; values: string[]; warning?: boolean }) {
+  return (
+    <div className="space-y-1">
+      <p className="text-text-tertiary">{label}</p>
+      <div className="flex flex-wrap gap-2">
+        {values.slice(0, 8).map((value) => (
+          <Chip key={value} value={value} warning={warning} />
+        ))}
+      </div>
     </div>
   );
 }
@@ -545,6 +716,20 @@ function formatTime(value: string): string {
 
 function shortId(value: string): string {
   return value.length > 10 ? `${value.slice(0, 8)}...` : value;
+}
+
+function stringValue(value: unknown): string {
+  return typeof value === 'string' ? value : '';
+}
+
+function summaryStringList(trace: CorrelationTrace, key: string): string[] {
+  const summary = trace.executionEvidenceSummary;
+  const value = summary && Array.isArray(summary[key]) ? summary[key] : [];
+  return value.filter((item): item is string => typeof item === 'string' && item.length > 0);
+}
+
+function uniqueStrings(values: string[]): string[] {
+  return Array.from(new Set(values.filter(Boolean)));
 }
 
 function minutesAgo(value: string): number {
