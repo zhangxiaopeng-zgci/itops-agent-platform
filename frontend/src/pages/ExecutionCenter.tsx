@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
-import { useNavigate } from 'react-router-dom';
+import { useMemo } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   ArrowRight,
   CheckCircle2,
@@ -38,6 +39,13 @@ interface RemediationExecution {
   status: string;
 }
 
+interface ServerItem {
+  id: string;
+  name?: string;
+  hostname?: string;
+  enabled: number;
+}
+
 interface ActionItem {
   titleKey: MessageKey;
   descriptionKey: MessageKey;
@@ -56,9 +64,45 @@ function toArray<T>(value: unknown, keys: string[] = []): T[] {
   return [];
 }
 
+function getAssetTypeLabel(type: string | null, t: (key: MessageKey, values?: Record<string, string | number>) => string): string {
+  const keys: Record<string, MessageKey> = {
+    server: 'topology.asset.server',
+    network_device: 'topology.asset.networkDevice',
+    kubernetes_cluster: 'topology.asset.kubernetesCluster',
+    kubernetes_node: 'topology.asset.kubernetesNode',
+    kubernetes_namespace: 'topology.asset.kubernetesNamespace',
+    kubernetes_workload: 'topology.asset.kubernetesWorkload',
+    kubernetes_pod: 'topology.asset.kubernetesPod',
+    kubernetes_service: 'topology.asset.kubernetesService',
+  };
+  return type && keys[type] ? t(keys[type]) : t('topology.asset.generic');
+}
+
+function formatServerName(server: ServerItem): string {
+  return server.name || server.hostname || server.id;
+}
+
+function HandoffFact({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg border border-border bg-background/40 p-3 min-w-0">
+      <p className="text-xs text-text-secondary">{label}</p>
+      <p className="mt-1 text-sm font-medium text-text-primary break-words">{value}</p>
+    </div>
+  );
+}
+
 export default function ExecutionCenter() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { t } = useLocale();
+  const assetId = searchParams.get('assetId');
+  const assetType = searchParams.get('assetType');
+  const serverIds = useMemo(() => {
+    return (searchParams.get('serverIds') || '')
+      .split(',')
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }, [searchParams]);
 
   const { data: tasks = [] } = useQuery({
     queryKey: ['execution-center', 'tasks'],
@@ -95,6 +139,25 @@ export default function ExecutionCenter() {
     },
     staleTime: 30000,
   });
+
+  const { data: servers = [] } = useQuery({
+    queryKey: ['execution-center', 'servers'],
+    queryFn: async () => {
+      const res = await api.get('/api/servers');
+      return toArray<ServerItem>(res.data.data, ['servers', 'items']);
+    },
+    staleTime: 60000,
+  });
+
+  const handoffServers = useMemo(() => {
+    return servers.filter((server) => serverIds.includes(server.id));
+  }, [serverIds, servers]);
+  const handoffAssetLabel = useMemo(() => {
+    if (!assetId) return '-';
+    const matchedServer = servers.find((server) => server.id === assetId);
+    return matchedServer ? formatServerName(matchedServer) : assetId;
+  }, [assetId, servers]);
+  const hasHandoffContext = Boolean(assetId || assetType || serverIds.length > 0);
 
   const runningTasks = tasks.filter((task) => task.status === 'running').length;
   const pendingApprovals = approvals.filter((approval) => approval.status === 'pending').length;
@@ -223,6 +286,57 @@ export default function ExecutionCenter() {
             </div>
           ))}
         </div>
+
+        {hasHandoffContext && (
+          <div className="bg-surface border border-border rounded-lg p-5">
+            <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+              <div className="min-w-0">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-lg bg-emerald-500/10 text-emerald-500 flex items-center justify-center">
+                    <ShieldCheck className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h2 className="text-base font-semibold text-text-primary">{t('executionCenter.handoff.title')}</h2>
+                    <p className="text-sm text-text-secondary mt-1">{t('executionCenter.handoff.subtitle')}</p>
+                  </div>
+                </div>
+
+                <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <HandoffFact label={t('executionCenter.handoff.asset')} value={handoffAssetLabel} />
+                  <HandoffFact label={t('executionCenter.handoff.assetType')} value={getAssetTypeLabel(assetType, t)} />
+                  <HandoffFact
+                    label={t('executionCenter.handoff.relatedServers')}
+                    value={handoffServers.length > 0 ? handoffServers.map(formatServerName).join(', ') : (serverIds.length > 0 ? serverIds.join(', ') : '-')}
+                  />
+                </div>
+              </div>
+
+              <div className="flex flex-wrap gap-2 xl:justify-end">
+                <button
+                  onClick={() => navigate('/remediation-workbench')}
+                  className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-primary text-white hover:bg-primary/90 transition-colors text-sm"
+                >
+                  <Wrench className="w-4 h-4" />
+                  {t('executionCenter.handoff.openWorkbench')}
+                </button>
+                <button
+                  onClick={() => navigate('/tool-approvals')}
+                  className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-border text-text-primary hover:bg-background transition-colors text-sm"
+                >
+                  <ShieldAlert className="w-4 h-4" />
+                  {t('executionCenter.handoff.openApprovals')}
+                </button>
+                <button
+                  onClick={() => navigate('/tasks')}
+                  className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-border text-text-primary hover:bg-background transition-colors text-sm"
+                >
+                  <ListChecks className="w-4 h-4" />
+                  {t('executionCenter.handoff.openTasks')}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         <div className="bg-surface border border-border rounded-lg p-5">
           <h2 className="text-base font-semibold text-text-primary mb-4">{t('executionCenter.flow.title')}</h2>

@@ -726,6 +726,7 @@ The workspace derives related server ids, immediate upstream/downstream impact, 
 The workspace can open Hermes Assistant with URL context parameters: mode, serverIds, alertId, and a generated diagnosis prompt.
 Hermes Assistant consumes those URL parameters once and pre-fills mode, selected servers, alert, workflow/category when present, and prompt input.
 The workspace also provides quick handoff links to Topology and Execution Center.
+Execution Center consumes assetId, assetType, and serverIds handoff parameters and renders a diagnosis handoff context panel with repair, approval, and task observation entry points.
 All new workspace text is native React i18n, not DOM post-processing.
 ```
 
@@ -736,7 +737,6 @@ Embed structured Hermes output directly in Diagnosis Center.
 Add recent tasks, events, logs, and knowledge hints into the context builder.
 Add explicit asset-scoped blast-radius API instead of frontend-only nearby calculation.
 Add actions for repair-plan generation, knowledge write-back, and evolution proposal creation.
-Make Execution Center consume asset context parameters.
 ```
 
 Acceptance:
