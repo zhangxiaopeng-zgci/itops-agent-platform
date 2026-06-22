@@ -45,6 +45,13 @@ interface TaskExecutionPreflightSnapshot {
       ready: number;
       needsReview: number;
       warnings: string[];
+      channels?: Array<{
+        id: string;
+        name: string;
+        type: string;
+        ready: boolean;
+        warnings: string[];
+      }>;
     };
     gates?: {
       approvalRequired: boolean;
@@ -55,6 +62,8 @@ interface TaskExecutionPreflightSnapshot {
     mcpServers?: {
       count: number;
       unhealthy: number;
+      ids?: string[];
+      names?: string[];
     };
   };
 }
@@ -151,6 +160,10 @@ export default function Tasks() {
       });
     },
   });
+  const workflowIdFilter = searchParams.get('workflowId');
+  const visibleTasks = workflowIdFilter
+    ? tasks?.filter((task) => task.workflow_id === workflowIdFilter)
+    : tasks;
 
   const { data: reports } = useQuery({
     queryKey: ['reports'],
@@ -360,15 +373,25 @@ export default function Tasks() {
 
   useEffect(() => {
     const taskId = searchParams.get('taskId');
-    if (!taskId || !tasks || selectedTask?.id === taskId) {
+    const workflowId = searchParams.get('workflowId');
+    if (taskId && tasks && selectedTask?.id !== taskId) {
+      const task = tasks.find((item) => item.id === taskId);
+      if (task) handleSelectTask(task, false);
       return;
     }
 
-    const task = tasks.find((item) => item.id === taskId);
-    if (task) {
-      handleSelectTask(task, false);
+    if (!taskId && workflowId && tasks && selectedTask?.workflow_id !== workflowId) {
+      const task = tasks.find((item) => item.workflow_id === workflowId);
+      if (task) handleSelectTask(task, false);
     }
-  }, [searchParams, tasks, selectedTask?.id]);
+  }, [searchParams, tasks, selectedTask?.id, selectedTask?.workflow_id]);
+
+  const setTaskSearchParams = (task: Task) => {
+    const next: Record<string, string> = { taskId: task.id };
+    const workflowId = searchParams.get('workflowId');
+    if (workflowId) next.workflowId = workflowId;
+    setSearchParams(next);
+  };
 
   const handleSelectTask = (task: Task, updateUrl = true) => {
     // Parse serialized execution fields.
@@ -416,7 +439,7 @@ export default function Tasks() {
 	    setSelectedTask(parsedTask);
 	    setTaskLogs(parsedLogs);
     if (updateUrl) {
-      setSearchParams({ taskId: task.id });
+      setTaskSearchParams(task);
     }
 	  };
 
@@ -472,7 +495,7 @@ export default function Tasks() {
           </div>
 
           <div className="flex-1 overflow-y-auto space-y-3 scrollbar-thin">
-            {tasks?.map((task) => (
+            {visibleTasks?.map((task) => (
               <div
                 key={task.id}
                 onClick={() => handleSelectTask(task)}
@@ -1297,14 +1320,15 @@ function buildPreflightActionLink(action: string, task: Task, t: TaskTranslator)
 }
 
 function getPreflightReasonTarget(reason: string, task: Task, t: (key: MessageKey) => string): { href: string; target: string } {
+  const preflight = getTaskExecutionPreflight(task);
   if (['capability_bundle_needs_review', 'capability_bundle_policy_risk', 'mcp_server_unhealthy'].includes(reason)) {
-    return { href: '/hermes-channels', target: t('tasks.preflight.target.channels') };
+    return { href: buildHermesChannelHref(preflight, reason === 'mcp_server_unhealthy' ? 'mcp' : 'bundle'), target: t('tasks.preflight.target.channels') };
   }
   if (['workflow_requires_approval', 'workflow_requires_verification', 'high_risk_tools_require_approval'].includes(reason)) {
-    return { href: `/workflows/${encodeURIComponent(task.workflow_id)}`, target: t('tasks.preflight.target.workflow') };
+    return { href: `/workflows/${encodeURIComponent(task.workflow_id)}?focus=gates`, target: t('tasks.preflight.target.workflow') };
   }
   if (reason === 'recent_workflow_failures') {
-    return { href: '/tasks', target: t('tasks.preflight.target.tasks') };
+    return { href: `/tasks?workflowId=${encodeURIComponent(task.workflow_id)}`, target: t('tasks.preflight.target.tasks') };
   }
   if (reason === 'role_viewer_cannot_execute') {
     return { href: '/users', target: t('tasks.preflight.target.users') };
@@ -1313,22 +1337,41 @@ function getPreflightReasonTarget(reason: string, task: Task, t: (key: MessageKe
 }
 
 function getPreflightActionTarget(action: string, task: Task, t: (key: MessageKey) => string): { href: string; target: string } {
+  const preflight = getTaskExecutionPreflight(task);
   if (['review_capability_bundle', 'review_channel_policy', 'check_mcp_server_health'].includes(action)) {
-    return { href: '/hermes-channels', target: t('tasks.preflight.target.channels') };
+    return { href: buildHermesChannelHref(preflight, action === 'check_mcp_server_health' ? 'mcp' : 'bundle'), target: t('tasks.preflight.target.channels') };
   }
   if (action === 'prepare_tool_approval') {
-    return { href: '/tool-approvals', target: t('tasks.preflight.target.approvals') };
+    return { href: buildToolApprovalHref(task), target: t('tasks.preflight.target.approvals') };
   }
   if (action === 'prepare_verification_plan') {
-    return { href: `/workflows/${encodeURIComponent(task.workflow_id)}`, target: t('tasks.preflight.target.workflow') };
+    return { href: `/workflows/${encodeURIComponent(task.workflow_id)}?focus=gates`, target: t('tasks.preflight.target.workflow') };
   }
   if (action === 'review_recent_failures') {
-    return { href: '/tasks', target: t('tasks.preflight.target.tasks') };
+    return { href: `/tasks?workflowId=${encodeURIComponent(task.workflow_id)}`, target: t('tasks.preflight.target.tasks') };
   }
   if (action === 'switch_operator_or_admin') {
     return { href: '/users', target: t('tasks.preflight.target.users') };
   }
   return { href: '/execution-center', target: t('tasks.preflight.target.executionCenter') };
+}
+
+function buildHermesChannelHref(preflight: TaskExecutionPreflightSnapshot | null, focus: 'bundle' | 'mcp') {
+  const params = new URLSearchParams();
+  params.set('focus', focus);
+  const channelId = preflight?.summary?.channelBundles?.channels?.[0]?.id;
+  const mcpId = preflight?.summary?.mcpServers?.ids?.[0];
+  if (channelId) params.set('channelId', channelId);
+  if (focus === 'mcp' && mcpId) params.set('mcpId', mcpId);
+  return `/hermes-channels?${params.toString()}`;
+}
+
+function buildToolApprovalHref(task: Task) {
+  const params = new URLSearchParams();
+  params.set('taskId', task.id);
+  const correlationId = readString(task.context?.correlationId);
+  if (correlationId) params.set('correlationId', correlationId);
+  return `/tool-approvals?${params.toString()}`;
 }
 
 function dedupePreflightLinks(items: PreflightLinkItem[]): PreflightLinkItem[] {

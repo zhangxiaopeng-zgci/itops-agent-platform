@@ -1,6 +1,7 @@
 import { type ChangeEvent, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Activity, BookOpenCheck, Bot, Cable, CheckCircle2, Clock, Download, GitBranch, Play, PlugZap, RefreshCw, Save, ShieldCheck, Upload, UsersRound, Wrench, XCircle } from 'lucide-react';
+import { useSearchParams } from 'react-router-dom';
+import { Activity, BookOpenCheck, Bot, Cable, CheckCircle2, Clock, Download, ExternalLink, GitBranch, Play, PlugZap, RefreshCw, Save, ShieldCheck, Upload, UsersRound, Wrench, XCircle } from 'lucide-react';
 import clsx from 'clsx';
 import api from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
@@ -511,9 +512,12 @@ export default function HermesChannels() {
   const { user } = useAuth();
   const { t } = useLocale();
   const toast = useToast();
+  const [searchParams, setSearchParams] = useSearchParams();
   const canManage = user?.role === 'admin';
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const capabilityImportRef = useRef<HTMLInputElement | null>(null);
+  const focus = searchParams.get('focus');
+  const focusedMcpId = searchParams.get('mcpId');
 
   const { data: channels, isLoading } = useQuery({
     queryKey: ['hermes-channels'],
@@ -581,10 +585,23 @@ export default function HermesChannels() {
   }, [channels, selectedId]);
 
   useEffect(() => {
-    if (!selectedId && channels && channels.length > 0) {
+    if (!channels || channels.length === 0) return;
+    const deepLinkedChannelId = searchParams.get('channelId');
+    if (deepLinkedChannelId && channels.some((channel) => channel.id === deepLinkedChannelId)) {
+      setSelectedId(deepLinkedChannelId);
+      return;
+    }
+    if (!selectedId) {
       setSelectedId(channels[0].id);
     }
-  }, [channels, selectedId]);
+  }, [channels, searchParams, selectedId]);
+
+  const selectChannel = (channelId: string) => {
+    setSelectedId(channelId);
+    const next = new URLSearchParams(searchParams);
+    next.set('channelId', channelId);
+    setSearchParams(next);
+  };
 
   const updateMutation = useMutation({
     mutationFn: async (form: ChannelFormState) => {
@@ -833,7 +850,7 @@ export default function HermesChannels() {
                 {channels.map((channel) => (
                   <button
                     key={channel.id}
-                    onClick={() => setSelectedId(channel.id)}
+                    onClick={() => selectChannel(channel.id)}
                     className={clsx(
                       'w-full text-left p-4 transition-colors',
                       selectedChannel?.id === channel.id ? 'bg-primary/10' : 'hover:bg-background/70'
@@ -890,6 +907,8 @@ export default function HermesChannels() {
               isTesting={testMutation.isPending}
               isCreatingMcp={createMcpMutation.isPending}
               testingMcpId={testMcpMutation.variables || null}
+              focus={focus}
+              focusedMcpId={focusedMcpId}
               onSave={(form) => updateMutation.mutate(form)}
               onTest={() => testMutation.mutate(selectedChannel.id)}
               onCreateMcp={(form) => createMcpMutation.mutate(form)}
@@ -1875,6 +1894,8 @@ function ChannelDetails({
   isTesting,
   isCreatingMcp,
   testingMcpId,
+  focus,
+  focusedMcpId,
   onSave,
   onTest,
   onCreateMcp,
@@ -1889,6 +1910,8 @@ function ChannelDetails({
   isTesting: boolean;
   isCreatingMcp: boolean;
   testingMcpId: string | null;
+  focus: string | null;
+  focusedMcpId: string | null;
   onSave: (form: ChannelFormState) => void;
   onTest: () => void;
   onCreateMcp: (form: McpServerFormState) => void;
@@ -1953,6 +1976,24 @@ function ChannelDetails({
 
   return (
     <div className="space-y-6">
+      {focus && (
+        <div className="rounded-xl border border-primary/25 bg-primary/10 p-4">
+          <div className="flex items-start gap-3">
+            <ExternalLink className="w-4 h-4 mt-0.5 text-primary" />
+            <div>
+              <div className="text-sm font-semibold text-text-primary">{t('hermesChannels.deepLink.title')}</div>
+              <div className="mt-1 text-xs text-text-secondary">
+                {focus === 'mcp'
+                  ? t('hermesChannels.deepLink.mcp')
+                  : focus === 'bundle'
+                    ? t('hermesChannels.deepLink.bundle')
+                    : t('hermesChannels.deepLink.generic')}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className={`${panelClass} p-5`}>
         <div className="flex items-start justify-between gap-4">
           <div>
@@ -2012,6 +2053,7 @@ function ChannelDetails({
                 }}
                 className={clsx(
                   'text-left rounded-lg border p-3 transition-colors',
+                  focusedMcpId === server.id && 'ring-2 ring-primary/50',
                   selectedMcpServers.has(server.id)
                     ? 'bg-primary/10 border-primary/40'
                     : 'bg-background border-border',

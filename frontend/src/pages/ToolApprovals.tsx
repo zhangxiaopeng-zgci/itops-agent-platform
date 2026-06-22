@@ -144,6 +144,27 @@ export default function ToolApprovals() {
       });
   }, [searchParams, selectedApproval?.id]);
 
+  useEffect(() => {
+    const taskId = searchParams.get('taskId');
+    const correlationId = searchParams.get('correlationId');
+    if (!taskId && !correlationId) return;
+    if (status) setStatus('');
+  }, [searchParams, status]);
+
+  useEffect(() => {
+    const taskId = searchParams.get('taskId');
+    const correlationId = searchParams.get('correlationId');
+    if ((!taskId && !correlationId) || !data?.approvals?.length) return;
+
+    const matched = data.approvals.find((approval) => (
+      (taskId ? extractTaskId(approval) === taskId : false) ||
+      (correlationId ? approval.correlation_id === correlationId || findStringField(approval.input, 'correlationId') === correlationId || findStringField(approval.execution_result, 'correlationId') === correlationId : false)
+    ));
+    if (matched && selectedApproval?.id !== matched.id) {
+      setSelectedApproval(matched);
+    }
+  }, [searchParams, data?.approvals, selectedApproval?.id]);
+
   return (
     <div className="h-full overflow-auto p-6">
       <div className="space-y-6">
