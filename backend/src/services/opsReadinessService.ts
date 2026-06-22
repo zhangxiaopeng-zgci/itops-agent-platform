@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import axios from 'axios';
 import { env } from '../utils/env';
 import { healthService, SystemHealth } from './healthService';
 import { backupService } from './backupService';
@@ -62,6 +63,18 @@ export interface OpsReadinessSummary {
     pendingApprovalProposals: number;
     generatedAt: string;
   };
+  cloudNative: {
+    kiteConfigured: boolean;
+    kiteHealthy: boolean;
+    kiteUrl: string | null;
+    kitePublicUrl: string | null;
+    kiteDataDir: string | null;
+    kiteDatabasePresent: boolean;
+    kiteDatabaseSize: number;
+    kiteLatencyMs: number | null;
+    kiteStatusCode: number | null;
+    kiteError: string | null;
+  };
   health: {
     status: SystemHealth['status'];
     uptime: number;
@@ -82,6 +95,7 @@ export async function buildOpsReadinessSummary(): Promise<OpsReadinessSummary> {
   const lastRestoreDrill = restoreDrills[0] || null;
   const containerRebuildDrills = listContainerRebuildDrills(20);
   const lastContainerRebuildDrill = containerRebuildDrills[0] || null;
+  const kiteStatus = await getKiteStatus();
   const checks: OpsReadinessCheck[] = [];
 
   const databasePersistent = isPersistentDatabasePath(env.DATABASE_PATH);
@@ -178,6 +192,38 @@ export async function buildOpsReadinessSummary(): Promise<OpsReadinessSummary> {
     message: `${healthyHermesWorkers}/3 Hermes workers healthy.`
   }));
   checks.push(check({
+    key: 'kite_console_reachable',
+    category: 'runtime',
+    status: !kiteStatus.configured ? 'warning' : kiteStatus.healthy ? 'ready' : 'blocked',
+    required: kiteStatus.configured,
+    message: !kiteStatus.configured
+      ? 'Kite URL is not configured.'
+      : kiteStatus.healthy
+        ? `Kite console is reachable at ${kiteStatus.url}.`
+        : `Kite console is not reachable: ${kiteStatus.error || 'unknown error'}.`,
+    observed: {
+      url: kiteStatus.url,
+      statusCode: kiteStatus.statusCode,
+      latencyMs: kiteStatus.latencyMs
+    }
+  }));
+  checks.push(check({
+    key: 'kite_data_persistent',
+    category: 'data',
+    status: !kiteStatus.dataDir ? 'warning' : kiteStatus.databasePresent ? 'ready' : 'warning',
+    required: false,
+    message: !kiteStatus.dataDir
+      ? 'Kite data directory is not configured for readiness inspection.'
+      : kiteStatus.databasePresent
+        ? `Kite database is visible at ${kiteStatus.databasePath}.`
+        : `Kite database was not found under ${kiteStatus.dataDir}.`,
+    observed: {
+      dataDir: kiteStatus.dataDir,
+      databasePath: kiteStatus.databasePath,
+      databaseSize: kiteStatus.databaseSize
+    }
+  }));
+  checks.push(check({
     key: 'release_guard_available',
     category: 'release',
     status: 'ready',
@@ -256,6 +302,18 @@ export async function buildOpsReadinessSummary(): Promise<OpsReadinessSummary> {
       pendingApprovalProposals,
       generatedAt: new Date().toISOString()
     },
+    cloudNative: {
+      kiteConfigured: kiteStatus.configured,
+      kiteHealthy: kiteStatus.healthy,
+      kiteUrl: kiteStatus.url,
+      kitePublicUrl: process.env.KITE_PUBLIC_URL || null,
+      kiteDataDir: kiteStatus.dataDir,
+      kiteDatabasePresent: kiteStatus.databasePresent,
+      kiteDatabaseSize: kiteStatus.databaseSize,
+      kiteLatencyMs: kiteStatus.latencyMs,
+      kiteStatusCode: kiteStatus.statusCode,
+      kiteError: kiteStatus.error
+    },
     health: {
       status: health.status,
       uptime: health.uptime,
@@ -286,4 +344,81 @@ function hasFrontendProductionAssets(): boolean {
     '/usr/share/nginx/html/index.html'
   ];
   return candidates.some(candidate => fs.existsSync(candidate));
+}
+
+async function getKiteStatus(): Promise<{
+  configured: boolean;
+  healthy: boolean;
+  url: string | null;
+  dataDir: string | null;
+  databasePath: string | null;
+  databasePresent: boolean;
+  databaseSize: number;
+  latencyMs: number | null;
+  statusCode: number | null;
+  error: string | null;
+}> {
+  const url = process.env.KITE_URL || null;
+  const dataDir = process.env.KITE_DATA_DIR || null;
+  const databasePath = dataDir ? path.join(dataDir, 'db.sqlite') : null;
+  const databasePresent = databasePath ? fs.existsSync(databasePath) : false;
+  const databaseSize = databasePresent && databasePath ? getFileSize(databasePath) : 0;
+
+  if (!url) {
+    return {
+      configured: false,
+      healthy: false,
+      url,
+      dataDir,
+      databasePath,
+      databasePresent,
+      databaseSize,
+      latencyMs: null,
+      statusCode: null,
+      error: null
+    };
+  }
+
+  const startTime = Date.now();
+  try {
+    const response = await axios.get(url, {
+      timeout: 5000,
+      maxRedirects: 0,
+      validateStatus: status => status >= 200 && status < 400
+    });
+    return {
+      configured: true,
+      healthy: true,
+      url,
+      dataDir,
+      databasePath,
+      databasePresent,
+      databaseSize,
+      latencyMs: Date.now() - startTime,
+      statusCode: response.status,
+      error: null
+    };
+  } catch (error) {
+    const statusCode = axios.isAxiosError(error) ? error.response?.status || null : null;
+    return {
+      configured: true,
+      healthy: false,
+      url,
+      dataDir,
+      databasePath,
+      databasePresent,
+      databaseSize,
+      latencyMs: Date.now() - startTime,
+      statusCode,
+      error: error instanceof Error ? error.message : String(error)
+    };
+  }
+}
+
+function getFileSize(filePath: string): number {
+  try {
+    return fs.statSync(filePath).size;
+  } catch {
+    return 0;
+  }
 }

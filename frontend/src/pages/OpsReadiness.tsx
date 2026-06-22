@@ -69,6 +69,18 @@ interface OpsReadinessSummary {
     approvedProposals: number;
     pendingApprovalProposals: number;
   };
+  cloudNative: {
+    kiteConfigured: boolean;
+    kiteHealthy: boolean;
+    kiteUrl?: string | null;
+    kitePublicUrl?: string | null;
+    kiteDataDir?: string | null;
+    kiteDatabasePresent: boolean;
+    kiteDatabaseSize: number;
+    kiteLatencyMs?: number | null;
+    kiteStatusCode?: number | null;
+    kiteError?: string | null;
+  };
   health: {
     status: string;
     uptime: number;
@@ -217,11 +229,12 @@ export default function OpsReadiness() {
                 <div className="text-4xl font-semibold text-text-primary mt-1">{data.score}</div>
                 <StatusPill status={data.status} />
               </div>
-              <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">
+              <div className="grid grid-cols-2 xl:grid-cols-5 gap-3">
                 <Metric label={t('opsReadiness.metric.workers')} value={`${data.deployment.healthyHermesWorkers}/${data.deployment.expectedHermesWorkers}`} />
                 <Metric label={t('opsReadiness.metric.backups')} value={String(data.data.totalBackups)} />
                 <Metric label={t('opsReadiness.metric.activeReleases')} value={String(data.release.activeReleases)} />
                 <Metric label={t('opsReadiness.metric.health')} value={data.health.status} />
+                <Metric label={t('opsReadiness.metric.kite')} value={data.cloudNative.kiteHealthy ? t('common.online') : t('common.offline')} />
               </div>
             </div>
 
@@ -392,6 +405,8 @@ function DataPanel({
         <Metric label={t('opsReadiness.data.verified')} value={summary.data.lastBackupVerified ? t('common.yes') : t('common.no')} />
         <Metric label={t('opsReadiness.data.restoreDrills')} value={String(summary.data.restoreDrills)} />
         <Metric label={t('opsReadiness.data.lastDrill')} value={formatTime(summary.data.lastRestoreDrillAt)} />
+        <Metric label={t('opsReadiness.data.kiteDatabase')} value={formatBytes(summary.cloudNative.kiteDatabaseSize)} />
+        <Metric label={t('opsReadiness.data.kitePersisted')} value={summary.cloudNative.kiteDatabasePresent ? t('common.yes') : t('common.no')} />
       </div>
       <div className="mt-3 space-y-2">
         <div className="text-xs font-medium text-text-tertiary">{t('opsReadiness.drill.recent')}</div>
@@ -480,6 +495,8 @@ function EnvironmentPanel({ summary }: { summary: OpsReadinessSummary }) {
     [t('opsReadiness.env.port'), String(summary.environment.port)],
     [t('opsReadiness.env.database'), summary.environment.databasePath],
     [t('opsReadiness.env.backupDir'), summary.environment.backupDir],
+    [t('opsReadiness.env.kiteUrl'), summary.cloudNative.kitePublicUrl || summary.cloudNative.kiteUrl || '-'],
+    [t('opsReadiness.env.kiteDataDir'), summary.cloudNative.kiteDataDir || '-'],
     [t('opsReadiness.env.origins'), String(summary.environment.allowedOrigins.length)],
     [t('opsReadiness.env.fallback'), summary.environment.hermesWorkerFallbackEnabled ? t('common.enabled') : t('common.disabled')]
   ];

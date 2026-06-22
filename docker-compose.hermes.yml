@@ -32,9 +32,13 @@ services:
       HERMES_WORKER_REMEDIATE_URL: http://hermes-remediate:4102
       HERMES_WORKER_EVOLVE_URL: http://hermes-evolve:4103
       HERMES_WORKER_FALLBACK_ENABLED: ${HERMES_WORKER_FALLBACK_ENABLED:-true}
+      KITE_URL: ${KITE_URL:-http://kite:8080}
+      KITE_PUBLIC_URL: ${KITE_PUBLIC_URL:-http://10.1.132.58:3002}
+      KITE_DATA_DIR: /app/kite-data
     volumes:
       - /opt/itops-agent-platform/data:/app/data
       - /opt/itops-agent-platform/backups:/app/backups
+      - /opt/itops-agent-platform/kite-data:/app/kite-data:ro
       - /opt/itops-agent-platform/secrets:/run/secrets:ro
     depends_on:
       hermes-diagnose:
