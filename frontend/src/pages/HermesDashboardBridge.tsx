@@ -1,118 +1,143 @@
-import { useEffect, useState, type ReactNode } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Activity, ExternalLink, KanbanSquare, Loader2, RefreshCw, Save, ShieldCheck } from 'lucide-react';
+import { useMemo } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { Activity, AlertTriangle, Bot, CheckCircle2, Clock, GitBranch, KanbanSquare, Loader2, RefreshCw, ShieldCheck, XCircle, type LucideIcon } from 'lucide-react';
+import clsx from 'clsx';
 import api from '../lib/api';
-import { useAuth } from '../contexts/AuthContext';
 import { useLocale, type MessageKey } from '../contexts/LocaleContext';
-import { useToast } from '../contexts/ToastContext';
 
-interface HermesDashboardSettings {
-  enabled: boolean;
-  dashboardUrl: string;
-  embedMode: 'link' | 'iframe' | 'sidecar';
-  authMode: 'none' | 'reverse_proxy' | 'token';
-  allowedOrigins: string[];
+interface HermesWorkerStatus {
+  role: 'diagnose' | 'remediate' | 'evolve' | string;
+  name: string;
+  channelType: string;
+  url?: string;
+  configured: boolean;
+  healthy: boolean;
+  latencyMs: number;
+  status: string;
+  model?: string;
+  upstreamConfigured?: boolean;
+  error?: string;
+  runStats?: {
+    totalRuns: number;
+    successRuns: number;
+    failedRuns: number;
+    fallbackRuns: number;
+    avgLatencyMs: number | null;
+    lastRunAt: string | null;
+  };
+  lastRun?: HermesWorkerRun | null;
 }
 
-interface HermesDashboardHealth {
-  enabled: boolean;
-  reachable: boolean;
-  status: 'disabled' | 'not_configured' | 'healthy' | 'unreachable';
-  dashboardUrl: string | null;
-  checkedAt: string;
-  latencyMs: number | null;
-  error: string | null;
-}
-
-interface HermesExternalLink {
+interface HermesWorkerRun {
   id: string;
-  source_type: string;
-  source_id: string;
+  worker_role: string | null;
+  worker_url: string | null;
+  agent_id: string | null;
+  channel_id: string | null;
   correlation_id: string | null;
-  external_url: string;
-  external_card_id: string | null;
-  external_state: string | null;
-  title: string | null;
-  updated_at: string;
+  status: string;
+  latency_ms: number | null;
+  fallback_used: number;
+  error: string | null;
+  created_at: string;
 }
 
-const emptySettings: HermesDashboardSettings = {
-  enabled: false,
-  dashboardUrl: '',
-  embedMode: 'link',
-  authMode: 'none',
-  allowedOrigins: [],
-};
+interface HermesSessionRefs {
+  approvalIds: string[];
+  taskIds: string[];
+  correlationIds: string[];
+}
 
-const healthLabelKeys: Record<HermesDashboardHealth['status'], MessageKey> = {
-  disabled: 'hermesDashboard.health.disabled',
-  not_configured: 'hermesDashboard.health.notConfigured',
-  healthy: 'hermesDashboard.health.healthy',
-  unreachable: 'hermesDashboard.health.unreachable',
-};
+interface HermesSession {
+  id: string;
+  agent_execution_id: string | null;
+  agent_id: string | null;
+  agent_name: string | null;
+  mode: string | null;
+  input: string;
+  output: string | null;
+  extracted_refs: HermesSessionRefs;
+  correlation_id: string | null;
+  status: string;
+  created_at: string;
+}
+
+const laneMeta = [
+  {
+    role: 'diagnose',
+    icon: Bot,
+    titleKey: 'hermesDashboard.lane.diagnose' as MessageKey,
+    descKey: 'hermesDashboard.lane.diagnoseDesc' as MessageKey,
+    tone: 'text-cyan-500 bg-cyan-500/10 border-cyan-500/20'
+  },
+  {
+    role: 'remediate',
+    icon: ShieldCheck,
+    titleKey: 'hermesDashboard.lane.remediate' as MessageKey,
+    descKey: 'hermesDashboard.lane.remediateDesc' as MessageKey,
+    tone: 'text-amber-500 bg-amber-500/10 border-amber-500/20'
+  },
+  {
+    role: 'evolve',
+    icon: GitBranch,
+    titleKey: 'hermesDashboard.lane.evolve' as MessageKey,
+    descKey: 'hermesDashboard.lane.evolveDesc' as MessageKey,
+    tone: 'text-emerald-500 bg-emerald-500/10 border-emerald-500/20'
+  }
+] as const;
 
 export default function HermesDashboardBridge() {
-  const { user } = useAuth();
   const { t } = useLocale();
-  const toast = useToast();
   const queryClient = useQueryClient();
-  const isAdmin = user?.role === 'admin';
-  const [formData, setFormData] = useState(emptySettings);
-  const [allowedOriginsText, setAllowedOriginsText] = useState('');
 
-  const { data: settings = emptySettings, isLoading: settingsLoading } = useQuery({
-    queryKey: ['hermes-dashboard-settings'],
+  const { data: workers = [], isFetching: workersFetching } = useQuery({
+    queryKey: ['hermes-workers'],
     queryFn: async () => {
-      const res = await api.get('/api/hermes-dashboard/settings');
-      return res.data.data as HermesDashboardSettings;
+      const res = await api.get('/api/hermes-workers');
+      return res.data.data as HermesWorkerStatus[];
     },
+    refetchInterval: 30000
   });
 
-  const { data: health, isFetching: healthFetching } = useQuery({
-    queryKey: ['hermes-dashboard-health'],
+  const { data: runs = [], isFetching: runsFetching } = useQuery({
+    queryKey: ['hermes-worker-runs'],
     queryFn: async () => {
-      const res = await api.get('/api/hermes-dashboard/health');
-      return res.data.data as HermesDashboardHealth;
+      const res = await api.get('/api/hermes-workers/runs?limit=80');
+      return res.data.data as HermesWorkerRun[];
     },
+    refetchInterval: 30000
   });
 
-  const { data: links = [] } = useQuery({
-    queryKey: ['hermes-dashboard-external-links'],
+  const { data: sessionResult, isFetching: sessionsFetching } = useQuery({
+    queryKey: ['hermes-sessions', 'board'],
     queryFn: async () => {
-      const res = await api.get('/api/hermes-dashboard/external-links?limit=10');
-      return res.data.data as HermesExternalLink[];
+      const res = await api.get('/api/hermes-sessions?limit=30');
+      return res.data.data as { sessions: HermesSession[]; total: number };
     },
+    refetchInterval: 30000
   });
 
-  useEffect(() => {
-    setFormData(settings);
-    setAllowedOriginsText(settings.allowedOrigins.join(', '));
-  }, [settings]);
+  const sessions = sessionResult?.sessions || [];
+  const workerByRole = useMemo(() => new Map(workers.map((worker) => [worker.role, worker])), [workers]);
+  const runsByRole = useMemo(() => {
+    const grouped = new Map<string, HermesWorkerRun[]>();
+    runs.forEach((run) => {
+      const role = run.worker_role || 'unknown';
+      grouped.set(role, [...(grouped.get(role) || []), run]);
+    });
+    return grouped;
+  }, [runs]);
 
-  const saveMutation = useMutation({
-    mutationFn: async () => {
-      const payload: HermesDashboardSettings = {
-        ...formData,
-        allowedOrigins: allowedOriginsText.split(',').map((item) => item.trim()).filter(Boolean),
-      };
-      const res = await api.put('/api/hermes-dashboard/settings', payload);
-      return res.data.data as HermesDashboardSettings;
-    },
-    onSuccess: () => {
-      toast.success(t('hermesDashboard.toast.saved'));
-      queryClient.invalidateQueries({ queryKey: ['hermes-dashboard-settings'] });
-      queryClient.invalidateQueries({ queryKey: ['hermes-dashboard-health'] });
-    },
-    onError: () => {
-      toast.error(t('hermesDashboard.toast.saveFailed'));
-    },
-  });
+  const healthyWorkers = workers.filter((worker) => worker.healthy).length;
+  const runningSignals = runs.filter((run) => run.status === 'success' && minutesAgo(run.created_at) <= 60).length;
+  const failedSignals = runs.filter((run) => run.status === 'failed').length;
+  const isFetching = workersFetching || runsFetching || sessionsFetching;
 
-  const statusTone = health?.status === 'healthy'
-    ? 'text-green-500 bg-green-500/10'
-    : health?.status === 'disabled'
-      ? 'text-text-secondary bg-background'
-      : 'text-yellow-500 bg-yellow-500/10';
+  const refresh = () => {
+    queryClient.invalidateQueries({ queryKey: ['hermes-workers'] });
+    queryClient.invalidateQueries({ queryKey: ['hermes-worker-runs'] });
+    queryClient.invalidateQueries({ queryKey: ['hermes-sessions', 'board'] });
+  };
 
   return (
     <div className="h-full overflow-auto p-6">
@@ -127,180 +152,209 @@ export default function HermesDashboardBridge() {
               <p className="text-text-secondary mt-1">{t('hermesDashboard.subtitle')}</p>
             </div>
           </div>
-          {settings.dashboardUrl && (
-            <a
-              href={settings.dashboardUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-primary text-white hover:bg-primary/90 transition-colors"
-            >
-              <ExternalLink className="w-4 h-4" />
-              {t('hermesDashboard.open')}
-            </a>
-          )}
+          <button
+            type="button"
+            onClick={refresh}
+            className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-primary text-white hover:bg-primary/90 transition-colors"
+          >
+            {isFetching ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+            {t('common.refresh')}
+          </button>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-          <StatusCard
-            icon={Activity}
-            label={t('hermesDashboard.health.status')}
-            value={health ? t(healthLabelKeys[health.status]) : t('common.loading')}
-            tone={statusTone}
-          />
-          <StatusCard
-            icon={RefreshCw}
-            label={t('hermesDashboard.health.latency')}
-            value={health?.latencyMs === null || health?.latencyMs === undefined ? '-' : `${health.latencyMs}ms`}
-            tone="text-cyan-500 bg-cyan-500/10"
-          />
-          <StatusCard
-            icon={ShieldCheck}
-            label={t('hermesDashboard.health.mode')}
-            value={`${settings.embedMode} / ${settings.authMode}`}
-            tone="text-emerald-500 bg-emerald-500/10"
-          />
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
+          <MetricCard icon={Activity} label={t('hermesDashboard.metric.workers')} value={`${healthyWorkers}/${workers.length || 3}`} tone="text-emerald-500 bg-emerald-500/10" />
+          <MetricCard icon={CheckCircle2} label={t('hermesDashboard.metric.successHour')} value={String(runningSignals)} tone="text-cyan-500 bg-cyan-500/10" />
+          <MetricCard icon={AlertTriangle} label={t('hermesDashboard.metric.failures')} value={String(failedSignals)} tone="text-amber-500 bg-amber-500/10" />
+          <MetricCard icon={Clock} label={t('hermesDashboard.metric.sessions')} value={String(sessionResult?.total ?? sessions.length)} tone="text-violet-500 bg-violet-500/10" />
         </div>
 
-        <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-          <div className="xl:col-span-2 bg-surface border border-border rounded-lg p-5">
-            <div className="flex items-center justify-between gap-3 mb-4">
-              <h2 className="text-lg font-semibold text-text-primary">{t('hermesDashboard.config.title')}</h2>
-              {healthFetching && <Loader2 className="w-4 h-4 animate-spin text-primary" />}
-            </div>
-            {settingsLoading ? (
-              <div className="py-12 flex justify-center">
-                <Loader2 className="w-6 h-6 animate-spin text-primary" />
-              </div>
-            ) : (
-              <div className="space-y-4">
-                <label className="flex items-center gap-3">
-                  <input
-                    type="checkbox"
-                    checked={formData.enabled}
-                    disabled={!isAdmin}
-                    onChange={(event) => setFormData({ ...formData, enabled: event.target.checked })}
-                    className="w-4 h-4"
-                  />
-                  <span className="text-sm font-medium text-text-primary">{t('hermesDashboard.config.enabled')}</span>
-                </label>
-
-                <Field label={t('hermesDashboard.config.url')}>
-                  <input
-                    value={formData.dashboardUrl}
-                    disabled={!isAdmin}
-                    onChange={(event) => setFormData({ ...formData, dashboardUrl: event.target.value })}
-                    placeholder="http://127.0.0.1:9119"
-                    className="w-full px-3 py-2 rounded-lg bg-background border border-border text-text-primary placeholder-text-secondary focus:outline-none focus:border-primary disabled:opacity-70"
-                  />
-                </Field>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <Field label={t('hermesDashboard.config.embedMode')}>
-                    <select
-                      value={formData.embedMode}
-                      disabled={!isAdmin}
-                      onChange={(event) => setFormData({ ...formData, embedMode: event.target.value as HermesDashboardSettings['embedMode'] })}
-                      className="w-full px-3 py-2 rounded-lg bg-background border border-border text-text-primary focus:outline-none focus:border-primary disabled:opacity-70"
-                    >
-                      <option value="link">link</option>
-                      <option value="iframe">iframe</option>
-                      <option value="sidecar">sidecar</option>
-                    </select>
-                  </Field>
-                  <Field label={t('hermesDashboard.config.authMode')}>
-                    <select
-                      value={formData.authMode}
-                      disabled={!isAdmin}
-                      onChange={(event) => setFormData({ ...formData, authMode: event.target.value as HermesDashboardSettings['authMode'] })}
-                      className="w-full px-3 py-2 rounded-lg bg-background border border-border text-text-primary focus:outline-none focus:border-primary disabled:opacity-70"
-                    >
-                      <option value="none">none</option>
-                      <option value="reverse_proxy">reverse_proxy</option>
-                      <option value="token">token</option>
-                    </select>
-                  </Field>
+        <div className="grid grid-cols-1 xl:grid-cols-3 gap-5">
+          {laneMeta.map((lane) => {
+            const worker = workerByRole.get(lane.role);
+            const laneRuns = runsByRole.get(lane.role) || [];
+            const Icon = lane.icon;
+            return (
+              <section key={lane.role} className="bg-surface border border-border rounded-lg min-h-[520px] flex flex-col">
+                <div className="p-4 border-b border-border">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className={clsx('w-9 h-9 rounded-lg border flex items-center justify-center shrink-0', lane.tone)}>
+                        <Icon className="w-5 h-5" />
+                      </div>
+                      <div className="min-w-0">
+                        <h2 className="text-base font-semibold text-text-primary truncate">{t(lane.titleKey)}</h2>
+                        <p className="text-xs text-text-tertiary mt-1 line-clamp-2">{t(lane.descKey)}</p>
+                      </div>
+                    </div>
+                    <WorkerHealthBadge worker={worker} />
+                  </div>
+                  <div className="grid grid-cols-3 gap-2 mt-4 text-xs">
+                    <MiniStat label={t('hermesDashboard.worker.runs24h')} value={String(worker?.runStats?.totalRuns || 0)} />
+                    <MiniStat label={t('hermesDashboard.worker.avgLatency')} value={worker?.runStats?.avgLatencyMs ? `${worker.runStats.avgLatencyMs}ms` : '-'} />
+                    <MiniStat label={t('hermesDashboard.worker.fallbacks')} value={String(worker?.runStats?.fallbackRuns || 0)} />
+                  </div>
                 </div>
 
-                <Field label={t('hermesDashboard.config.allowedOrigins')}>
-                  <input
-                    value={allowedOriginsText}
-                    disabled={!isAdmin}
-                    onChange={(event) => setAllowedOriginsText(event.target.value)}
-                    placeholder="http://10.1.132.58:3000"
-                    className="w-full px-3 py-2 rounded-lg bg-background border border-border text-text-primary placeholder-text-secondary focus:outline-none focus:border-primary disabled:opacity-70"
-                  />
-                </Field>
+                <div className="p-4 space-y-3 flex-1 overflow-hidden">
+                  {laneRuns.slice(0, 8).map((run) => (
+                    <RunCard key={run.id} run={run} />
+                  ))}
+                  {laneRuns.length === 0 && (
+                    <div className="h-52 rounded-lg border border-dashed border-border bg-background/50 flex flex-col items-center justify-center text-center px-6">
+                      <KanbanSquare className="w-8 h-8 text-text-tertiary mb-3" />
+                      <p className="text-sm text-text-secondary">{t('hermesDashboard.board.emptyLane')}</p>
+                    </div>
+                  )}
+                </div>
+              </section>
+            );
+          })}
+        </div>
 
-                {health?.error && (
-                  <div className="rounded-lg border border-yellow-500/30 bg-yellow-500/10 text-yellow-600 px-3 py-2 text-sm">
-                    {health.error}
-                  </div>
-                )}
-
-                {isAdmin && (
-                  <div className="flex justify-end">
-                    <button
-                      onClick={() => saveMutation.mutate()}
-                      disabled={saveMutation.isPending}
-                      className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-white hover:bg-primary/90 disabled:opacity-60"
-                    >
-                      {saveMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                      {t('common.save')}
-                    </button>
-                  </div>
-                )}
+        <section className="bg-surface border border-border rounded-lg p-5">
+          <div className="flex items-center justify-between gap-3 mb-4">
+            <div>
+              <h2 className="text-lg font-semibold text-text-primary">{t('hermesDashboard.sessions.title')}</h2>
+              <p className="text-sm text-text-tertiary mt-1">{t('hermesDashboard.sessions.desc')}</p>
+            </div>
+            {sessionsFetching && <Loader2 className="w-4 h-4 animate-spin text-primary" />}
+          </div>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+            {sessions.slice(0, 8).map((session) => (
+              <SessionCard key={session.id} session={session} />
+            ))}
+            {sessions.length === 0 && (
+              <div className="lg:col-span-2 py-12 text-center text-sm text-text-secondary">
+                {t('hermesDashboard.sessions.empty')}
               </div>
             )}
           </div>
-
-          <div className="bg-surface border border-border rounded-lg p-5">
-            <h2 className="text-lg font-semibold text-text-primary mb-4">{t('hermesDashboard.links.title')}</h2>
-            <div className="space-y-3">
-              {links.map((link) => (
-                <a
-                  key={link.id}
-                  href={link.external_url}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="block rounded-lg border border-border bg-background/60 p-3 hover:border-primary/60 transition-colors"
-                >
-                  <p className="text-sm font-semibold text-text-primary truncate">{link.title || link.external_card_id || link.source_id}</p>
-                  <p className="text-xs text-text-secondary mt-1">{link.source_type} · {link.external_state || '-'}</p>
-                </a>
-              ))}
-              {links.length === 0 && (
-                <div className="py-10 text-center">
-                  <KanbanSquare className="w-8 h-8 text-text-secondary mx-auto mb-3" />
-                  <p className="text-sm text-text-secondary">{t('hermesDashboard.links.empty')}</p>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
+        </section>
       </div>
     </div>
   );
 }
 
-function StatusCard({ icon: Icon, label, value, tone }: { icon: typeof Activity; label: string; value: string; tone: string }) {
+function MetricCard({ icon: Icon, label, value, tone }: { icon: LucideIcon; label: string; value: string; tone: string }) {
   return (
     <div className="bg-surface border border-border rounded-lg p-4">
       <div className="flex items-center justify-between gap-3">
-        <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${tone}`}>
+        <div className={clsx('w-10 h-10 rounded-lg flex items-center justify-center', tone)}>
           <Icon className="w-5 h-5" />
         </div>
-        <span className="text-sm font-semibold text-text-primary text-right">{value}</span>
+        <span className="text-xl font-semibold text-text-primary text-right">{value}</span>
       </div>
       <p className="text-sm text-text-secondary mt-3">{label}</p>
     </div>
   );
 }
 
-function Field({ label, children }: { label: string; children: ReactNode }) {
+function WorkerHealthBadge({ worker }: { worker?: HermesWorkerStatus }) {
+  const healthy = Boolean(worker?.healthy);
+  const Icon = healthy ? CheckCircle2 : worker?.configured ? XCircle : Clock;
   return (
-    <label className="block">
-      <span className="block text-sm font-medium text-text-primary mb-1">{label}</span>
-      {children}
-    </label>
+    <span className={clsx(
+      'inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs whitespace-nowrap',
+      healthy && 'border-emerald-500/30 bg-emerald-500/10 text-emerald-500',
+      !healthy && worker?.configured && 'border-red-500/30 bg-red-500/10 text-red-500',
+      !worker?.configured && 'border-border bg-background text-text-tertiary'
+    )}>
+      <Icon className="w-3.5 h-3.5" />
+      {worker?.status || 'unknown'}
+    </span>
   );
+}
+
+function MiniStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg border border-border bg-background/60 px-3 py-2">
+      <p className="text-text-tertiary truncate">{label}</p>
+      <p className="text-text-primary font-semibold mt-1 truncate">{value}</p>
+    </div>
+  );
+}
+
+function RunCard({ run }: { run: HermesWorkerRun }) {
+  const failed = run.status === 'failed';
+  const success = run.status === 'success';
+  return (
+    <article className="rounded-lg border border-border bg-background/70 p-3">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-text-primary truncate">{run.correlation_id || run.channel_id || run.id}</p>
+          <p className="text-xs text-text-tertiary mt-1">{formatTime(run.created_at)}</p>
+        </div>
+        <span className={clsx(
+          'text-[11px] px-2 py-1 rounded-md border whitespace-nowrap',
+          success && 'border-emerald-500/25 bg-emerald-500/10 text-emerald-500',
+          failed && 'border-red-500/25 bg-red-500/10 text-red-500',
+          !success && !failed && 'border-border bg-surface text-text-secondary'
+        )}>
+          {run.status}
+        </span>
+      </div>
+      <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-text-secondary">
+        <Chip value={run.latency_ms ? `${run.latency_ms}ms` : '-'} />
+        {run.fallback_used === 1 && <Chip value="fallback" warning />}
+        {run.agent_id && <Chip value={`agent:${shortId(run.agent_id)}`} />}
+      </div>
+      {run.error && <p className="text-xs text-red-500 mt-3 line-clamp-2">{run.error}</p>}
+    </article>
+  );
+}
+
+function SessionCard({ session }: { session: HermesSession }) {
+  const refs = [
+    ...session.extracted_refs.approvalIds.map((id) => `approval:${shortId(id)}`),
+    ...session.extracted_refs.taskIds.map((id) => `task:${shortId(id)}`),
+    ...(session.correlation_id ? [`corr:${shortId(session.correlation_id)}`] : [])
+  ];
+  return (
+    <article className="rounded-lg border border-border bg-background/70 p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-text-primary truncate">{session.agent_name || session.mode || session.id}</p>
+          <p className="text-xs text-text-tertiary mt-1">{formatTime(session.created_at)}</p>
+        </div>
+        <span className="text-[11px] px-2 py-1 rounded-md border border-border bg-surface text-text-secondary whitespace-nowrap">
+          {session.status}
+        </span>
+      </div>
+      <p className="text-xs text-text-secondary mt-3 line-clamp-2">{session.input}</p>
+      {refs.length > 0 && (
+        <div className="mt-3 flex flex-wrap gap-2 text-[11px]">
+          {refs.slice(0, 5).map((ref) => <Chip key={ref} value={ref} />)}
+        </div>
+      )}
+    </article>
+  );
+}
+
+function Chip({ value, warning = false }: { value: string; warning?: boolean }) {
+  return (
+    <span className={clsx(
+      'inline-flex items-center rounded-md border px-2 py-1',
+      warning ? 'border-amber-500/25 bg-amber-500/10 text-amber-500' : 'border-border bg-surface text-text-secondary'
+    )}>
+      {value}
+    </span>
+  );
+}
+
+function formatTime(value: string): string {
+  if (!value) return '-';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString();
+}
+
+function shortId(value: string): string {
+  return value.length > 10 ? `${value.slice(0, 8)}...` : value;
+}
+
+function minutesAgo(value: string): number {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return Number.POSITIVE_INFINITY;
+  return (Date.now() - date.getTime()) / 60000;
 }

@@ -35,25 +35,30 @@ Capability Control Plane
 Evolution Governance Center
   Proposals, evaluations, staging replay, approvals, releases, runtime overlays, audit, and rollback.
 
-Hermes Dashboard And Kanban Bridge
-  Reuse the upstream Hermes Dashboard and durable Kanban board for Agent task visualization where it fits.
+Internal Hermes Board
+  Use the three Hermes instances deployed with this project as the native Agent task board and visibility surface.
 ```
 
-## External Hermes Dashboard Decision
+## Hermes Board Decision
 
-Decision:
+Updated decision:
 
 ```text
-Introduce Hermes Dashboard / Hermes Kanban as an optional external operator console instead of rebuilding every Agent task board inside this platform.
+Do not make Hermes Board primarily depend on an external Dashboard.
+Build the platform Hermes Board from the three in-project Hermes instances:
+  hermes-diagnose
+  hermes-remediate
+  hermes-evolve
+The previous external bridge remains optional compatibility only.
 ```
 
 Rationale:
 
 ```text
-Hermes already provides a dashboard surface for API key/configuration management, sessions, status, and operational visibility.
-Hermes Kanban is designed as a durable task board for Agent work items and can reduce duplicated Kanban, run history, and worker log development.
+The current deployment already runs three real Hermes containers.
+AIOps already persists Hermes worker runs, Hermes sessions, trace refs, approvals, tasks, and evolution proposals.
 This AIOps platform should keep ownership of assets, credentials, approvals, production execution, audit, release governance, and role boundaries.
-Hermes Dashboard should be integrated as a companion control surface, not as the system of record for production changes.
+The operator should not have to configure an external Dashboard before seeing Hermes work.
 ```
 
 Boundary:
@@ -62,21 +67,20 @@ Boundary:
 AIOps source of truth:
   assets, topology, users, roles, approvals, tasks, workflows, audit, releases, policies.
 
-Hermes Dashboard source of truth:
-  Hermes sessions, Agent work queue, Kanban task state, Hermes run history, worker visibility.
+Hermes Worker source of truth:
+  Worker health, worker model/upstream status, run history, fallback status, latency, worker role.
 
 Shared bridge:
-  correlationId, hermesSessionId, taskId, approvalId, proposalId, asset references, user/role context.
+  correlationId, hermesSessionId, workerRunId, taskId, approvalId, proposalId, asset references, user/role context.
 ```
 
 Integration principles:
 
 ```text
-Prefer deep links, iframe/embed, and API bridge before copying UI.
-Keep SSO/session handling explicit.
-Keep dangerous tool execution behind AIOps approvals even if Hermes Kanban moves a card forward.
-Mirror only minimal state needed for audit and navigation.
-Support disabling Hermes Dashboard integration if the deployment cannot run it.
+Read from the current project's three Hermes Worker instances first.
+Use AIOps persisted worker runs and Hermes sessions as the board data source.
+Keep dangerous tool execution behind AIOps approvals even if a Hermes card or lane advances.
+Treat external Hermes Dashboard as optional secondary integration, not as the primary product surface.
 ```
 
 External references:
@@ -312,13 +316,14 @@ Acceptance:
 Kubernetes clusters are manageable assets and can be correlated with underlying hosts.
 ```
 
-## Phase 3B - Hermes Dashboard And Kanban Bridge
+## Phase 3B - Internal Hermes Board
 
 Status:
 
 ```text
 Read-only bridge baseline implemented after Kubernetes asset baseline.
 Delegation policy baseline implemented at Hermes Channel level.
+Direction corrected: the main Hermes Board is internal and connects to the current project's three Hermes instances.
 ```
 
 Discovery document:
@@ -330,45 +335,51 @@ docs/HERMES_DASHBOARD_KANBAN_BRIDGE_DISCOVERY_20260618.md
 Goal:
 
 ```text
-Reuse Hermes Dashboard and its built-in durable Kanban as the Agent work queue and visibility surface, reducing duplicated dashboard development inside AIOps Agent.
+Expose the three in-project Hermes instances as an internal Agent work board:
+  diagnose lane
+  remediate lane
+  evolve lane
+
+The board reads AIOps worker health, worker run history, persisted Hermes sessions, extracted refs, and correlation evidence.
 ```
 
 Why now:
 
 ```text
 The platform already has Hermes workers, channels, sessions, traces, approvals, tasks, evolution proposals, and a growing operator workspace.
-Without a bridge, AIOps may duplicate Hermes task board, run history, worker log, and Agent execution visibility.
-With a bridge, the platform can focus on assets, production safety, and operational workflows while Hermes provides the Agent-native board.
+The platform already has Hermes worker containers and observability tables.
+Operators need a direct view into those three workers, not a separate external dashboard dependency.
+The platform should still avoid duplicating deterministic workflow/task execution screens.
 ```
 
 Target experience:
 
 ```text
 Operator opens AIOps Workbench.
-If the task is an Agent work item, AIOps shows the linked Hermes Kanban card or opens the embedded Hermes Dashboard view.
+If the task is an Agent work item, AIOps shows the internal Hermes Board lane and linked Hermes session/run.
 If the task requires production action, AIOps keeps approval, execution, audit, and verification in its own Execution Center.
-Every cross-system action carries correlationId and deep links back to AIOps.
+Every action carries correlationId and links back to AIOps evidence.
 ```
 
 Work items:
 
 ```text
-Add Hermes Dashboard integration settings:
+Keep optional external Dashboard compatibility settings:
   dashboardUrl
   enabled
   embedMode: link | iframe | sidecar
   authMode: none | reverse_proxy | token
   allowedOrigins
 
-Add a Hermes Dashboard health probe:
+Keep optional external Dashboard health probe:
   reachable
   version/capability summary if available
   kanbanAvailable
   lastCheckedAt
 
 Add navigation entry under Capability Control Plane:
-  Hermes Dashboard
-  Hermes Kanban
+  Hermes Board
+  Three internal Hermes lanes
 
 Add AIOps-to-Hermes deep links:
   Hermes session -> dashboard session/run
@@ -453,15 +464,19 @@ Recommended implementation slices:
   Baseline findings are documented in docs/HERMES_DASHBOARD_KANBAN_BRIDGE_DISCOVERY_20260618.md.
 
 3B-2: Read-only bridge
-  Add settings, health probe, navigation link, and external link table.
-  Show Hermes Dashboard link/embed from Hermes Assistant, Evolution Proposals, and Capability Control Plane.
+  Add internal board page over existing worker status, worker run history, and Hermes session APIs.
+  Show three lanes for diagnose/remediate/evolve.
   Implemented baseline:
+    /api/hermes-workers
+    /api/hermes-workers/runs
+    /api/hermes-sessions
+    /hermes-dashboard internal board page
+    Capability Control Plane navigation entry
+  Compatibility retained:
     /api/hermes-dashboard/settings
     /api/hermes-dashboard/health
     /api/hermes-dashboard/external-links
     hermes_external_links table
-    /hermes-dashboard page
-    Capability Control Plane navigation entry
 
 3B-3: Delegation policy baseline
   Add channel-level delegation limits, allowed lanes, and circuit-breaker settings.
@@ -478,15 +493,15 @@ Recommended implementation slices:
     Hermes Channel console supports editing delegation policy
   Boundary:
     This phase defines governance and runtime metadata.
-    It does not yet perform real external Hermes Kanban scheduling.
+    It does not yet perform automatic durable card scheduling.
     Production-changing actions remain gated by AIOps approval/task controls.
 
 3B-4: Correlation bridge
-  Write externalCardId/externalRunId onto Hermes sessions, proposals, tasks, and trace views.
-  Add jump-back links from Hermes work items to AIOps pages where possible.
+  Link workerRunId, hermesSessionId, approvalId, taskId, proposalId, and correlationId in the internal board.
+  Add jump links from board cards to AIOps task, approval, proposal, and correlation trace pages.
 
 3B-5: Operational contract
-  Define which Kanban lane transitions can create AIOps proposals or approval drafts.
+  Define which internal board lane transitions can create AIOps proposals or approval drafts.
   Keep publish/execution gated inside AIOps.
 ```
 
