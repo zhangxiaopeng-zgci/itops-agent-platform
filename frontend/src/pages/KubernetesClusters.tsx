@@ -118,6 +118,7 @@ interface CredentialOption {
   username?: string | null;
   usage_count?: number;
   has_token?: number;
+  has_kubeconfig?: number;
   description?: string | null;
 }
 
@@ -137,6 +138,7 @@ const emptyCredentialForm = {
   credential_type: 'token' as CredentialOption['credential_type'],
   username: '',
   token: '',
+  kubeconfig: '',
   server_url: '',
   description: '',
 };
@@ -212,9 +214,10 @@ export default function KubernetesClusters() {
     },
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ['credentials', 'kubernetes'] });
+      const createdType = credentialForm.credential_type;
       setCredentialForm(emptyCredentialForm);
       setIsCredentialModalOpen(false);
-      setFormData((current) => ({ ...current, auth_type: 'token', credential_id: result.id }));
+      setFormData((current) => ({ ...current, auth_type: createdType, credential_id: result.id }));
       toast.success(t('kubernetes.credential.toast.created'));
     },
     onError: (error: any) => {
@@ -530,9 +533,9 @@ export default function KubernetesClusters() {
                       </button>
                       <button
                         onClick={() => syncLiveMutation.mutate(cluster.id)}
-                        disabled={syncLiveMutation.isPending || cluster.auth_type !== 'token' || !cluster.credential_id || (!isAdmin && user?.role !== 'operator')}
+                        disabled={syncLiveMutation.isPending || !['token', 'kubeconfig'].includes(cluster.auth_type) || !cluster.credential_id || (!isAdmin && user?.role !== 'operator')}
                         className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-blue-500/30 text-blue-500 hover:bg-blue-500/10 transition-colors disabled:opacity-60"
-                        title={cluster.auth_type !== 'token' || !cluster.credential_id ? t('kubernetes.liveSync.requiresToken') : undefined}
+                        title={!['token', 'kubeconfig'].includes(cluster.auth_type) || !cluster.credential_id ? t('kubernetes.liveSync.requiresToken') : undefined}
                       >
                         {syncLiveMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
                         {t('kubernetes.action.syncLive')}
@@ -667,6 +670,7 @@ export default function KubernetesClusters() {
                 <Field label={t('kubernetes.credential.field.type')}>
                   <select className={inputClass} value={credentialForm.credential_type} onChange={(event) => setCredentialForm({ ...credentialForm, credential_type: event.target.value as CredentialOption['credential_type'] })}>
                     <option value="token">token</option>
+                    <option value="kubeconfig">kubeconfig</option>
                   </select>
                 </Field>
                 <Field label={t('kubernetes.credential.field.username')}>
@@ -676,9 +680,15 @@ export default function KubernetesClusters() {
                   <input className={inputClass} value={credentialForm.server_url} onChange={(event) => setCredentialForm({ ...credentialForm, server_url: event.target.value })} placeholder="https://kubernetes.example:6443" />
                 </Field>
               </div>
-              <Field label={t('kubernetes.credential.field.token')} required>
-                <textarea className={`${inputClass} min-h-[120px] font-mono text-xs`} value={credentialForm.token} onChange={(event) => setCredentialForm({ ...credentialForm, token: event.target.value })} required />
-              </Field>
+              {credentialForm.credential_type === 'token' ? (
+                <Field label={t('kubernetes.credential.field.token')} required>
+                  <textarea className={`${inputClass} min-h-[120px] font-mono text-xs`} value={credentialForm.token} onChange={(event) => setCredentialForm({ ...credentialForm, token: event.target.value })} required />
+                </Field>
+              ) : (
+                <Field label={t('kubernetes.credential.field.kubeconfig')} required>
+                  <textarea className={`${inputClass} min-h-[220px] font-mono text-xs`} value={credentialForm.kubeconfig} onChange={(event) => setCredentialForm({ ...credentialForm, kubeconfig: event.target.value })} required placeholder="apiVersion: v1&#10;clusters:&#10;- cluster:&#10;    server: https://kubernetes.example:6443&#10;  name: default&#10;users:&#10;- name: bearer&#10;  user:&#10;    token: ..." />
+                </Field>
+              )}
               <Field label={t('kubernetes.field.description')}>
                 <textarea className={`${inputClass} min-h-[72px]`} value={credentialForm.description} onChange={(event) => setCredentialForm({ ...credentialForm, description: event.target.value })} />
               </Field>

@@ -168,6 +168,12 @@ interface DedicatedKubernetesCredential {
   kubeconfig?: string | null;
   client_certificate?: string | null;
   client_key?: string | null;
+  server_url?: string | null;
+}
+
+interface KubernetesApiAuth {
+  token: string;
+  apiServerUrl?: string | null;
 }
 
 interface KubernetesApiList<T> {
@@ -324,6 +330,39 @@ function requireName(metadata: KubernetesApiMetadata | undefined, fallback: stri
   return normalizeText(metadata?.name) || fallback;
 }
 
+function stripYamlValue(value: string | undefined): string | null {
+  if (!value) return null;
+  const trimmed = value.trim();
+  if (!trimmed || trimmed === '|' || trimmed === '>') return null;
+  return trimmed.replace(/^['"]|['"]$/g, '');
+}
+
+function parseKubeconfig(rawKubeconfig: string): KubernetesApiAuth {
+  try {
+    const kubeconfig = JSON.parse(rawKubeconfig);
+    const currentContextName = kubeconfig['current-context'];
+    const currentContext = kubeconfig.contexts?.find((item: any) => item.name === currentContextName)?.context || kubeconfig.contexts?.[0]?.context;
+    const clusterName = currentContext?.cluster;
+    const userName = currentContext?.user;
+    const cluster = kubeconfig.clusters?.find((item: any) => item.name === clusterName)?.cluster || kubeconfig.clusters?.[0]?.cluster;
+    const user = kubeconfig.users?.find((item: any) => item.name === userName)?.user || kubeconfig.users?.[0]?.user;
+    const token = normalizeText(user?.token);
+    const apiServerUrl = normalizeText(cluster?.server);
+    if (!token) throw new Error('Kubeconfig does not contain a bearer token');
+    return { token, apiServerUrl };
+  } catch (error) {
+    if (error instanceof SyntaxError) {
+      const server = stripYamlValue(rawKubeconfig.match(/^\s*server:\s*(.+?)\s*$/m)?.[1]);
+      const token = stripYamlValue(rawKubeconfig.match(/^\s*token:\s*(.+?)\s*$/m)?.[1]);
+      if (!token) {
+        throw new Error('Kubeconfig does not contain a bearer token');
+      }
+      return { token, apiServerUrl: server };
+    }
+    throw error;
+  }
+}
+
 class KubernetesClusterService {
   getAllClusters(): KubernetesClusterSummary[] {
     return db.prepare(`
@@ -469,7 +508,7 @@ class KubernetesClusterService {
       return { success: false, status: 'not_found', message: 'Kubernetes cluster not found' };
     }
 
-    if (!cluster.api_server_url) {
+    if (!cluster.api_server_url && cluster.auth_type !== 'kubeconfig') {
       return { success: false, status: 'missing_api_server', message: 'API server URL is not configured' };
     }
 
@@ -477,10 +516,14 @@ class KubernetesClusterService {
       return { success: false, status: 'missing_auth_type', message: 'Authentication type is not configured' };
     }
 
+    if ((cluster.auth_type === 'token' || cluster.auth_type === 'kubeconfig') && !cluster.credential_id) {
+      return { success: false, status: 'missing_credential', message: 'Kubernetes credential is not configured' };
+    }
+
     return {
       success: true,
       status: 'configured',
-      message: 'Cluster connection metadata is configured. Live Kubernetes API probing will be enabled in the sync phase.',
+      message: 'Cluster connection metadata is configured. Live Kubernetes API sync can be started from the cluster action bar.',
     };
   }
 
@@ -702,24 +745,22 @@ class KubernetesClusterService {
   async syncClusterFromApi(id: string): Promise<KubernetesSyncResult | undefined> {
     const cluster = this.getClusterById(id);
     if (!cluster) return undefined;
-    if (!cluster.api_server_url) {
+    const auth = this.getKubernetesApiAuth(cluster);
+    const apiServerUrl = normalizeText(auth.apiServerUrl) || cluster.api_server_url;
+    if (!apiServerUrl) {
       throw new Error('Kubernetes API server URL is not configured');
     }
-    if (cluster.auth_type !== 'token') {
-      throw new Error('Live Kubernetes API sync currently supports token authentication');
-    }
 
-    const token = this.getKubernetesBearerToken(cluster);
-    const apiBase = normalizeBaseUrl(cluster.api_server_url);
+    const apiBase = normalizeBaseUrl(apiServerUrl);
     const [nodes, namespaces, deployments, statefulSets, daemonSets, pods, services, events] = await Promise.all([
-      this.kubernetesGet<KubernetesApiList<KubernetesApiNode>>(apiBase, '/api/v1/nodes', token),
-      this.kubernetesGet<KubernetesApiList<KubernetesApiNamespace>>(apiBase, '/api/v1/namespaces', token),
-      this.kubernetesGet<KubernetesApiList<KubernetesApiWorkload>>(apiBase, '/apis/apps/v1/deployments', token),
-      this.kubernetesGet<KubernetesApiList<KubernetesApiWorkload>>(apiBase, '/apis/apps/v1/statefulsets', token),
-      this.kubernetesGet<KubernetesApiList<KubernetesApiWorkload>>(apiBase, '/apis/apps/v1/daemonsets', token),
-      this.kubernetesGet<KubernetesApiList<KubernetesApiPod>>(apiBase, '/api/v1/pods', token),
-      this.kubernetesGet<KubernetesApiList<KubernetesApiService>>(apiBase, '/api/v1/services', token),
-      this.kubernetesGet<KubernetesApiList<KubernetesApiEvent>>(apiBase, '/api/v1/events', token),
+      this.kubernetesGet<KubernetesApiList<KubernetesApiNode>>(apiBase, '/api/v1/nodes', auth.token),
+      this.kubernetesGet<KubernetesApiList<KubernetesApiNamespace>>(apiBase, '/api/v1/namespaces', auth.token),
+      this.kubernetesGet<KubernetesApiList<KubernetesApiWorkload>>(apiBase, '/apis/apps/v1/deployments', auth.token),
+      this.kubernetesGet<KubernetesApiList<KubernetesApiWorkload>>(apiBase, '/apis/apps/v1/statefulsets', auth.token),
+      this.kubernetesGet<KubernetesApiList<KubernetesApiWorkload>>(apiBase, '/apis/apps/v1/daemonsets', auth.token),
+      this.kubernetesGet<KubernetesApiList<KubernetesApiPod>>(apiBase, '/api/v1/pods', auth.token),
+      this.kubernetesGet<KubernetesApiList<KubernetesApiService>>(apiBase, '/api/v1/services', auth.token),
+      this.kubernetesGet<KubernetesApiList<KubernetesApiEvent>>(apiBase, '/api/v1/events', auth.token),
     ]);
 
     const snapshot: KubernetesAssetSnapshot = {
@@ -825,26 +866,39 @@ class KubernetesClusterService {
     };
   }
 
-  private getKubernetesBearerToken(cluster: KubernetesCluster): string {
+  private getKubernetesApiAuth(cluster: KubernetesCluster): KubernetesApiAuth {
     const credentialId = normalizeText(cluster.credential_id);
     if (!credentialId) {
       throw new Error('Kubernetes token credential is not configured');
     }
 
     const dedicatedCredential = db.prepare(`
-      SELECT credential_type, token_secret, kubeconfig, client_certificate, client_key
+      SELECT credential_type, token_secret, kubeconfig, client_certificate, client_key, server_url
       FROM kubernetes_credentials
       WHERE id = ?
     `).get(credentialId) as DedicatedKubernetesCredential | undefined;
 
     if (dedicatedCredential) {
-      if (dedicatedCredential.credential_type !== 'token') {
-        throw new Error('Live Kubernetes API sync currently supports token credentials');
+      if (dedicatedCredential.credential_type === 'token') {
+        if (!dedicatedCredential.token_secret) {
+          throw new Error('Kubernetes token credential has no token secret');
+        }
+        return {
+          token: decrypt(dedicatedCredential.token_secret),
+          apiServerUrl: dedicatedCredential.server_url,
+        };
       }
-      if (!dedicatedCredential.token_secret) {
-        throw new Error('Kubernetes token credential has no token secret');
+      if (dedicatedCredential.credential_type === 'kubeconfig') {
+        if (!dedicatedCredential.kubeconfig) {
+          throw new Error('Kubernetes kubeconfig credential has no kubeconfig data');
+        }
+        const parsed = parseKubeconfig(decrypt(dedicatedCredential.kubeconfig));
+        return {
+          ...parsed,
+          apiServerUrl: parsed.apiServerUrl || dedicatedCredential.server_url,
+        };
       }
-      return decrypt(dedicatedCredential.token_secret);
+      throw new Error('Live Kubernetes API sync currently supports token and bearer-token kubeconfig credentials');
     }
 
     const credential = db.prepare(`
@@ -861,7 +915,7 @@ class KubernetesClusterService {
       throw new Error('Kubernetes token credential has no secret value');
     }
 
-    return decrypt(encryptedToken);
+    return { token: decrypt(encryptedToken) };
   }
 
   private kubernetesGet<T>(baseUrl: string, path: string, token: string): Promise<T> {
