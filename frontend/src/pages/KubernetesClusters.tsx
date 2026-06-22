@@ -1,9 +1,11 @@
 import { useMemo, useState, type FormEvent, type ReactNode } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
 import {
   Boxes,
   CheckCircle2,
   Cloud,
+  ExternalLink,
   Link2,
   Loader2,
   Plus,
@@ -53,6 +55,7 @@ const emptyForm = {
 const inputClass = 'w-full px-3 py-2 rounded-lg bg-background border border-border text-text-primary placeholder-text-secondary focus:outline-none focus:border-primary';
 
 export default function KubernetesClusters() {
+  const navigate = useNavigate();
   const { user } = useAuth();
   const { t } = useLocale();
   const toast = useToast();
@@ -157,15 +160,24 @@ export default function KubernetesClusters() {
               <p className="text-text-secondary mt-1">{t('kubernetes.subtitle')}</p>
             </div>
           </div>
-          {isAdmin && (
+          <div className="flex flex-wrap gap-2">
             <button
-              onClick={() => setIsModalOpen(true)}
-              className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-primary text-white hover:bg-primary/90 transition-colors"
+              onClick={() => navigate('/kubernetes-console')}
+              className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg border border-border text-text-primary hover:bg-background transition-colors"
             >
-              <Plus className="w-4 h-4" />
-              {t('kubernetes.add')}
+              <ExternalLink className="w-4 h-4" />
+              {t('kubernetes.openConsole')}
             </button>
-          )}
+            {isAdmin && (
+              <button
+                onClick={() => setIsModalOpen(true)}
+                className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-primary text-white hover:bg-primary/90 transition-colors"
+              >
+                <Plus className="w-4 h-4" />
+                {t('kubernetes.add')}
+              </button>
+            )}
+          </div>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">

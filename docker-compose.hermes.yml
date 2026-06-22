@@ -5,6 +5,7 @@
 #   /opt/itops-agent-platform/data
 #   /opt/itops-agent-platform/backups
 #   /opt/itops-agent-platform/secrets
+#   /opt/itops-agent-platform/kite-data
 
 services:
   backend:
@@ -74,6 +75,22 @@ services:
       timeout: 5s
       retries: 3
       start_period: 10s
+
+  kite:
+    image: ghcr.io/kite-org/kite:latest
+    container_name: kite
+    restart: unless-stopped
+    ports:
+      - "3002:8080"
+    environment:
+      DB_DSN: /data/db.sqlite
+      KITE_ENCRYPT_KEY: ${KITE_ENCRYPT_KEY:?KITE_ENCRYPT_KEY must be set}
+    volumes:
+      - /opt/itops-agent-platform/kite-data:/data
+    networks:
+      itops-runtime:
+        aliases:
+          - kite
 
   hermes-diagnose:
     build:

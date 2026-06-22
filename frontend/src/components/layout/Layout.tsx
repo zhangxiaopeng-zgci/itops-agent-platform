@@ -75,6 +75,7 @@ const navigationGroups: Array<{
       { labelKey: 'nav.diagnosisCenter', href: '/diagnosis-center', icon: AlertTriangle },
       { labelKey: 'nav.executionCenter', href: '/execution-center', icon: Workflow },
       { labelKey: 'nav.assetsCenter', href: '/assets-center', icon: Server },
+      { labelKey: 'nav.kubernetesConsole', href: '/kubernetes-console', icon: ServerCog },
     ]
   },
   {

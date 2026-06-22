@@ -168,6 +168,12 @@ export default function AssetsCenter() {
       href: '/execution-center',
       icon: Wrench,
     },
+    {
+      titleKey: 'assetsCenter.action.kubernetesConsole',
+      descriptionKey: 'assetsCenter.action.kubernetesConsoleDesc',
+      href: '/kubernetes-console',
+      icon: Boxes,
+    },
   ];
 
   const recentAssets = [
