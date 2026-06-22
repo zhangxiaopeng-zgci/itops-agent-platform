@@ -1,7 +1,7 @@
-import { useMemo } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
-import { Activity, AlertTriangle, Bot, CheckCircle2, Clock, GitBranch, KanbanSquare, Loader2, RefreshCw, ShieldCheck, XCircle, type LucideIcon } from 'lucide-react';
+import { Activity, AlertTriangle, Bot, CheckCircle2, Clock, GitBranch, KanbanSquare, Loader2, RefreshCw, ShieldCheck, X, XCircle, type LucideIcon } from 'lucide-react';
 import clsx from 'clsx';
 import api from '../lib/api';
 import { useLocale, type MessageKey } from '../contexts/LocaleContext';
@@ -63,6 +63,10 @@ interface HermesSession {
   created_at: string;
 }
 
+type BoardSelection =
+  | { type: 'run'; item: HermesWorkerRun }
+  | { type: 'session'; item: HermesSession };
+
 const laneMeta = [
   {
     role: 'diagnose',
@@ -90,6 +94,7 @@ const laneMeta = [
 export default function HermesDashboardBridge() {
   const { t } = useLocale();
   const queryClient = useQueryClient();
+  const [selection, setSelection] = useState<BoardSelection | null>(null);
 
   const { data: workers = [], isFetching: workersFetching } = useQuery({
     queryKey: ['hermes-workers'],
@@ -199,7 +204,7 @@ export default function HermesDashboardBridge() {
 
                 <div className="p-4 space-y-3 flex-1 overflow-hidden">
                   {laneRuns.slice(0, 8).map((run) => (
-                    <RunCard key={run.id} run={run} />
+                    <RunCard key={run.id} run={run} onOpen={() => setSelection({ type: 'run', item: run })} />
                   ))}
                   {laneRuns.length === 0 && (
                     <div className="h-52 rounded-lg border border-dashed border-border bg-background/50 flex flex-col items-center justify-center text-center px-6">
@@ -223,7 +228,7 @@ export default function HermesDashboardBridge() {
           </div>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
             {sessions.slice(0, 8).map((session) => (
-              <SessionCard key={session.id} session={session} />
+              <SessionCard key={session.id} session={session} onOpen={() => setSelection({ type: 'session', item: session })} />
             ))}
             {sessions.length === 0 && (
               <div className="lg:col-span-2 py-12 text-center text-sm text-text-secondary">
@@ -233,6 +238,9 @@ export default function HermesDashboardBridge() {
           </div>
         </section>
       </div>
+      {selection && (
+        <BoardDetailDrawer selection={selection} onClose={() => setSelection(null)} />
+      )}
     </div>
   );
 }
@@ -276,11 +284,23 @@ function MiniStat({ label, value }: { label: string; value: string }) {
   );
 }
 
-function RunCard({ run }: { run: HermesWorkerRun }) {
+function RunCard({ run, onOpen }: { run: HermesWorkerRun; onOpen: () => void }) {
+  const { t } = useLocale();
   const failed = run.status === 'failed';
   const success = run.status === 'success';
   return (
-    <article className="rounded-lg border border-border bg-background/70 p-3">
+    <article
+      role="button"
+      tabIndex={0}
+      onClick={onOpen}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          onOpen();
+        }
+      }}
+      className="rounded-lg border border-border bg-background/70 p-3 text-left cursor-pointer hover:border-primary/40 hover:bg-primary/5 transition-colors"
+    >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-sm font-semibold text-text-primary truncate">{run.correlation_id || run.channel_id || run.id}</p>
@@ -302,16 +322,29 @@ function RunCard({ run }: { run: HermesWorkerRun }) {
         {run.correlation_id && (
           <Chip value={`corr:${shortId(run.correlation_id)}`} />
         )}
+        <Chip value={t('hermesDashboard.detail.open')} />
       </div>
       {run.error && <p className="text-xs text-red-500 mt-3 line-clamp-2">{run.error}</p>}
     </article>
   );
 }
 
-function SessionCard({ session }: { session: HermesSession }) {
+function SessionCard({ session, onOpen }: { session: HermesSession; onOpen: () => void }) {
+  const { t } = useLocale();
   const correlationId = session.correlation_id || session.extracted_refs.correlationIds[0];
   return (
-    <article className="rounded-lg border border-border bg-background/70 p-4">
+    <article
+      role="button"
+      tabIndex={0}
+      onClick={onOpen}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          onOpen();
+        }
+      }}
+      className="rounded-lg border border-border bg-background/70 p-4 text-left cursor-pointer hover:border-primary/40 hover:bg-primary/5 transition-colors"
+    >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-sm font-semibold text-text-primary truncate">{session.agent_name || session.mode || session.id}</p>
@@ -339,6 +372,7 @@ function SessionCard({ session }: { session: HermesSession }) {
             />
           ))}
           {correlationId && <Chip value={`corr:${shortId(correlationId)}`} />}
+          <Chip value={t('hermesDashboard.detail.open')} />
         </div>
       )}
     </article>
@@ -360,10 +394,145 @@ function EvidenceLink({ to, value }: { to: string; value: string }) {
   return (
     <Link
       to={to}
+      onClick={(event) => event.stopPropagation()}
       className="inline-flex items-center rounded-md border border-primary/25 bg-primary/10 px-2 py-1 text-primary hover:bg-primary/15 transition-colors"
     >
       {value}
     </Link>
+  );
+}
+
+function BoardDetailDrawer({ selection, onClose }: { selection: BoardSelection; onClose: () => void }) {
+  const { t } = useLocale();
+  const isRun = selection.type === 'run';
+  const run = isRun ? selection.item : null;
+  const session = !isRun ? selection.item : null;
+  const correlationId = session
+    ? session.correlation_id || session.extracted_refs.correlationIds[0]
+    : run?.correlation_id || null;
+  const title = isRun ? t('hermesDashboard.detail.runTitle') : t('hermesDashboard.detail.sessionTitle');
+
+  return (
+    <div className="fixed inset-0 z-50 flex justify-end bg-black/35" onClick={onClose}>
+      <aside
+        className="h-full w-full max-w-2xl overflow-auto border-l border-border bg-surface shadow-xl"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-border bg-surface/95 px-5 py-4 backdrop-blur">
+          <div className="min-w-0">
+            <h2 className="text-lg font-semibold text-text-primary">{title}</h2>
+            <p className="mt-1 text-xs text-text-tertiary break-all">{isRun ? run?.id : session?.id}</p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-background text-text-secondary hover:text-text-primary transition-colors"
+            aria-label={t('common.close')}
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="space-y-5 p-5">
+          {isRun && run && (
+            <>
+              <DetailGrid
+                items={[
+                  [t('hermesDashboard.detail.type'), 'worker_run'],
+                  [t('common.status'), run.status],
+                  [t('hermesDashboard.detail.workerRole'), run.worker_role || '-'],
+                  [t('hermesDashboard.detail.channel'), run.channel_id || '-'],
+                  [t('hermesDashboard.detail.latency'), run.latency_ms ? `${run.latency_ms}ms` : '-'],
+                  [t('hermesDashboard.worker.fallbacks'), run.fallback_used === 1 ? t('common.yes') : t('common.no')],
+                  [t('hermesDashboard.detail.createdAt'), formatTime(run.created_at)],
+                  [t('hermesDashboard.detail.correlation'), correlationId || '-']
+                ]}
+              />
+              {run.error && (
+                <DetailSection title={t('hermesDashboard.detail.error')}>
+                  <pre className="whitespace-pre-wrap break-words rounded-lg border border-red-500/20 bg-red-500/10 p-3 text-xs text-red-500">{run.error}</pre>
+                </DetailSection>
+              )}
+            </>
+          )}
+
+          {session && (
+            <>
+              <DetailGrid
+                items={[
+                  [t('hermesDashboard.detail.type'), 'hermes_session'],
+                  [t('common.status'), session.status],
+                  [t('hermesDashboard.detail.agent'), session.agent_name || session.agent_id || '-'],
+                  [t('hermesDashboard.detail.mode'), session.mode || '-'],
+                  [t('hermesDashboard.detail.createdAt'), formatTime(session.created_at)],
+                  [t('hermesDashboard.detail.correlation'), correlationId || '-']
+                ]}
+              />
+              <DetailSection title={t('hermesDashboard.detail.input')}>
+                <p className="whitespace-pre-wrap break-words rounded-lg border border-border bg-background/70 p-3 text-sm text-text-secondary">
+                  {session.input || '-'}
+                </p>
+              </DetailSection>
+              <DetailSection title={t('hermesDashboard.detail.output')}>
+                <p className="whitespace-pre-wrap break-words rounded-lg border border-border bg-background/70 p-3 text-sm text-text-secondary">
+                  {session.output || '-'}
+                </p>
+              </DetailSection>
+              <DetailSection title={t('hermesDashboard.detail.evidenceRefs')}>
+                <div className="flex flex-wrap gap-2 text-xs">
+                  {session.extracted_refs.approvalIds.map((approvalId) => (
+                    <EvidenceLink key={approvalId} to={`/tool-approvals?approvalId=${encodeURIComponent(approvalId)}`} value={`approval:${shortId(approvalId)}`} />
+                  ))}
+                  {session.extracted_refs.taskIds.map((taskId) => (
+                    <EvidenceLink key={taskId} to={`/tasks?taskId=${encodeURIComponent(taskId)}`} value={`task:${shortId(taskId)}`} />
+                  ))}
+                  {correlationId && <Chip value={`corr:${shortId(correlationId)}`} />}
+                  {session.extracted_refs.approvalIds.length === 0 && session.extracted_refs.taskIds.length === 0 && !correlationId && (
+                    <span className="text-text-tertiary">-</span>
+                  )}
+                </div>
+              </DetailSection>
+            </>
+          )}
+
+          <DetailSection title={t('hermesDashboard.detail.nextActions')}>
+            <div className="flex flex-wrap gap-2 text-xs">
+              <Link to="/tool-approvals" className="rounded-md border border-border bg-background px-3 py-2 text-text-secondary hover:text-primary">
+                {t('hermesDashboard.detail.openApprovals')}
+              </Link>
+              <Link to="/tasks" className="rounded-md border border-border bg-background px-3 py-2 text-text-secondary hover:text-primary">
+                {t('hermesDashboard.detail.openTasks')}
+              </Link>
+              <Link to="/evolution-proposals" className="rounded-md border border-border bg-background px-3 py-2 text-text-secondary hover:text-primary">
+                {t('hermesDashboard.detail.openEvolution')}
+              </Link>
+            </div>
+          </DetailSection>
+        </div>
+      </aside>
+    </div>
+  );
+}
+
+function DetailGrid({ items }: { items: Array<[string, string]> }) {
+  return (
+    <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+      {items.map(([label, value]) => (
+        <div key={label} className="rounded-lg border border-border bg-background/70 p-3">
+          <p className="text-xs text-text-tertiary">{label}</p>
+          <p className="mt-1 break-all text-sm font-medium text-text-primary">{value}</p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function DetailSection({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section>
+      <h3 className="mb-2 text-sm font-semibold text-text-primary">{title}</h3>
+      {children}
+    </section>
   );
 }
 

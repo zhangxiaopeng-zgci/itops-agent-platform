@@ -573,6 +573,8 @@ Recommended implementation slices:
     Existing jump targets are used first: tasks, tool approvals, evolution proposals.
     A dedicated correlation trace page/drawer is a follow-up when the data contract is ready.
   Implemented first slice:
+    Worker run and Hermes session cards open a read-only detail drawer.
+    The drawer shows identity, status, timing, input/output, errors, correlationId, and extracted refs.
     Hermes session cards expose approvalId and taskId as clickable evidence links.
     correlationId is shown as a stable evidence marker until a dedicated correlation page/drawer is introduced.
     Unsupported deep links are intentionally not shown.
