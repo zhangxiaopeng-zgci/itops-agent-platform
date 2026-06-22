@@ -1,5 +1,8 @@
 import { randomUUID } from 'crypto';
+import http from 'http';
+import https from 'https';
 import db from '../models/database';
+import { decrypt } from './encryptionService';
 import { logger } from '../utils/logger';
 
 export type KubernetesAuthType = 'kubeconfig' | 'token' | 'certificate';
@@ -152,6 +155,99 @@ export interface KubernetesSyncResult {
   };
 }
 
+interface KubernetesCredential {
+  auth_type: string;
+  username?: string | null;
+  password?: string | null;
+  private_key?: string | null;
+}
+
+interface KubernetesApiList<T> {
+  items?: T[];
+}
+
+interface KubernetesApiMetadata {
+  name?: string;
+  namespace?: string;
+  labels?: Record<string, unknown>;
+  annotations?: Record<string, unknown>;
+  creationTimestamp?: string;
+}
+
+interface KubernetesApiNode {
+  metadata?: KubernetesApiMetadata;
+  status?: {
+    addresses?: Array<{ type?: string; address?: string }>;
+    conditions?: Array<{ type?: string; status?: string }>;
+    nodeInfo?: {
+      kubeletVersion?: string;
+      osImage?: string;
+      containerRuntimeVersion?: string;
+    };
+    capacity?: {
+      cpu?: string;
+      memory?: string;
+      pods?: string;
+    };
+  };
+}
+
+interface KubernetesApiNamespace {
+  metadata?: KubernetesApiMetadata;
+  status?: { phase?: string };
+}
+
+interface KubernetesApiWorkload {
+  kind?: string;
+  metadata?: KubernetesApiMetadata;
+  spec?: { replicas?: number };
+  status?: {
+    replicas?: number;
+    readyReplicas?: number;
+    numberReady?: number;
+    currentNumberScheduled?: number;
+    desiredNumberScheduled?: number;
+    availableReplicas?: number;
+  };
+}
+
+interface KubernetesApiPod {
+  metadata?: KubernetesApiMetadata;
+  spec?: { nodeName?: string };
+  status?: {
+    phase?: string;
+    podIP?: string;
+    hostIP?: string;
+    containerStatuses?: Array<{ ready?: boolean; restartCount?: number }>;
+  };
+}
+
+interface KubernetesApiService {
+  metadata?: KubernetesApiMetadata;
+  spec?: {
+    type?: string;
+    clusterIP?: string;
+    externalIPs?: string[];
+    ports?: unknown;
+    selector?: unknown;
+  };
+}
+
+interface KubernetesApiEvent {
+  metadata?: KubernetesApiMetadata;
+  involvedObject?: {
+    kind?: string;
+    name?: string;
+  };
+  type?: string;
+  reason?: string;
+  message?: string;
+  count?: number;
+  firstTimestamp?: string;
+  lastTimestamp?: string;
+  eventTime?: string;
+}
+
 function normalizeEnabled(enabled: number | boolean | undefined): number {
   if (enabled === undefined) return 1;
   return enabled === true || enabled === 1 ? 1 : 0;
@@ -177,6 +273,47 @@ function normalizeReady(value: number | boolean | null | undefined): number {
   if (value === true) return 1;
   if (value === false || value === null || value === undefined) return 0;
   return Number(value) > 0 ? 1 : 0;
+}
+
+function normalizeBaseUrl(value: string): string {
+  return value.replace(/\/+$/, '');
+}
+
+function getNodeAddress(node: KubernetesApiNode, type: string): string | null {
+  return node.status?.addresses?.find((address) => address.type === type)?.address || null;
+}
+
+function getNodeStatus(node: KubernetesApiNode): string {
+  const ready = node.status?.conditions?.find((condition) => condition.type === 'Ready');
+  return ready?.status === 'True' ? 'Ready' : 'NotReady';
+}
+
+function getNodeRole(node: KubernetesApiNode): string | null {
+  const labels = node.metadata?.labels || {};
+  const roles = Object.keys(labels)
+    .filter((key) => key.startsWith('node-role.kubernetes.io/'))
+    .map((key) => key.replace('node-role.kubernetes.io/', '') || 'worker');
+  if (roles.length > 0) return roles.join(',');
+  return null;
+}
+
+function deriveWorkloadStatus(workload: KubernetesApiWorkload): string {
+  const replicas = workload.spec?.replicas ?? workload.status?.replicas ?? workload.status?.desiredNumberScheduled ?? 0;
+  const ready = workload.status?.readyReplicas ?? workload.status?.numberReady ?? workload.status?.availableReplicas ?? 0;
+  return replicas === ready ? 'Ready' : 'Degraded';
+}
+
+function sumRestarts(pod: KubernetesApiPod): number {
+  return (pod.status?.containerStatuses || []).reduce((total, status) => total + (status.restartCount || 0), 0);
+}
+
+function podReady(pod: KubernetesApiPod): boolean {
+  const statuses = pod.status?.containerStatuses || [];
+  return statuses.length > 0 && statuses.every((status) => status.ready);
+}
+
+function requireName(metadata: KubernetesApiMetadata | undefined, fallback: string): string {
+  return normalizeText(metadata?.name) || fallback;
 }
 
 class KubernetesClusterService {
@@ -554,6 +691,94 @@ class KubernetesClusterService {
     };
   }
 
+  async syncClusterFromApi(id: string): Promise<KubernetesSyncResult | undefined> {
+    const cluster = this.getClusterById(id);
+    if (!cluster) return undefined;
+    if (!cluster.api_server_url) {
+      throw new Error('Kubernetes API server URL is not configured');
+    }
+    if (cluster.auth_type !== 'token') {
+      throw new Error('Live Kubernetes API sync currently supports token authentication');
+    }
+
+    const token = this.getKubernetesBearerToken(cluster);
+    const apiBase = normalizeBaseUrl(cluster.api_server_url);
+    const [nodes, namespaces, deployments, statefulSets, daemonSets, pods, services, events] = await Promise.all([
+      this.kubernetesGet<KubernetesApiList<KubernetesApiNode>>(apiBase, '/api/v1/nodes', token),
+      this.kubernetesGet<KubernetesApiList<KubernetesApiNamespace>>(apiBase, '/api/v1/namespaces', token),
+      this.kubernetesGet<KubernetesApiList<KubernetesApiWorkload>>(apiBase, '/apis/apps/v1/deployments', token),
+      this.kubernetesGet<KubernetesApiList<KubernetesApiWorkload>>(apiBase, '/apis/apps/v1/statefulsets', token),
+      this.kubernetesGet<KubernetesApiList<KubernetesApiWorkload>>(apiBase, '/apis/apps/v1/daemonsets', token),
+      this.kubernetesGet<KubernetesApiList<KubernetesApiPod>>(apiBase, '/api/v1/pods', token),
+      this.kubernetesGet<KubernetesApiList<KubernetesApiService>>(apiBase, '/api/v1/services', token),
+      this.kubernetesGet<KubernetesApiList<KubernetesApiEvent>>(apiBase, '/api/v1/events', token),
+    ]);
+
+    const snapshot: KubernetesAssetSnapshot = {
+      nodes: (nodes.items || []).map((node) => ({
+        name: requireName(node.metadata, 'unknown-node'),
+        internal_ip: getNodeAddress(node, 'InternalIP'),
+        external_ip: getNodeAddress(node, 'ExternalIP'),
+        role: getNodeRole(node),
+        status: getNodeStatus(node),
+        kubelet_version: node.status?.nodeInfo?.kubeletVersion,
+        os_image: node.status?.nodeInfo?.osImage,
+        container_runtime: node.status?.nodeInfo?.containerRuntimeVersion,
+        cpu_capacity: node.status?.capacity?.cpu,
+        memory_capacity: node.status?.capacity?.memory,
+        pod_capacity: node.status?.capacity?.pods ? Number(node.status.capacity.pods) : null,
+        labels: node.metadata?.labels,
+        annotations: node.metadata?.annotations,
+      })),
+      namespaces: (namespaces.items || []).map((namespace) => ({
+        name: requireName(namespace.metadata, 'default'),
+        status: namespace.status?.phase || 'unknown',
+        labels: namespace.metadata?.labels,
+        annotations: namespace.metadata?.annotations,
+      })),
+      workloads: [
+        ...(deployments.items || []).map((workload) => this.mapApiWorkload(workload, 'Deployment')),
+        ...(statefulSets.items || []).map((workload) => this.mapApiWorkload(workload, 'StatefulSet')),
+        ...(daemonSets.items || []).map((workload) => this.mapApiWorkload(workload, 'DaemonSet')),
+      ],
+      pods: (pods.items || []).map((pod) => ({
+        namespace: pod.metadata?.namespace || 'default',
+        name: requireName(pod.metadata, 'unknown-pod'),
+        phase: pod.status?.phase || 'unknown',
+        pod_ip: pod.status?.podIP,
+        host_ip: pod.status?.hostIP,
+        node_name: pod.spec?.nodeName,
+        restart_count: sumRestarts(pod),
+        ready: podReady(pod),
+        labels: pod.metadata?.labels,
+        annotations: pod.metadata?.annotations,
+      })),
+      services: (services.items || []).map((service) => ({
+        namespace: service.metadata?.namespace || 'default',
+        name: requireName(service.metadata, 'unknown-service'),
+        type: service.spec?.type,
+        cluster_ip: service.spec?.clusterIP,
+        external_ip: service.spec?.externalIPs?.join(','),
+        ports: service.spec?.ports,
+        selector: service.spec?.selector,
+        labels: service.metadata?.labels,
+      })),
+      events: (events.items || []).map((event) => ({
+        namespace: event.metadata?.namespace,
+        involved_kind: event.involvedObject?.kind,
+        involved_name: event.involvedObject?.name,
+        type: event.type,
+        reason: event.reason,
+        message: event.message,
+        count: event.count,
+        first_seen_at: event.firstTimestamp || event.metadata?.creationTimestamp,
+        last_seen_at: event.lastTimestamp || event.eventTime || event.metadata?.creationTimestamp,
+      })),
+    };
+
+    return this.syncClusterAssets(id, snapshot);
+  }
+
   private resolveServerId(explicitServerId: string | null | undefined, candidates: Array<string | null | undefined>): string | null {
     const normalizedExplicit = normalizeText(explicitServerId);
     if (normalizedExplicit) {
@@ -575,6 +800,83 @@ class KubernetesClusterService {
     }
 
     return null;
+  }
+
+  private mapApiWorkload(workload: KubernetesApiWorkload, kind: string): KubernetesSnapshotWorkload {
+    const desired = workload.spec?.replicas ?? workload.status?.desiredNumberScheduled ?? workload.status?.currentNumberScheduled ?? null;
+    const ready = workload.status?.readyReplicas ?? workload.status?.numberReady ?? workload.status?.availableReplicas ?? null;
+    return {
+      namespace: workload.metadata?.namespace || 'default',
+      name: requireName(workload.metadata, `unknown-${kind.toLowerCase()}`),
+      kind,
+      replicas: desired,
+      ready_replicas: ready,
+      status: deriveWorkloadStatus(workload),
+      labels: workload.metadata?.labels,
+      annotations: workload.metadata?.annotations,
+    };
+  }
+
+  private getKubernetesBearerToken(cluster: KubernetesCluster): string {
+    const credentialId = normalizeText(cluster.credential_id);
+    if (!credentialId) {
+      throw new Error('Kubernetes token credential is not configured');
+    }
+
+    const credential = db.prepare(`
+      SELECT auth_type, username, password, private_key
+      FROM ssh_keys
+      WHERE id = ?
+    `).get(credentialId) as KubernetesCredential | undefined;
+    if (!credential) {
+      throw new Error('Kubernetes token credential not found');
+    }
+
+    const encryptedToken = credential.auth_type === 'password' ? credential.password : credential.private_key;
+    if (!encryptedToken) {
+      throw new Error('Kubernetes token credential has no secret value');
+    }
+
+    return decrypt(encryptedToken);
+  }
+
+  private kubernetesGet<T>(baseUrl: string, path: string, token: string): Promise<T> {
+    return new Promise((resolve, reject) => {
+      const url = new URL(path, baseUrl);
+      const client = url.protocol === 'https:' ? https : http;
+      const req = client.request(
+        url,
+        {
+          method: 'GET',
+          timeout: 15000,
+          rejectUnauthorized: false,
+          headers: {
+            accept: 'application/json',
+            authorization: `Bearer ${token}`,
+          },
+        },
+        (res) => {
+          const chunks: Buffer[] = [];
+          res.on('data', (chunk: Buffer) => chunks.push(chunk));
+          res.on('end', () => {
+            const text = Buffer.concat(chunks).toString('utf8');
+            if (!res.statusCode || res.statusCode < 200 || res.statusCode >= 300) {
+              return reject(new Error(`Kubernetes API ${path} returned ${res.statusCode}: ${text.slice(0, 300)}`));
+            }
+            try {
+              resolve(JSON.parse(text) as T);
+            } catch {
+              reject(new Error(`Kubernetes API ${path} returned invalid JSON`));
+            }
+          });
+        }
+      );
+      req.on('timeout', () => {
+        req.destroy(new Error(`Kubernetes API ${path} timed out`));
+      });
+      req.on('error', reject);
+      req.end();
+    });
   }
 }
 

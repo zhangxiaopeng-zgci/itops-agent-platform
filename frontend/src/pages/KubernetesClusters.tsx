@@ -31,6 +31,7 @@ interface KubernetesCluster {
   distribution?: string | null;
   version?: string | null;
   auth_type: 'kubeconfig' | 'token' | 'certificate';
+  credential_id?: string | null;
   status: string;
   enabled: number;
   last_sync_at?: string | null;
@@ -110,6 +111,13 @@ interface KubernetesClusterAssets {
   events: KubernetesEvent[];
 }
 
+interface CredentialOption {
+  id: string;
+  name: string;
+  auth_type: 'key' | 'password';
+  username?: string | null;
+}
+
 const emptyForm = {
   name: '',
   api_server_url: '',
@@ -117,6 +125,7 @@ const emptyForm = {
   distribution: '',
   version: '',
   auth_type: 'kubeconfig' as KubernetesCluster['auth_type'],
+  credential_id: '',
   description: '',
 };
 
@@ -147,6 +156,13 @@ export default function KubernetesClusters() {
     queryFn: async () => {
       const res = await api.get('/api/kubernetes-clusters');
       return res.data.data as KubernetesCluster[];
+    },
+  });
+  const { data: credentials = [] } = useQuery({
+    queryKey: ['credentials', 'kubernetes'],
+    queryFn: async () => {
+      const res = await api.get('/api/ssh-keys');
+      return res.data.data as CredentialOption[];
     },
   });
   const { data: clusterAssets, isFetching: isFetchingAssets } = useQuery({
@@ -215,6 +231,21 @@ export default function KubernetesClusters() {
     },
     onError: (error: any) => {
       toast.error(error?.response?.data?.error || error?.response?.data?.message || t('kubernetes.toast.syncFailed'));
+    },
+  });
+
+  const syncLiveMutation = useMutation({
+    mutationFn: async (clusterId: string) => {
+      const res = await api.post(`/api/kubernetes-clusters/${clusterId}/sync-live`);
+      return res.data.data as { counts: { nodes: number; namespaces: number; workloads: number; pods: number; services: number; events: number; boundServers: number } };
+    },
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ['kubernetes-clusters'] });
+      queryClient.invalidateQueries({ queryKey: ['kubernetes-cluster-assets'] });
+      toast.success(t('kubernetes.toast.liveSynced', { nodes: result.counts.nodes, pods: result.counts.pods }));
+    },
+    onError: (error: any) => {
+      toast.error(error?.response?.data?.error || error?.response?.data?.message || t('kubernetes.toast.liveSyncFailed'));
     },
   });
 
@@ -414,6 +445,15 @@ export default function KubernetesClusters() {
                         {t('kubernetes.action.syncAssets')}
                       </button>
                       <button
+                        onClick={() => syncLiveMutation.mutate(cluster.id)}
+                        disabled={syncLiveMutation.isPending || cluster.auth_type !== 'token' || !cluster.credential_id || (!isAdmin && user?.role !== 'operator')}
+                        className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-blue-500/30 text-blue-500 hover:bg-blue-500/10 transition-colors disabled:opacity-60"
+                        title={cluster.auth_type !== 'token' || !cluster.credential_id ? t('kubernetes.liveSync.requiresToken') : undefined}
+                      >
+                        {syncLiveMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                        {t('kubernetes.action.syncLive')}
+                      </button>
+                      <button
                         onClick={() => testMutation.mutate(cluster)}
                         disabled={testMutation.isPending}
                         className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-border text-text-primary hover:bg-background transition-colors disabled:opacity-60"
@@ -473,6 +513,16 @@ export default function KubernetesClusters() {
                     <option value="kubeconfig">kubeconfig</option>
                     <option value="token">token</option>
                     <option value="certificate">certificate</option>
+                  </select>
+                </Field>
+                <Field label={t('kubernetes.field.credential')}>
+                  <select className={inputClass} value={formData.credential_id} onChange={(event) => setFormData({ ...formData, credential_id: event.target.value })}>
+                    <option value="">{t('kubernetes.credential.none')}</option>
+                    {credentials.map((credential) => (
+                      <option key={credential.id} value={credential.id}>
+                        {credential.name} · {credential.auth_type}
+                      </option>
+                    ))}
                   </select>
                 </Field>
                 <Field label={t('kubernetes.field.distribution')}>

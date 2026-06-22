@@ -201,6 +201,20 @@ router.post('/:id/sync-assets', requireRole('admin', 'operator'), validateParams
   }
 });
 
+router.post('/:id/sync-live', requireRole('admin', 'operator'), validateParams(clusterIdSchema), async (req: Request, res: Response) => {
+  try {
+    const result = await kubernetesClusterService.syncClusterFromApi(req.params.id);
+    if (!result) {
+      return res.status(404).json({ success: false, error: 'Kubernetes cluster not found' });
+    }
+    res.json({ success: true, data: result });
+  } catch (error) {
+    logger.error('Failed to sync Kubernetes cluster from API', error as Error);
+    const message = error instanceof Error ? error.message : 'Failed to sync Kubernetes cluster from API';
+    res.status(500).json({ success: false, error: message });
+  }
+});
+
 router.post('/:id/test-connection', requireRole('admin'), validateParams(clusterIdSchema), (req: Request, res: Response) => {
   try {
     const result = kubernetesClusterService.validateConnectionConfig(req.params.id);
