@@ -3,9 +3,11 @@ import { randomUUID } from 'crypto';
 import db from '../models/database';
 import { WorkflowParsed } from '../types';
 import { requireRole } from '../middleware/auth';
-import { attachWorkflowCapabilitySummaries, summarizeWorkflowCapability } from '../services/workflowCapabilityService';
+import { attachWorkflowCapabilitySummaries, buildWorkflowExecutionPreflight, summarizeWorkflowCapability } from '../services/workflowCapabilityService';
 
 const router = Router();
+
+type AuthenticatedRequest = Request & { user?: { role?: string } };
 
 router.get('/', (_req: Request, res: Response) => {
   try {
@@ -21,16 +23,28 @@ router.get('/', (_req: Request, res: Response) => {
   }
 });
 
+router.get('/:id/execution-preflight', (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const workflow = db.prepare('SELECT * FROM workflows WHERE id = ?').get(req.params.id);
+    if (!workflow) {
+      return res.status(404).json({ success: false, error: 'Workflow not found' });
+    }
+
+    const parsedWorkflow = parseWorkflowRow(workflow as Record<string, unknown>);
+    const preflight = buildWorkflowExecutionPreflight(parsedWorkflow, req.user?.role || 'viewer');
+    res.json({ success: true, data: preflight });
+  } catch {
+    res.status(500).json({ success: false, error: 'Failed to build execution preflight' });
+  }
+});
+
 router.get('/:id', (req: Request, res: Response) => {
   try {
     const workflow = db.prepare('SELECT * FROM workflows WHERE id = ?').get(req.params.id);
     if (!workflow) {
       return res.status(404).json({ success: false, error: 'Workflow not found' });
     }
-    const w = workflow as Record<string, unknown>;
-    if (w.nodes) w.nodes = JSON.parse(w.nodes as string);
-    if (w.edges) w.edges = JSON.parse(w.edges as string);
-    if (w.agent_configs) w.agent_configs = JSON.parse(w.agent_configs as string);
+    const w = parseWorkflowRow(workflow as Record<string, unknown>);
     res.json({ success: true, data: { ...w, capability_summary: summarizeWorkflowCapability(w) } });
   } catch {
     res.status(500).json({ success: false, error: 'Failed to fetch workflow' });
@@ -154,5 +168,13 @@ router.get('/export/:id', (req: Request, res: Response) => {
     res.status(500).json({ success: false, error: 'Failed to export workflow' });
   }
 });
+
+function parseWorkflowRow(workflow: Record<string, unknown>): Record<string, unknown> {
+  const parsed = { ...workflow };
+  if (parsed.nodes) parsed.nodes = JSON.parse(parsed.nodes as string);
+  if (parsed.edges) parsed.edges = JSON.parse(parsed.edges as string);
+  if (parsed.agent_configs) parsed.agent_configs = JSON.parse(parsed.agent_configs as string);
+  return parsed;
+}
 
 export default router;

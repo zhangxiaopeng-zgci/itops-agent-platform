@@ -70,7 +70,40 @@ export interface WorkflowCapabilitySummary {
   };
 }
 
-interface WorkflowCapabilityInput {
+export type WorkflowExecutionPreflightDecision = 'allow' | 'warn' | 'block';
+
+export interface WorkflowExecutionPreflight {
+  schemaVersion: 'workflow.executionPreflight.v1';
+  workflowId: string;
+  workflowName: string;
+  decision: WorkflowExecutionPreflightDecision;
+  mode: 'direct' | 'warning' | 'blocked';
+  requiresApproval: boolean;
+  reasons: string[];
+  actions: string[];
+  role: string;
+  generatedAt: string;
+  capabilitySummary: WorkflowCapabilitySummary;
+}
+
+export interface WorkflowExecutionPreflightSnapshot {
+  schemaVersion: WorkflowExecutionPreflight['schemaVersion'];
+  decision: WorkflowExecutionPreflightDecision;
+  mode: WorkflowExecutionPreflight['mode'];
+  requiresApproval: boolean;
+  reasons: string[];
+  actions: string[];
+  role: string;
+  generatedAt: string;
+  summary: {
+    hermesEnhanced: boolean;
+    channelBundles: WorkflowCapabilitySummary['channelBundles'];
+    gates: WorkflowCapabilitySummary['gates'];
+    mcpServers: WorkflowCapabilitySummary['mcpServers'];
+  };
+}
+
+export interface WorkflowCapabilityInput {
   id?: unknown;
   name?: string;
   nodes?: unknown;
@@ -146,6 +179,105 @@ export function attachWorkflowCapabilitySummaries<T extends WorkflowCapabilityIn
     ...workflow,
     capability_summary: summarizeWorkflowCapability(workflow)
   }));
+}
+
+export function buildWorkflowExecutionPreflight(workflow: WorkflowCapabilityInput, role = 'viewer'): WorkflowExecutionPreflight {
+  const summary = summarizeWorkflowCapability(workflow);
+  const reasons = new Set<string>();
+  const actions = new Set<string>();
+  let decision: WorkflowExecutionPreflightDecision = 'allow';
+  let requiresApproval = false;
+  const normalizedRole = role || 'viewer';
+  const highRiskTools = summary.channelBundles.channels.reduce((sum, channel) => sum + channel.highRiskTools, 0);
+  const technicalBlockWarnings = new Set([
+    'channel_disabled',
+    'no_bound_agent',
+    'no_enabled_tool',
+    'high_risk_tools_without_policy',
+    'unhealthy_mcp_server'
+  ]);
+  const hasTechnicalBlockWarning = summary.channelBundles.warnings.some((warning) => technicalBlockWarnings.has(warning));
+
+  if (normalizedRole === 'viewer') {
+    decision = escalateDecision(decision, 'block');
+    reasons.add('role_viewer_cannot_execute');
+    actions.add('switch_operator_or_admin');
+  }
+
+  if (summary.channelBundles.needsReview > 0) {
+    decision = escalateDecision(decision, normalizedRole === 'admin' ? 'warn' : 'block');
+    reasons.add('capability_bundle_needs_review');
+    actions.add('review_capability_bundle');
+  }
+
+  if (hasTechnicalBlockWarning) {
+    decision = escalateDecision(decision, normalizedRole === 'admin' ? 'warn' : 'block');
+    reasons.add('capability_bundle_policy_risk');
+    actions.add('review_channel_policy');
+  }
+
+  if (summary.mcpServers.unhealthy > 0) {
+    decision = escalateDecision(decision, 'warn');
+    reasons.add('mcp_server_unhealthy');
+    actions.add('check_mcp_server_health');
+  }
+
+  if (summary.gates.approvalRequired || highRiskTools > 0) {
+    decision = escalateDecision(decision, 'warn');
+    requiresApproval = true;
+    reasons.add(summary.gates.approvalRequired ? 'workflow_requires_approval' : 'high_risk_tools_require_approval');
+    actions.add('prepare_tool_approval');
+  }
+
+  if (summary.gates.verificationRequired) {
+    decision = escalateDecision(decision, 'warn');
+    reasons.add('workflow_requires_verification');
+    actions.add('prepare_verification_plan');
+  }
+
+  if (summary.executionQuality.recentFailure > 0) {
+    decision = escalateDecision(decision, 'warn');
+    reasons.add('recent_workflow_failures');
+    actions.add('review_recent_failures');
+  }
+
+  return {
+    schemaVersion: 'workflow.executionPreflight.v1',
+    workflowId: String(workflow.id || ''),
+    workflowName: workflow.name || '',
+    decision,
+    mode: decision === 'allow' ? 'direct' : decision === 'warn' ? 'warning' : 'blocked',
+    requiresApproval,
+    reasons: Array.from(reasons),
+    actions: Array.from(actions),
+    role: normalizedRole,
+    generatedAt: new Date().toISOString(),
+    capabilitySummary: summary
+  };
+}
+
+export function createWorkflowExecutionPreflightSnapshot(preflight: WorkflowExecutionPreflight): WorkflowExecutionPreflightSnapshot {
+  return {
+    schemaVersion: preflight.schemaVersion,
+    decision: preflight.decision,
+    mode: preflight.mode,
+    requiresApproval: preflight.requiresApproval,
+    reasons: preflight.reasons,
+    actions: preflight.actions,
+    role: preflight.role,
+    generatedAt: preflight.generatedAt,
+    summary: {
+      hermesEnhanced: preflight.capabilitySummary.hermesEnhanced,
+      channelBundles: preflight.capabilitySummary.channelBundles,
+      gates: preflight.capabilitySummary.gates,
+      mcpServers: preflight.capabilitySummary.mcpServers
+    }
+  };
+}
+
+function escalateDecision(current: WorkflowExecutionPreflightDecision, next: WorkflowExecutionPreflightDecision): WorkflowExecutionPreflightDecision {
+  const order: Record<WorkflowExecutionPreflightDecision, number> = { allow: 0, warn: 1, block: 2 };
+  return order[next] > order[current] ? next : current;
 }
 
 function normalizeNodes(value: unknown): WorkflowNode[] {

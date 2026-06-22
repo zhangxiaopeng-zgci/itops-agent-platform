@@ -3,8 +3,10 @@ import { randomUUID } from 'crypto';
 import db from '../models/database';
 import { executeWorkflow } from '../services/workflowExecutor';
 import { WorkflowParsed } from '../types';
+import { buildWorkflowExecutionPreflight, createWorkflowExecutionPreflightSnapshot } from '../services/workflowCapabilityService';
 
 const router = Router();
+type AuthenticatedRequest = Request & { user?: { role?: string } };
 
 router.get('/', (req: Request, res: Response) => {
   try {
@@ -56,7 +58,7 @@ router.get('/:id', (req: Request, res: Response) => {
   }
 });
 
-router.post('/', async (req: Request, res: Response) => {
+router.post('/', async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { workflow_id, name, input, context } = req.body;
     
@@ -64,13 +66,6 @@ router.post('/', async (req: Request, res: Response) => {
     if (!workflow) {
       return res.status(404).json({ success: false, error: 'Workflow not found' });
     }
-    
-    const taskId = randomUUID();
-    
-    db.prepare(`
-      INSERT INTO tasks (id, workflow_id, name, status, context)
-      VALUES (?, ?, ?, 'pending', ?)
-    `).run(taskId, workflow_id, name || 'Task', JSON.stringify(context || {}));
     
     const parsedWorkflow: WorkflowParsed = {
       id: workflow.id as string,
@@ -83,10 +78,30 @@ router.post('/', async (req: Request, res: Response) => {
       created_at: workflow.created_at as string,
       updated_at: workflow.updated_at as string
     };
+
+    const preflight = buildWorkflowExecutionPreflight(parsedWorkflow, req.user?.role || 'viewer');
+    if (preflight.decision === 'block') {
+      return res.status(409).json({
+        success: false,
+        error: 'Workflow execution preflight blocked',
+        data: { preflight }
+      });
+    }
+
+    const executionContext = {
+      ...(context || {}),
+      workflowExecutionPreflight: createWorkflowExecutionPreflightSnapshot(preflight)
+    };
+    const taskId = randomUUID();
     
-    executeWorkflow(taskId, parsedWorkflow, input, context);
+    db.prepare(`
+      INSERT INTO tasks (id, workflow_id, name, status, context)
+      VALUES (?, ?, ?, 'pending', ?)
+    `).run(taskId, workflow_id, name || 'Task', JSON.stringify(executionContext));
     
-    res.status(201).json({ success: true, data: { taskId, status: 'started' } });
+    executeWorkflow(taskId, parsedWorkflow, input, executionContext);
+    
+    res.status(201).json({ success: true, data: { taskId, status: 'started', preflight } });
   } catch {
     res.status(500).json({ success: false, error: 'Failed to start task' });
   }

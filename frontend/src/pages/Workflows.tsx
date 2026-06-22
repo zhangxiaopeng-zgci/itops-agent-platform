@@ -99,6 +99,20 @@ interface WorkflowCapabilitySummary {
   };
 }
 
+interface WorkflowExecutionPreflight {
+  schemaVersion: 'workflow.executionPreflight.v1';
+  workflowId: string;
+  workflowName: string;
+  decision: 'allow' | 'warn' | 'block';
+  mode: 'direct' | 'warning' | 'blocked';
+  requiresApproval: boolean;
+  reasons: string[];
+  actions: string[];
+  role: string;
+  generatedAt: string;
+  capabilitySummary: WorkflowCapabilitySummary;
+}
+
 interface Server {
   id: string;
   name: string;
@@ -221,6 +235,12 @@ export default function Workflows() {
   const [searchQuery, setSearchQuery] = useState('');
   const [filterTemplate, setFilterTemplate] = useState<'all' | 'template' | 'custom'>('all');
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [preflightLoadingId, setPreflightLoadingId] = useState<string | null>(null);
+  const [preflightModal, setPreflightModal] = useState<{
+    workflow: Workflow;
+    preflight: WorkflowExecutionPreflight;
+    context?: Record<string, unknown>;
+  } | null>(null);
 
   const getWorkflowStyle = (workflow: Workflow) => {
     if (isHermesEnhancedWorkflow(workflow)) {
@@ -315,6 +335,15 @@ export default function Workflows() {
       queryClient.invalidateQueries({ queryKey: ['tasks'] });
       navigate(`/tasks`);
     },
+    onError: (error: any) => {
+      const preflight = error?.response?.data?.data?.preflight as WorkflowExecutionPreflight | undefined;
+      if (preflight) {
+        const workflow = workflows?.find((item) => item.id === preflight.workflowId);
+        if (workflow) setPreflightModal({ workflow, preflight });
+        return;
+      }
+      alert(t('workflows.preflight.failed'));
+    },
   });
 
   const isServerRelatedWorkflow = (workflow: Workflow) => {
@@ -343,18 +372,55 @@ export default function Workflows() {
     return matchesSearch && matchesFilter;
   });
 
+  const runPreflightAndExecute = async (workflow: Workflow, context?: Record<string, unknown>) => {
+    try {
+      setPreflightLoadingId(workflow.id);
+      const res = await api.get(`/api/workflows/${workflow.id}/execution-preflight`);
+      const preflight = res.data.data as WorkflowExecutionPreflight;
+
+      if (preflight.decision === 'block' || preflight.decision === 'warn') {
+        setPreflightModal({ workflow, preflight, context });
+        return;
+      }
+
+      setExecutingWorkflow(workflow.id);
+      executeMutation.mutate({ workflowId: workflow.id, context }, {
+        onSettled: () => {
+          setExecutingWorkflow(null);
+          setShowServerSelectModal(false);
+          setSelectedWorkflowForServer(null);
+          setSelectedServers([]);
+        },
+      });
+    } catch {
+      alert(t('workflows.preflight.failed'));
+    } finally {
+      setPreflightLoadingId(null);
+    }
+  };
+
+  const proceedAfterPreflightWarning = () => {
+    if (!preflightModal || preflightModal.preflight.decision === 'block') return;
+    const { workflow, context } = preflightModal;
+    setPreflightModal(null);
+    setExecutingWorkflow(workflow.id);
+    executeMutation.mutate({ workflowId: workflow.id, context }, {
+      onSettled: () => {
+        setExecutingWorkflow(null);
+        setShowServerSelectModal(false);
+        setSelectedWorkflowForServer(null);
+        setSelectedServers([]);
+      },
+    });
+  };
+
   const handleExecute = (workflow: Workflow) => {
     if (isServerRelatedWorkflow(workflow) && servers && servers.length > 0) {
       setSelectedWorkflowForServer(workflow);
       setSelectedServers([]);
       setShowServerSelectModal(true);
     } else {
-      if (confirm(getExecutionConfirmMessage(workflow, t))) {
-        setExecutingWorkflow(workflow.id);
-        executeMutation.mutate({ workflowId: workflow.id }, {
-          onSettled: () => setExecutingWorkflow(null),
-        });
-      }
+      runPreflightAndExecute(workflow);
     }
   };
 
@@ -380,24 +446,7 @@ export default function Workflows() {
 
   const handleSelectServersAndExecute = () => {
     if (selectedWorkflowForServer && selectedServers.length > 0) {
-      if (!confirm(getExecutionConfirmMessage(selectedWorkflowForServer, t))) {
-        return;
-      }
-      setExecutingWorkflow(selectedWorkflowForServer.id);
-      executeMutation.mutate(
-        { 
-          workflowId: selectedWorkflowForServer.id, 
-          context: { serverIds: selectedServers } 
-        },
-        {
-          onSettled: () => {
-            setExecutingWorkflow(null);
-            setShowServerSelectModal(false);
-            setSelectedWorkflowForServer(null);
-            setSelectedServers([]);
-          },
-        }
-      );
+      runPreflightAndExecute(selectedWorkflowForServer, { serverIds: selectedServers });
     }
   };
 
@@ -579,14 +628,27 @@ export default function Workflows() {
                 </button>
                 <button
                   onClick={handleSelectServersAndExecute}
-                  disabled={selectedServers.length === 0 || !!executingWorkflow}
+                  disabled={selectedServers.length === 0 || !!executingWorkflow || preflightLoadingId === selectedWorkflowForServer.id}
                   className="flex-1 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {executingWorkflow ? t('workflows.executing') : t('workflows.executeSelected', { count: selectedServers.length })}
+                  {preflightLoadingId === selectedWorkflowForServer.id
+                    ? t('workflows.preflight.loading')
+                    : executingWorkflow
+                      ? t('workflows.executing')
+                      : t('workflows.executeSelected', { count: selectedServers.length })}
                 </button>
               </div>
             </div>
           </div>
+        )}
+
+        {preflightModal && (
+          <WorkflowExecutionPreflightModal
+            workflow={preflightModal.workflow}
+            preflight={preflightModal.preflight}
+            onClose={() => setPreflightModal(null)}
+            onProceed={proceedAfterPreflightWarning}
+          />
         )}
 
         {/* Delete Confirm Modal */}
@@ -829,11 +891,15 @@ export default function Workflows() {
                     <div className="flex gap-3">
                       <button
                         onClick={() => handleExecute(workflow)}
-                        disabled={executingWorkflow === workflow.id || (workflow.nodes?.length || 0) === 0}
+                        disabled={executingWorkflow === workflow.id || preflightLoadingId === workflow.id || (workflow.nodes?.length || 0) === 0}
                         className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 bg-primary text-white rounded-xl hover:bg-primary/90 transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-md shadow-primary/25"
                       >
                         <Play className="w-4 h-4" />
-                        {executingWorkflow === workflow.id ? t('workflows.executing') : t('workflows.actions.execute')}
+                        {preflightLoadingId === workflow.id
+                          ? t('workflows.preflight.loading')
+                          : executingWorkflow === workflow.id
+                            ? t('workflows.executing')
+                            : t('workflows.actions.execute')}
                       </button>
                       <button
                         onClick={() => navigate(`/workflows/${workflow.id}`)}
@@ -860,6 +926,117 @@ function isHermesEnhancedWorkflow(workflow: Workflow) {
     workflow.agent_configs?.hermesEnhanced ||
     workflow.agent_configs?.runbookDriven ||
     workflow.nodes?.some((node) => node.data?.runbookPhase)
+  );
+}
+
+function WorkflowExecutionPreflightModal({
+  workflow,
+  preflight,
+  onClose,
+  onProceed
+}: {
+  workflow: Workflow;
+  preflight: WorkflowExecutionPreflight;
+  onClose: () => void;
+  onProceed: () => void;
+}) {
+  const { t } = useLocale();
+  const isBlocked = preflight.decision === 'block';
+  const tone = isBlocked
+    ? 'border-red-500/30 bg-red-500/10 text-red-500'
+    : 'border-amber-500/30 bg-amber-500/10 text-amber-500';
+
+  return (
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
+      <div className="bg-surface rounded-xl p-6 w-full max-w-2xl mx-4 border border-border shadow-2xl">
+        <div className="flex items-start gap-3 mb-5">
+          <div className={`p-3 rounded-lg border ${tone}`}>
+            {isBlocked ? <XCircle className="w-6 h-6" /> : <AlertTriangle className="w-6 h-6" />}
+          </div>
+          <div className="min-w-0">
+            <h3 className="text-xl font-bold text-text-primary">
+              {isBlocked ? t('workflows.preflight.blockTitle') : t('workflows.preflight.warnTitle')}
+            </h3>
+            <p className="mt-1 text-sm text-text-secondary">
+              {t('workflows.preflight.desc', { name: workflow.name, role: preflight.role })}
+            </p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-5">
+          <PreflightStat label={t('workflows.preflight.decision')} value={t(`workflows.preflight.decision.${preflight.decision}`)} />
+          <PreflightStat label={t('workflows.preflight.approval')} value={preflight.requiresApproval ? t('common.yes') : t('common.no')} />
+          <PreflightStat label={t('workflows.preflight.bundles')} value={`${preflight.capabilitySummary.channelBundles.ready}/${preflight.capabilitySummary.channelBundles.count}`} />
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <PreflightList
+            title={t('workflows.preflight.reasons')}
+            items={preflight.reasons}
+            renderItem={(item) => preflightReasonText(item, t)}
+          />
+          <PreflightList
+            title={t('workflows.preflight.actions')}
+            items={preflight.actions}
+            renderItem={(item) => preflightActionText(item, t)}
+          />
+        </div>
+
+        <div className="mt-6 flex gap-3">
+          <button
+            onClick={onClose}
+            className="flex-1 px-4 py-2 bg-surface border border-border text-text-primary rounded-lg hover:bg-background transition-colors"
+          >
+            {isBlocked ? t('common.close') : t('common.cancel')}
+          </button>
+          {!isBlocked && (
+            <button
+              onClick={onProceed}
+              className="flex-1 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors"
+            >
+              {t('workflows.preflight.continue')}
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PreflightStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg bg-background border border-border px-3 py-2">
+      <div className="text-xs text-text-tertiary">{label}</div>
+      <div className="mt-1 text-sm font-semibold text-text-primary">{value}</div>
+    </div>
+  );
+}
+
+function PreflightList({
+  title,
+  items,
+  renderItem
+}: {
+  title: string;
+  items: string[];
+  renderItem: (item: string) => string;
+}) {
+  return (
+    <div className="rounded-lg bg-background border border-border p-3">
+      <div className="text-sm font-semibold text-text-primary mb-2">{title}</div>
+      {items.length === 0 ? (
+        <div className="text-sm text-text-secondary">-</div>
+      ) : (
+        <div className="space-y-2">
+          {items.map((item) => (
+            <div key={item} className="flex items-start gap-2 text-sm text-text-secondary">
+              <CheckCircle className="w-4 h-4 text-primary mt-0.5 shrink-0" />
+              <span>{renderItem(item)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -905,17 +1082,6 @@ function WorkflowBundlePreflight({ workflow }: { workflow: Workflow }) {
   );
 }
 
-function getExecutionConfirmMessage(workflow: Workflow, t: ReturnType<typeof useLocale>['t']) {
-  const bundles = workflow.capability_summary?.channelBundles;
-  if (bundles && bundles.count > 0 && bundles.needsReview > 0) {
-    return t('workflows.confirm.executeWithBundleWarning', {
-      name: workflow.name,
-      count: bundles.needsReview
-    });
-  }
-  return t('workflows.confirm.execute', { name: workflow.name });
-}
-
 function bundleWarningText(warning: string, t: ReturnType<typeof useLocale>['t']) {
   const labels: Record<string, string> = {
     channel_disabled: t('hermesChannels.bundle.warning.channel_disabled'),
@@ -927,6 +1093,33 @@ function bundleWarningText(warning: string, t: ReturnType<typeof useLocale>['t']
     recent_fallback_runs: t('hermesChannels.bundle.warning.recent_fallback_runs')
   };
   return labels[warning] || warning;
+}
+
+function preflightReasonText(reason: string, t: ReturnType<typeof useLocale>['t']) {
+  const labels: Record<string, string> = {
+    role_viewer_cannot_execute: t('workflows.preflight.reason.role_viewer_cannot_execute'),
+    capability_bundle_needs_review: t('workflows.preflight.reason.capability_bundle_needs_review'),
+    capability_bundle_policy_risk: t('workflows.preflight.reason.capability_bundle_policy_risk'),
+    mcp_server_unhealthy: t('workflows.preflight.reason.mcp_server_unhealthy'),
+    workflow_requires_approval: t('workflows.preflight.reason.workflow_requires_approval'),
+    high_risk_tools_require_approval: t('workflows.preflight.reason.high_risk_tools_require_approval'),
+    workflow_requires_verification: t('workflows.preflight.reason.workflow_requires_verification'),
+    recent_workflow_failures: t('workflows.preflight.reason.recent_workflow_failures')
+  };
+  return labels[reason] || reason;
+}
+
+function preflightActionText(action: string, t: ReturnType<typeof useLocale>['t']) {
+  const labels: Record<string, string> = {
+    switch_operator_or_admin: t('workflows.preflight.action.switch_operator_or_admin'),
+    review_capability_bundle: t('workflows.preflight.action.review_capability_bundle'),
+    review_channel_policy: t('workflows.preflight.action.review_channel_policy'),
+    check_mcp_server_health: t('workflows.preflight.action.check_mcp_server_health'),
+    prepare_tool_approval: t('workflows.preflight.action.prepare_tool_approval'),
+    prepare_verification_plan: t('workflows.preflight.action.prepare_verification_plan'),
+    review_recent_failures: t('workflows.preflight.action.review_recent_failures')
+  };
+  return labels[action] || action;
 }
 
 function summarizeRunbookGates(
