@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { Link } from 'react-router-dom';
 import { Activity, AlertTriangle, Bot, CheckCircle2, Clock, GitBranch, KanbanSquare, Loader2, RefreshCw, ShieldCheck, XCircle, type LucideIcon } from 'lucide-react';
 import clsx from 'clsx';
 import api from '../lib/api';
@@ -298,6 +299,9 @@ function RunCard({ run }: { run: HermesWorkerRun }) {
         <Chip value={run.latency_ms ? `${run.latency_ms}ms` : '-'} />
         {run.fallback_used === 1 && <Chip value="fallback" warning />}
         {run.agent_id && <Chip value={`agent:${shortId(run.agent_id)}`} />}
+        {run.correlation_id && (
+          <Chip value={`corr:${shortId(run.correlation_id)}`} />
+        )}
       </div>
       {run.error && <p className="text-xs text-red-500 mt-3 line-clamp-2">{run.error}</p>}
     </article>
@@ -305,11 +309,7 @@ function RunCard({ run }: { run: HermesWorkerRun }) {
 }
 
 function SessionCard({ session }: { session: HermesSession }) {
-  const refs = [
-    ...session.extracted_refs.approvalIds.map((id) => `approval:${shortId(id)}`),
-    ...session.extracted_refs.taskIds.map((id) => `task:${shortId(id)}`),
-    ...(session.correlation_id ? [`corr:${shortId(session.correlation_id)}`] : [])
-  ];
+  const correlationId = session.correlation_id || session.extracted_refs.correlationIds[0];
   return (
     <article className="rounded-lg border border-border bg-background/70 p-4">
       <div className="flex items-start justify-between gap-3">
@@ -322,9 +322,23 @@ function SessionCard({ session }: { session: HermesSession }) {
         </span>
       </div>
       <p className="text-xs text-text-secondary mt-3 line-clamp-2">{session.input}</p>
-      {refs.length > 0 && (
-        <div className="mt-3 flex flex-wrap gap-2 text-[11px]">
-          {refs.slice(0, 5).map((ref) => <Chip key={ref} value={ref} />)}
+      {(session.extracted_refs.approvalIds.length > 0 || session.extracted_refs.taskIds.length > 0 || correlationId) && (
+        <div className="mt-3 flex flex-wrap gap-2 text-[11px] items-center">
+          {session.extracted_refs.approvalIds.slice(0, 3).map((approvalId) => (
+            <EvidenceLink
+              key={`approval-${approvalId}`}
+              to={`/tool-approvals?approvalId=${encodeURIComponent(approvalId)}`}
+              value={`approval:${shortId(approvalId)}`}
+            />
+          ))}
+          {session.extracted_refs.taskIds.slice(0, 3).map((taskId) => (
+            <EvidenceLink
+              key={`task-${taskId}`}
+              to={`/tasks?taskId=${encodeURIComponent(taskId)}`}
+              value={`task:${shortId(taskId)}`}
+            />
+          ))}
+          {correlationId && <Chip value={`corr:${shortId(correlationId)}`} />}
         </div>
       )}
     </article>
@@ -339,6 +353,17 @@ function Chip({ value, warning = false }: { value: string; warning?: boolean }) 
     )}>
       {value}
     </span>
+  );
+}
+
+function EvidenceLink({ to, value }: { to: string; value: string }) {
+  return (
+    <Link
+      to={to}
+      className="inline-flex items-center rounded-md border border-primary/25 bg-primary/10 px-2 py-1 text-primary hover:bg-primary/15 transition-colors"
+    >
+      {value}
+    </Link>
   );
 }
 

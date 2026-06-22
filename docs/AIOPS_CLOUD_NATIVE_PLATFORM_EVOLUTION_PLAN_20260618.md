@@ -98,6 +98,11 @@ Hermes Kanban RFC / implementation tracking:
 
 Hermes Agent v0.9.0 release note for Local Web Dashboard:
   https://github.com/NousResearch/hermes-agent/releases
+
+User-provided WeChat reference for enterprise AIOps Agent platform:
+  https://mp.weixin.qq.com/s/BR2OoLYlqJzCEgdyqImpTA
+  Title: 如何搭建一套“会思考”的企业AIOps智能体平台？内部实战全拆解
+  Extracted topic: intent parsing, tool routing, data aggregation, reasoning attribution, Skills, Knowledge/RAG, governance, and Bad Case feedback.
 ```
 
 User-reference interpretation guardrail:
@@ -162,6 +167,69 @@ Evolution Governance:
 Automation boundary:
   Deterministic batch operations should be scripts/workflows.
   Agent delegation should be reserved for ambiguous, evidence-heavy, or planning-heavy tasks.
+```
+
+## Enterprise AIOps Agent Principles
+
+Reference-derived principle:
+
+```text
+The product is not "LLM plus chat".
+It must behave as an auditable SRE work system:
+  intent parsing
+  tool routing
+  data aggregation
+  reasoning attribution
+  verification
+  feedback and evolution
+```
+
+Architecture mapping:
+
+```text
+Agent layer:
+  Planner extracts entities, actions, time windows, environment, constraints, and expected output.
+  Executor calls Skills, MCP servers, workflow APIs, and read-only evidence tools.
+  Reflector checks confidence, missing evidence, fallback paths, and Bad Case candidates.
+
+Skill layer:
+  Every Skill needs schema, parameter validation, permission boundary, timeout, result cap, output normalizer, and risk label.
+  Skill execution evidence must be visible on Hermes Board and correlation trace.
+
+Knowledge layer:
+  Knowledge retrieval must be filtered by environment, service, version, owner, and asset scope.
+  Incident review and Bad Case feedback should create Knowledge/Skill/Workflow improvement candidates.
+
+Governance layer:
+  Sensitive data is masked before persistence and retrieval.
+  Production-changing actions default to dry-run or approval-required.
+  Cost controls prefer cache/lightweight models for repeated low-risk work and stronger models for complex evidence-heavy cases.
+```
+
+Priority scenario mapping:
+
+```text
+1. Trace + Metrics cross-analysis for P99 latency anomalies.
+2. TraceId error propagation and first-fault attribution.
+3. Natural-language log query with SQL/schema safety.
+4. Slow SQL and N+1 query pattern detection.
+5. Release-to-incident correlation with confidence scoring.
+6. Bad Case feedback loop into Evolution Governance.
+```
+
+Product adjustment:
+
+```text
+Internal Hermes Board should evolve from status display to evidence-chain workbench.
+Each board card should expose:
+  workerRunId
+  hermesSessionId
+  correlationId
+  tool/skill/MCP evidence
+  approvalId
+  taskId
+  proposalId
+  confidence / missing evidence / next action
 ```
 
 ## Phase 1 - Today Ops Workbench
@@ -499,10 +567,44 @@ Recommended implementation slices:
 3B-4: Correlation bridge
   Link workerRunId, hermesSessionId, approvalId, taskId, proposalId, and correlationId in the internal board.
   Add jump links from board cards to AIOps task, approval, proposal, and correlation trace pages.
+  Optimize from the enterprise AIOps reference:
+    Board cards are evidence-chain cards, not just run-status cards.
+    Run/session cards must show intent, evidence refs, missing evidence, and next action.
+    Existing jump targets are used first: tasks, tool approvals, evolution proposals.
+    A dedicated correlation trace page/drawer is a follow-up when the data contract is ready.
+  Implemented first slice:
+    Hermes session cards expose approvalId and taskId as clickable evidence links.
+    correlationId is shown as a stable evidence marker until a dedicated correlation page/drawer is introduced.
+    Unsupported deep links are intentionally not shown.
 
 3B-5: Operational contract
   Define which internal board lane transitions can create AIOps proposals or approval drafts.
   Keep publish/execution gated inside AIOps.
+
+3B-6: Intent and evidence contract
+  Persist structured intent summaries from Hermes sessions:
+    entities
+    action
+    timeWindow
+    environment
+    assetRefs
+    expectedOutput
+  Persist evidence summary:
+    toolsUsed
+    skillsUsed
+    mcpServersUsed
+    confidence
+    missingEvidence
+    suggestedNextAction
+
+3B-7: Bad Case feedback loop
+  Add board-level feedback:
+    useful
+    wrong root cause
+    missing evidence
+    unsafe action
+    needs workflow
+  Feed Bad Cases into Evolution Governance as proposal candidates.
 ```
 
 ## Phase 4 - Unified Asset Topology
