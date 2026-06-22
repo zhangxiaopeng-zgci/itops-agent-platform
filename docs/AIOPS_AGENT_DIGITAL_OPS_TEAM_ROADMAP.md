@@ -1570,3 +1570,39 @@ active release 已被 runtime 消费
 报告：
 
 - `docs/PLATFORM_CLOSURE_REVIEW_20260618.md`
+
+## Kubernetes 能力收口后主线回切
+
+2026-06-22 已完成 Kubernetes 能力收口，结论是：
+
+```text
+Kubernetes 是云原生资产与诊断上下文能力。
+Kite 是 Kubernetes 可视化管理入口。
+AIOps Agent 不继续自研完整 Kubernetes 管理平台。
+```
+
+收口范围：
+
+```text
+Kubernetes 集群登记
+Kubernetes 凭证管理
+token / kubeconfig API 同步基线
+资产快照和拓扑关系
+Hermes 诊断上下文入口
+Kite 控制台入口
+凭证安全详情和删除保护
+```
+
+主线回切方向：
+
+```text
+继续围绕 Agent / Workflow / Hermes 管理平台演进。
+优先增强 Team / Channel / Skill / MCP / Policy / Release 的组合关系。
+优先增强 Workflow 的证据、风险、审批、验证、复盘语义。
+优先让 Hermes Board 成为 evidence-chain workbench，而不是继续扩 Kubernetes 页面。
+Kubernetes 后续只作为场景样本进入 Diagnosis、Execution 和 Evolution Governance。
+```
+
+参考：
+
+- `docs/KUBERNETES_CAPABILITY_CLOSURE_20260622.md`

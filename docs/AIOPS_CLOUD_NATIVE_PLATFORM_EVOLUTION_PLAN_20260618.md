@@ -1045,3 +1045,46 @@ Then reuse Hermes-native Dashboard/Kanban before duplicating Agent work board fe
 Then deepen diagnosis and execution.
 Then close capability governance and continuous evolution.
 ```
+
+## Kubernetes Closure Update - 2026-06-22
+
+Kubernetes Cluster Management is closed as a bounded asset capability.
+
+Closure evidence:
+
+```text
+Cluster registry exists.
+Credential registry exists.
+Token and kubeconfig credential paths are supported.
+Credential detail is safe and does not expose secrets.
+Credential delete is protected when clusters reference it.
+Asset snapshot sync and API sync baseline exist.
+Topology includes Kubernetes cluster, node, namespace, workload, pod, and service assets.
+Assets & Access exposes Kubernetes as one asset family.
+Kite remains the Kubernetes visual console.
+Hermes can receive Kubernetes diagnosis context.
+Remote API smoke passed: 36/36.
+```
+
+Product decision:
+
+```text
+Do not expand Kubernetes into a standalone primary product line.
+Keep Kubernetes under Assets & Access and as context for Diagnosis / Execution / Evolution.
+Delegate deep Kubernetes resource UI to Kite.
+Return development focus to the Agent / Workflow / Hermes governed operations stack.
+```
+
+Follow-up reference:
+
+```text
+docs/KUBERNETES_CAPABILITY_CLOSURE_20260622.md
+```
+
+Updated execution emphasis:
+
+```text
+Next work should continue from Hermes Board, Team/Channel/Skill/MCP composition,
+Workflow runbook metadata, Execution Center verification, and Evolution Governance.
+Kubernetes incidents remain scenario inputs, not the main development axis.
+```

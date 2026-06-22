@@ -107,6 +107,8 @@ Included capabilities:
 ```text
 Servers
 Network Devices
+Kubernetes Clusters
+Kubernetes Console / Kite
 Credentials
 Web Terminal
 Remote Desktop
@@ -116,8 +118,9 @@ Ops Wallboard
 First implementation:
 
 ```text
-Servers and Web Terminal remain primary because they are high-frequency operator tools.
-Network devices, credentials, remote desktop, and wallboard remain secondary.
+Assets & Access remains the primary asset entry.
+Servers, network devices, Kubernetes clusters, credentials, terminal, remote desktop, and Kite are reached from this center or advanced links.
+Kubernetes is intentionally treated as one asset family, not as a standalone primary navigation group.
 ```
 
 ### Hermes Control Plane
@@ -184,10 +187,11 @@ Home
 Ops Workspace
   Diagnosis Center
   Execution Center
-  Servers
-  Web Terminal
+  Assets & Access
 
 Platform Control
+  Hermes Channels
+  Hermes Board
   Team Console
   Agent Management
   Evolution Proposals
@@ -226,6 +230,37 @@ Old detailed pages still work.
 Frontend production build passes.
 API smoke remains green.
 Browser smoke confirms both centers render.
+```
+
+## Kubernetes Navigation Closure - 2026-06-22
+
+Kubernetes support is closed as a secondary asset capability:
+
+```text
+Keep:
+  Assets & Access -> Kubernetes Clusters
+  Assets & Access -> Kubernetes Console / Kite
+  Advanced -> Kubernetes Clusters
+  Advanced -> Kubernetes Console
+  Diagnosis / Execution contextual handoff
+
+Remove from primary operator navigation:
+  Kubernetes Console
+```
+
+Rationale:
+
+```text
+The primary navigation should describe the operating model, not every supported asset type.
+Kubernetes is important context for diagnosis and execution, but AIOps Agent should not become a Kubernetes UI clone.
+Deep Kubernetes resource UI is delegated to Kite.
+The main development stack returns to Agent / Workflow / Hermes governance.
+```
+
+Reference:
+
+```text
+docs/KUBERNETES_CAPABILITY_CLOSURE_20260622.md
 ```
 
 ## Next Product Closure Steps
