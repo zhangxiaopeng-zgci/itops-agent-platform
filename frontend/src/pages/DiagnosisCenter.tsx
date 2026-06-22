@@ -1,3 +1,4 @@
+import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -5,7 +6,9 @@ import {
   ArrowRight,
   Bell,
   BookOpen,
+  Boxes,
   Brain,
+  Cpu,
   FileSearch,
   GitBranch,
   Network,
@@ -20,10 +23,16 @@ interface AlertItem {
   id: string;
   severity: string;
   status: string;
+  title?: string;
+  content?: string;
+  source?: string;
+  server_id?: string;
 }
 
 interface ServerItem {
   id: string;
+  name?: string;
+  hostname?: string;
   enabled: number;
 }
 
@@ -35,8 +44,29 @@ interface HermesWorker {
 }
 
 interface TopologyPayload {
-  nodes?: unknown[];
-  edges?: unknown[];
+  nodes?: TopologyAssetNode[];
+  edges?: TopologyAssetEdge[];
+}
+
+interface TopologyAssetNode {
+  id: string;
+  server_id?: string;
+  server_name?: string;
+  server_ip?: string;
+  name?: string;
+  ip?: string;
+  type?: string;
+  status?: string;
+  metadata?: Record<string, unknown>;
+}
+
+interface TopologyAssetEdge {
+  id?: string;
+  source: string;
+  target: string;
+  dependency_type?: string;
+  protocol?: string;
+  status?: string;
 }
 
 interface ActionItem {
@@ -57,9 +87,118 @@ function toArray<T>(value: unknown, keys: string[] = []): T[] {
   return [];
 }
 
+function getAssetDisplayName(node: TopologyAssetNode): string {
+  return node.name || node.server_name || node.server_id || node.id;
+}
+
+function formatServerName(server: ServerItem): string {
+  return server.name || server.hostname || server.id;
+}
+
+function getAssetTypeLabel(type: string | undefined, t: (key: MessageKey, values?: Record<string, string | number>) => string): string {
+  const keys: Record<string, MessageKey> = {
+    server: 'topology.asset.server',
+    network_device: 'topology.asset.networkDevice',
+    kubernetes_cluster: 'topology.asset.kubernetesCluster',
+    kubernetes_node: 'topology.asset.kubernetesNode',
+    kubernetes_namespace: 'topology.asset.kubernetesNamespace',
+    kubernetes_workload: 'topology.asset.kubernetesWorkload',
+    kubernetes_pod: 'topology.asset.kubernetesPod',
+    kubernetes_service: 'topology.asset.kubernetesService',
+  };
+  return type && keys[type] ? t(keys[type]) : t('topology.asset.generic');
+}
+
+function findRelatedServerIds(asset: TopologyAssetNode, nodes: TopologyAssetNode[], edges: TopologyAssetEdge[]): string[] {
+  const nodeById = new Map(nodes.map((node) => [node.id, node]));
+  const related = new Set<string>();
+
+  const addServerFromNode = (node: TopologyAssetNode | undefined) => {
+    if (!node) return;
+    if (node.type === 'server') related.add(node.server_id || node.id);
+    const boundServerId = node.server_id || (typeof node.metadata?.bound_server_id === 'string' ? node.metadata.bound_server_id : undefined);
+    if (boundServerId) related.add(boundServerId);
+  };
+
+  addServerFromNode(asset);
+
+  const queue: Array<{ id: string; depth: number }> = [{ id: asset.id, depth: 0 }];
+  const visited = new Set<string>([asset.id]);
+  while (queue.length > 0) {
+    const current = queue.shift();
+    if (!current || current.depth >= 3) continue;
+
+    const neighbors = edges
+      .filter((edge) => edge.source === current.id || edge.target === current.id)
+      .map((edge) => edge.source === current.id ? edge.target : edge.source);
+
+    for (const neighborId of neighbors) {
+      if (visited.has(neighborId)) continue;
+      visited.add(neighborId);
+      const neighbor = nodeById.get(neighborId);
+      addServerFromNode(neighbor);
+      queue.push({ id: neighborId, depth: current.depth + 1 });
+    }
+  }
+
+  return Array.from(related);
+}
+
+function buildDiagnosisPrompt(
+  asset: TopologyAssetNode | null,
+  alert: AlertItem | null,
+  t: (key: MessageKey, values?: Record<string, string | number>) => string
+): string {
+  if (!asset && !alert) {
+    return t('diagnosisCenter.workspace.prompt.generic');
+  }
+
+  const parts = asset
+    ? [
+      t('diagnosisCenter.workspace.prompt.asset', { name: getAssetDisplayName(asset), type: getAssetTypeLabel(asset.type, t) }),
+    ]
+    : [];
+
+  if (alert) {
+    parts.push(t('diagnosisCenter.workspace.prompt.alert', {
+      severity: alert.severity,
+      status: alert.status,
+      title: alert.title || alert.id,
+    }));
+  }
+
+  parts.push(t('diagnosisCenter.workspace.prompt.instruction'));
+  return parts.join('\n');
+}
+
+function ContextMetric({
+  icon: Icon,
+  label,
+  value,
+  helper,
+}: {
+  icon: typeof Brain;
+  label: string;
+  value: string;
+  helper: string;
+}) {
+  return (
+    <div className="rounded-lg border border-border bg-background/40 p-3 min-w-0">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-xs text-text-secondary">{label}</p>
+        <Icon className="w-4 h-4 text-primary flex-shrink-0" />
+      </div>
+      <p className="mt-2 text-xl font-semibold text-text-primary">{value}</p>
+      <p className="mt-1 text-xs text-text-tertiary truncate" title={helper}>{helper}</p>
+    </div>
+  );
+}
+
 export default function DiagnosisCenter() {
   const navigate = useNavigate();
   const { t } = useLocale();
+  const [selectedAssetId, setSelectedAssetId] = useState('');
+  const [selectedAlertId, setSelectedAlertId] = useState('');
 
   const { data: alerts = [] } = useQuery({
     queryKey: ['diagnosis-center', 'alerts'],
@@ -104,6 +243,69 @@ export default function DiagnosisCenter() {
   const diagnoseHealthy = ['healthy', 'ok', 'online'].includes(
     String(diagnoseWorker?.healthStatus || diagnoseWorker?.health_status || diagnoseWorker?.status || '').toLowerCase()
   );
+  const topologyNodes = useMemo(() => topology?.nodes || [], [topology?.nodes]);
+  const topologyEdges = useMemo(() => topology?.edges || [], [topology?.edges]);
+  const selectedAsset = useMemo(() => {
+    return topologyNodes.find((node) => node.id === selectedAssetId) || topologyNodes[0] || null;
+  }, [selectedAssetId, topologyNodes]);
+  const selectedAlert = useMemo(() => {
+    return alerts.find((alert) => alert.id === selectedAlertId) || null;
+  }, [alerts, selectedAlertId]);
+  const relatedServerIds = useMemo(() => {
+    if (!selectedAsset) return [];
+    return findRelatedServerIds(selectedAsset, topologyNodes, topologyEdges);
+  }, [selectedAsset, topologyNodes, topologyEdges]);
+  const relatedServers = useMemo(() => {
+    return servers.filter((server) => relatedServerIds.includes(server.id));
+  }, [relatedServerIds, servers]);
+  const topologyImpact = useMemo(() => {
+    if (!selectedAsset) return { upstream: 0, downstream: 0, nearby: [] as TopologyAssetNode[] };
+    const upstreamIds = topologyEdges.filter((edge) => edge.target === selectedAsset.id).map((edge) => edge.source);
+    const downstreamIds = topologyEdges.filter((edge) => edge.source === selectedAsset.id).map((edge) => edge.target);
+    const nearbyIds = Array.from(new Set([...upstreamIds, ...downstreamIds]));
+    return {
+      upstream: upstreamIds.length,
+      downstream: downstreamIds.length,
+      nearby: nearbyIds
+        .map((id) => topologyNodes.find((node) => node.id === id))
+        .filter((node): node is TopologyAssetNode => Boolean(node))
+        .slice(0, 6),
+    };
+  }, [selectedAsset, topologyEdges, topologyNodes]);
+  const contextFacts = useMemo(() => {
+    if (!selectedAsset) return [];
+    const facts = [
+      [t('diagnosisCenter.workspace.context.asset'), getAssetDisplayName(selectedAsset)],
+      [t('diagnosisCenter.workspace.context.type'), getAssetTypeLabel(selectedAsset.type, t)],
+      [t('diagnosisCenter.workspace.context.status'), selectedAsset.status || t('common.unknown')],
+      [t('diagnosisCenter.workspace.context.relatedServers'), relatedServers.length > 0 ? relatedServers.map(formatServerName).join(', ') : t('common.unknown')],
+      [t('diagnosisCenter.workspace.context.impact'), t('diagnosisCenter.workspace.context.impactValue', { upstream: topologyImpact.upstream, downstream: topologyImpact.downstream })],
+    ];
+    if (selectedAlert) {
+      facts.push([
+        t('diagnosisCenter.workspace.context.alert'),
+        `[${selectedAlert.severity}/${selectedAlert.status}] ${selectedAlert.title || selectedAlert.id}`,
+      ]);
+    }
+    return facts;
+  }, [relatedServers, selectedAlert, selectedAsset, t, topologyImpact.downstream, topologyImpact.upstream]);
+
+  const openHermesDiagnosis = () => {
+    const params = new URLSearchParams();
+    params.set('mode', 'diagnose');
+    if (relatedServerIds.length > 0) params.set('serverIds', relatedServerIds.join(','));
+    if (selectedAlert?.id) params.set('alertId', selectedAlert.id);
+    params.set('prompt', buildDiagnosisPrompt(selectedAsset, selectedAlert, t));
+    navigate(`/hermes?${params.toString()}`);
+  };
+
+  const handoffExecution = () => {
+    const params = new URLSearchParams();
+    if (selectedAsset?.id) params.set('assetId', selectedAsset.id);
+    if (selectedAsset?.type) params.set('assetType', selectedAsset.type);
+    if (relatedServerIds.length > 0) params.set('serverIds', relatedServerIds.join(','));
+    navigate(`/execution-center?${params.toString()}`);
+  };
 
   const statusCards = [
     {
@@ -195,12 +397,134 @@ export default function DiagnosisCenter() {
             </div>
           </div>
           <button
-            onClick={() => navigate('/hermes')}
+            onClick={openHermesDiagnosis}
             className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-primary text-white hover:bg-primary/90 transition-colors"
           >
             <Brain className="w-4 h-4" />
             {t('diagnosisCenter.primaryCta')}
           </button>
+        </div>
+
+        <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.8fr)] gap-4">
+          <div className="bg-surface border border-border rounded-lg p-5">
+            <div className="flex items-center justify-between gap-3 mb-4">
+              <div>
+                <h2 className="text-base font-semibold text-text-primary">{t('diagnosisCenter.workspace.title')}</h2>
+                <p className="text-sm text-text-secondary mt-1">{t('diagnosisCenter.workspace.subtitle')}</p>
+              </div>
+              <div className="w-10 h-10 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
+                <Boxes className="w-5 h-5" />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <label className="block">
+                <span className="text-xs font-medium text-text-secondary">{t('diagnosisCenter.workspace.asset')}</span>
+                <select
+                  value={selectedAsset?.id || ''}
+                  onChange={(event) => setSelectedAssetId(event.target.value)}
+                  className="mt-2 w-full px-3 py-2 rounded-lg bg-background border border-border text-text-primary focus:outline-none focus:border-primary"
+                >
+                  {topologyNodes.map((node) => (
+                    <option key={node.id} value={node.id}>
+                      {getAssetTypeLabel(node.type, t)} - {getAssetDisplayName(node)}
+                    </option>
+                  ))}
+                  {topologyNodes.length === 0 && (
+                    <option value="">{t('diagnosisCenter.workspace.noAssets')}</option>
+                  )}
+                </select>
+              </label>
+
+              <label className="block">
+                <span className="text-xs font-medium text-text-secondary">{t('diagnosisCenter.workspace.alert')}</span>
+                <select
+                  value={selectedAlertId}
+                  onChange={(event) => setSelectedAlertId(event.target.value)}
+                  className="mt-2 w-full px-3 py-2 rounded-lg bg-background border border-border text-text-primary focus:outline-none focus:border-primary"
+                >
+                  <option value="">{t('diagnosisCenter.workspace.noAlert')}</option>
+                  {alerts.slice(0, 50).map((alert) => (
+                    <option key={alert.id} value={alert.id}>
+                      [{alert.severity}/{alert.status}] {alert.title || alert.id}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+
+            <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3">
+              <ContextMetric
+                icon={Server}
+                label={t('diagnosisCenter.workspace.relatedServers')}
+                value={String(relatedServers.length)}
+                helper={relatedServers.length > 0 ? relatedServers.map(formatServerName).join(', ') : t('diagnosisCenter.workspace.noRelatedServers')}
+              />
+              <ContextMetric
+                icon={Network}
+                label={t('diagnosisCenter.workspace.topologyImpact')}
+                value={`${topologyImpact.upstream}/${topologyImpact.downstream}`}
+                helper={t('diagnosisCenter.workspace.topologyImpactHelper')}
+              />
+              <ContextMetric
+                icon={Cpu}
+                label={t('diagnosisCenter.workspace.assetType')}
+                value={selectedAsset ? getAssetTypeLabel(selectedAsset.type, t) : '-'}
+                helper={selectedAsset?.status || t('common.unknown')}
+              />
+            </div>
+
+            <div className="mt-4 flex flex-wrap gap-2">
+              <button
+                onClick={openHermesDiagnosis}
+                disabled={!selectedAsset}
+                className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-primary text-white hover:bg-primary/90 disabled:opacity-50 transition-colors text-sm"
+              >
+                <Brain className="w-4 h-4" />
+                {t('diagnosisCenter.workspace.runHermes')}
+              </button>
+              <button
+                onClick={() => navigate('/topology')}
+                className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-border text-text-primary hover:bg-background transition-colors text-sm"
+              >
+                <GitBranch className="w-4 h-4" />
+                {t('diagnosisCenter.workspace.viewTopology')}
+              </button>
+              <button
+                onClick={handoffExecution}
+                disabled={!selectedAsset}
+                className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-border text-text-primary hover:bg-background disabled:opacity-50 transition-colors text-sm"
+              >
+                <ShieldCheck className="w-4 h-4" />
+                {t('diagnosisCenter.workspace.handoffExecution')}
+              </button>
+            </div>
+          </div>
+
+          <div className="bg-surface border border-border rounded-lg p-5">
+            <h2 className="text-base font-semibold text-text-primary">{t('diagnosisCenter.workspace.contextTitle')}</h2>
+            <p className="text-sm text-text-secondary mt-1">{t('diagnosisCenter.workspace.contextSubtitle')}</p>
+            <div className="mt-4 space-y-3">
+              {contextFacts.map(([label, value]) => (
+                <div key={label} className="rounded-lg border border-border bg-background/40 p-3">
+                  <p className="text-xs text-text-secondary">{label}</p>
+                  <p className="mt-1 text-sm font-medium text-text-primary break-words">{value}</p>
+                </div>
+              ))}
+              {topologyImpact.nearby.length > 0 && (
+                <div className="rounded-lg border border-border bg-background/40 p-3">
+                  <p className="text-xs text-text-secondary">{t('diagnosisCenter.workspace.nearbyAssets')}</p>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {topologyImpact.nearby.map((node) => (
+                      <span key={node.id} className="px-2 py-1 rounded-md bg-surface border border-border text-xs text-text-secondary">
+                        {getAssetDisplayName(node)}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">

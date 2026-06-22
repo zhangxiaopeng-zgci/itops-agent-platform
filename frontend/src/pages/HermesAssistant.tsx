@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Activity,
   AlertCircle,
@@ -576,6 +576,7 @@ function buildPromptWithContext(input: string, contextLines: string[], labels: {
 
 export default function HermesAssistant() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const toast = useToast();
   const queryClient = useQueryClient();
   const { user } = useAuth();
@@ -593,6 +594,7 @@ export default function HermesAssistant() {
   const [approvalComment, setApprovalComment] = useState('');
   const [verificationResults, setVerificationResults] = useState<Record<string, VerificationResult>>({});
   const [verifyingTaskId, setVerifyingTaskId] = useState('');
+  const [hasAppliedUrlContext, setHasAppliedUrlContext] = useState(false);
 
   const { data: agents, isLoading, refetch } = useQuery({
     queryKey: ['agents'],
@@ -661,6 +663,45 @@ export default function HermesAssistant() {
       setInput(t(activePromptKey));
     }
   }, [activePromptKey, t]);
+
+  useEffect(() => {
+    if (hasAppliedUrlContext || !searchParams.toString()) return;
+
+    const modeParam = searchParams.get('mode');
+    if (modeParam === 'diagnose' || modeParam === 'remediate' || modeParam === 'review') {
+      setActiveMode(modeParam);
+    }
+
+    const serverIdsParam = searchParams.get('serverIds') || searchParams.get('serverId') || '';
+    const serverIds = serverIdsParam.split(',').map((item) => item.trim()).filter(Boolean);
+    if (serverIds.length > 0) {
+      setSelectedServerIds(Array.from(new Set(serverIds)));
+    }
+
+    const alertId = searchParams.get('alertId');
+    if (alertId) {
+      setSelectedAlertId(alertId);
+    }
+
+    const workflowId = searchParams.get('workflowId');
+    if (workflowId) {
+      setSelectedWorkflowId(workflowId);
+    }
+
+    const knowledgeCategory = searchParams.get('knowledgeCategory');
+    if (knowledgeCategory) {
+      setSelectedKnowledgeCategory(knowledgeCategory);
+    }
+
+    const prompt = searchParams.get('prompt');
+    if (prompt) {
+      setActivePromptKey(null);
+      setInput(prompt);
+    }
+
+    setHasAppliedUrlContext(true);
+    setSearchParams({}, { replace: true });
+  }, [hasAppliedUrlContext, searchParams, setSearchParams]);
 
   const selectedAgent = useMemo(() => {
     return (agents || []).find((agent) => agent.name === mode.agentName) || null;
