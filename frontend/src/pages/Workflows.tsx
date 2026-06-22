@@ -60,6 +60,27 @@ interface WorkflowCapabilitySummary {
     ids: string[];
     names: string[];
   };
+  channelBundles: {
+    count: number;
+    ready: number;
+    needsReview: number;
+    releaseOverlays: number;
+    warnings: string[];
+    channels: Array<{
+      id: string;
+      name: string;
+      type: string;
+      ready: boolean;
+      warnings: string[];
+      agents: number;
+      tools: number;
+      highRiskTools: number;
+      skills: number;
+      mcpServers: number;
+      releaseOverlays: number;
+      successRate: number | null;
+    }>;
+  };
   gates: {
     approvalRequired: boolean;
     approvalCount: number;
@@ -124,6 +145,15 @@ function WorkflowCapabilitySummaryView({ summary }: { summary?: WorkflowCapabili
         : t('workflows.capability.healthy')
     },
     {
+      label: t('workflows.capability.bundles'),
+      value: summary.channelBundles.count > 0
+        ? `${summary.channelBundles.ready}/${summary.channelBundles.count}`
+        : '0',
+      sub: summary.channelBundles.count > 0
+        ? t('workflows.capability.bundleReleaseSummary', { count: summary.channelBundles.releaseOverlays })
+        : t('workflows.capability.none')
+    },
+    {
       label: t('workflows.capability.quality'),
       value: successRate,
       sub: summary.executionQuality.recentTotal > 0
@@ -157,6 +187,23 @@ function WorkflowCapabilitySummaryView({ summary }: { summary?: WorkflowCapabili
             {t('workflows.capability.lastStatus')}: {summary.executionQuality.lastStatus}
           </span>
         )}
+        {summary.channelBundles.channels.map((channel) => (
+          <span
+            key={channel.id}
+            className={`px-2 py-1 rounded-md border text-xs ${
+              channel.ready
+                ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-300 border-emerald-500/20'
+                : 'bg-amber-500/10 text-amber-600 dark:text-amber-300 border-amber-500/20'
+            }`}
+          >
+            {channel.name} · {channel.ready ? t('workflows.capability.bundleReady') : t('workflows.capability.bundleNeedsReview')}
+          </span>
+        ))}
+        {summary.channelBundles.warnings.slice(0, 3).map((warning) => (
+          <span key={warning} className="px-2 py-1 rounded-md bg-amber-500/10 text-amber-600 dark:text-amber-300 border border-amber-500/20 text-xs">
+            {bundleWarningText(warning, t)}
+          </span>
+        ))}
       </div>
     </div>
   );
@@ -302,7 +349,7 @@ export default function Workflows() {
       setSelectedServers([]);
       setShowServerSelectModal(true);
     } else {
-      if (confirm(t('workflows.confirm.execute', { name: workflow.name }))) {
+      if (confirm(getExecutionConfirmMessage(workflow, t))) {
         setExecutingWorkflow(workflow.id);
         executeMutation.mutate({ workflowId: workflow.id }, {
           onSettled: () => setExecutingWorkflow(null),
@@ -333,6 +380,9 @@ export default function Workflows() {
 
   const handleSelectServersAndExecute = () => {
     if (selectedWorkflowForServer && selectedServers.length > 0) {
+      if (!confirm(getExecutionConfirmMessage(selectedWorkflowForServer, t))) {
+        return;
+      }
       setExecutingWorkflow(selectedWorkflowForServer.id);
       executeMutation.mutate(
         { 
@@ -462,6 +512,8 @@ export default function Workflows() {
               <p className="text-text-secondary mb-4">
                 {t('workflows.serverModal.desc', { name: selectedWorkflowForServer.name })}
               </p>
+
+              <WorkflowBundlePreflight workflow={selectedWorkflowForServer} />
               
               {/* Selection Controls */}
               <div className="flex items-center justify-between mb-4 p-3 bg-background rounded-lg border border-border">
@@ -809,6 +861,72 @@ function isHermesEnhancedWorkflow(workflow: Workflow) {
     workflow.agent_configs?.runbookDriven ||
     workflow.nodes?.some((node) => node.data?.runbookPhase)
   );
+}
+
+function WorkflowBundlePreflight({ workflow }: { workflow: Workflow }) {
+  const { t } = useLocale();
+  const bundles = workflow.capability_summary?.channelBundles;
+  if (!bundles || bundles.count === 0) return null;
+
+  const allReady = bundles.needsReview === 0;
+  return (
+    <div className={`mb-4 rounded-lg border p-3 ${
+      allReady
+        ? 'bg-emerald-500/10 border-emerald-500/20'
+        : 'bg-amber-500/10 border-amber-500/20'
+    }`}>
+      <div className="flex items-start gap-2">
+        <AlertTriangle className={`w-4 h-4 mt-0.5 ${allReady ? 'text-emerald-500' : 'text-amber-500'}`} />
+        <div className="min-w-0">
+          <div className="text-sm font-semibold text-text-primary">
+            {allReady
+              ? t('workflows.capability.bundlePreflightReady')
+              : t('workflows.capability.bundlePreflightWarning', { count: bundles.needsReview })}
+          </div>
+          <div className="mt-1 text-xs text-text-secondary">
+            {t('workflows.capability.bundlePreflightDesc', {
+              ready: bundles.ready,
+              total: bundles.count,
+              releases: bundles.releaseOverlays
+            })}
+          </div>
+          {bundles.warnings.length > 0 && (
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {bundles.warnings.map((warning) => (
+                <span key={warning} className="px-2 py-1 rounded-md bg-surface border border-border text-xs text-text-secondary">
+                  {bundleWarningText(warning, t)}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function getExecutionConfirmMessage(workflow: Workflow, t: ReturnType<typeof useLocale>['t']) {
+  const bundles = workflow.capability_summary?.channelBundles;
+  if (bundles && bundles.count > 0 && bundles.needsReview > 0) {
+    return t('workflows.confirm.executeWithBundleWarning', {
+      name: workflow.name,
+      count: bundles.needsReview
+    });
+  }
+  return t('workflows.confirm.execute', { name: workflow.name });
+}
+
+function bundleWarningText(warning: string, t: ReturnType<typeof useLocale>['t']) {
+  const labels: Record<string, string> = {
+    channel_disabled: t('hermesChannels.bundle.warning.channel_disabled'),
+    no_bound_agent: t('hermesChannels.bundle.warning.no_bound_agent'),
+    no_enabled_tool: t('hermesChannels.bundle.warning.no_enabled_tool'),
+    high_risk_tools_without_policy: t('hermesChannels.bundle.warning.high_risk_tools_without_policy'),
+    unhealthy_mcp_server: t('hermesChannels.bundle.warning.unhealthy_mcp_server'),
+    recent_failed_runs: t('hermesChannels.bundle.warning.recent_failed_runs'),
+    recent_fallback_runs: t('hermesChannels.bundle.warning.recent_fallback_runs')
+  };
+  return labels[warning] || warning;
 }
 
 function summarizeRunbookGates(

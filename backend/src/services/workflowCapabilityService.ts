@@ -31,6 +31,27 @@ export interface WorkflowCapabilitySummary {
     ids: string[];
     names: string[];
   };
+  channelBundles: {
+    count: number;
+    ready: number;
+    needsReview: number;
+    releaseOverlays: number;
+    warnings: string[];
+    channels: Array<{
+      id: string;
+      name: string;
+      type: string;
+      ready: boolean;
+      warnings: string[];
+      agents: number;
+      tools: number;
+      highRiskTools: number;
+      skills: number;
+      mcpServers: number;
+      releaseOverlays: number;
+      successRate: number | null;
+    }>;
+  };
   gates: {
     approvalRequired: boolean;
     approvalCount: number;
@@ -114,6 +135,7 @@ export function summarizeWorkflowCapability(workflow: WorkflowCapabilityInput): 
       ids: mcpIds,
       names: mcpRecords.map((server) => server.name)
     },
+    channelBundles: summarizeChannelBundles(boundChannels),
     gates,
     executionQuality: summarizeExecutionQuality(workflowId)
   };
@@ -240,6 +262,36 @@ function listMcpServerRecords(mcpIds: string[]): Array<{ id: string; name: strin
     health_status: String(row.health_status || 'unknown')
   }]));
   return mcpIds.map((id) => byId.get(id) || { id, name: id, health_status: 'unknown' });
+}
+
+function summarizeChannelBundles(channels: ReturnType<typeof listHermesChannels>): WorkflowCapabilitySummary['channelBundles'] {
+  const bundleChannels = channels.map((channel) => {
+    const summary = channel.effectiveBundle.summary;
+    return {
+      id: channel.id,
+      name: channel.name,
+      type: channel.type,
+      ready: summary.ready,
+      warnings: summary.warnings,
+      agents: summary.agents,
+      tools: summary.tools,
+      highRiskTools: summary.highRiskTools,
+      skills: summary.skills,
+      mcpServers: summary.mcpServers,
+      releaseOverlays: summary.releaseOverlays,
+      successRate: channel.effectiveBundle.quality.successRate
+    };
+  });
+  const warnings = uniqueStrings(bundleChannels.flatMap((channel) => channel.warnings));
+
+  return {
+    count: bundleChannels.length,
+    ready: bundleChannels.filter((channel) => channel.ready).length,
+    needsReview: bundleChannels.filter((channel) => !channel.ready).length,
+    releaseOverlays: bundleChannels.reduce((sum, channel) => sum + channel.releaseOverlays, 0),
+    warnings,
+    channels: bundleChannels
+  };
 }
 
 function summarizeGates(nodes: WorkflowNode[], config: Record<string, unknown>): WorkflowCapabilitySummary['gates'] {
