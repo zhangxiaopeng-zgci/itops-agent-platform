@@ -210,6 +210,10 @@ function buildExecutionEvidenceSummary(input: {
   const correlationIds = new Set<string>([input.correlationId]);
   const traceIds = new Set<string>();
   const releaseOverlayVersionIds = new Set<string>();
+  const preflightDecisions = new Set<string>();
+  const preflightReasons = new Set<string>();
+  const preflightActions = new Set<string>();
+  const preflightRoles = new Set<string>();
 
   input.executionEvidence.forEach((item) => {
     addString(item.riskLevel, riskLevels);
@@ -230,7 +234,16 @@ function buildExecutionEvidenceSummary(input: {
     addString(approval.correlation_id, correlationIds);
     addString(approval.risk_level, riskLevels);
   });
-  input.tasks.forEach((task) => addString(task.id, taskIds));
+  input.tasks.forEach((task) => {
+    addString(task.id, taskIds);
+    const preflight = objectOrEmpty(objectOrEmpty(task.context).workflowExecutionPreflight);
+    if (preflight.schemaVersion === 'workflow.executionPreflight.v1') {
+      addString(preflight.decision, preflightDecisions);
+      addString(preflight.role, preflightRoles);
+      normalizeStringList(preflight.reasons).forEach(reason => preflightReasons.add(reason));
+      normalizeStringList(preflight.actions).forEach(action => preflightActions.add(action));
+    }
+  });
   input.teamRuns.forEach((run) => addString(run.correlation_id, correlationIds));
   input.workerRuns.forEach((run) => addString(run.correlation_id, correlationIds));
   input.proposals.forEach((proposal) => {
@@ -276,6 +289,10 @@ function buildExecutionEvidenceSummary(input: {
     correlationIds: Array.from(correlationIds),
     traceIds: Array.from(traceIds),
     releaseOverlayVersionIds: Array.from(releaseOverlayVersionIds),
+    preflightDecisions: Array.from(preflightDecisions),
+    preflightReasons: Array.from(preflightReasons),
+    preflightActions: Array.from(preflightActions),
+    preflightRoles: Array.from(preflightRoles),
     latestEvidenceAt: evidenceTimes.length > 0 ? evidenceTimes[evidenceTimes.length - 1] : null
   };
 }

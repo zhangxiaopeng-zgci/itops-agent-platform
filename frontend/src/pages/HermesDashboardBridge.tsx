@@ -684,6 +684,8 @@ function CorrelationTraceSection({
 
   const riskLevels = summaryStringList(trace, 'riskLevels');
   const toolCalls = summaryStringList(trace, 'toolCalls');
+  const preflightDecisions = summaryStringList(trace, 'preflightDecisions');
+  const preflightReasons = summaryStringList(trace, 'preflightReasons');
   const approvalIds = uniqueStrings([
     ...summaryStringList(trace, 'approvalIds'),
     ...trace.approvals.map((approval) => stringValue(approval.id))
@@ -720,11 +722,17 @@ function CorrelationTraceSection({
           <TraceMetric label={t('hermesDashboard.trace.boardFeedback')} value={trace.boardFeedback.length} />
         </div>
 
-        {(riskLevels.length > 0 || toolCalls.length > 0 || proposalIds.length > 0 || externalCardIds.length > 0 || latestEvidenceAt) && (
+        {(riskLevels.length > 0 || toolCalls.length > 0 || preflightDecisions.length > 0 || preflightReasons.length > 0 || proposalIds.length > 0 || externalCardIds.length > 0 || latestEvidenceAt) && (
           <div className="rounded-lg border border-border bg-background/70 p-3">
             <div className="space-y-2 text-xs">
               {riskLevels.length > 0 && (
                 <TraceChipRow label={t('hermesDashboard.trace.riskLevels')} values={riskLevels} warning />
+              )}
+              {preflightDecisions.length > 0 && (
+                <TraceChipRow label={t('hermesDashboard.trace.preflightDecisions')} values={preflightDecisions} warning={preflightDecisions.some((item) => item !== 'allow')} />
+              )}
+              {preflightReasons.length > 0 && (
+                <TraceChipRow label={t('hermesDashboard.trace.preflightReasons')} values={preflightReasons.slice(0, 6)} warning />
               )}
               {toolCalls.length > 0 && (
                 <TraceChipRow label={t('hermesDashboard.trace.toolCalls')} values={toolCalls} />

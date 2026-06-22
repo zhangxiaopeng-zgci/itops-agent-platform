@@ -29,6 +29,36 @@ interface Task {
   context?: Record<string, unknown>;
 }
 
+interface TaskExecutionPreflightSnapshot {
+  schemaVersion: 'workflow.executionPreflight.v1';
+  decision: 'allow' | 'warn' | 'block';
+  mode: 'direct' | 'warning' | 'blocked';
+  requiresApproval: boolean;
+  reasons: string[];
+  actions: string[];
+  role: string;
+  generatedAt: string;
+  summary?: {
+    hermesEnhanced?: boolean;
+    channelBundles?: {
+      count: number;
+      ready: number;
+      needsReview: number;
+      warnings: string[];
+    };
+    gates?: {
+      approvalRequired: boolean;
+      approvalCount: number;
+      verificationRequired: boolean;
+      verificationCount: number;
+    };
+    mcpServers?: {
+      count: number;
+      unhealthy: number;
+    };
+  };
+}
+
 interface Workflow {
   id: string;
   name: string;
@@ -516,6 +546,8 @@ export default function Tasks() {
                     )}
                   </div>
                 </div>
+
+                <TaskExecutionPreflightPanel preflight={getTaskExecutionPreflight(selectedTask)} />
 
                 <div className="flex gap-2 overflow-x-auto pb-2">
                   {(() => {
@@ -1064,6 +1096,132 @@ function getRunbookMetadata(node: any, result: any) {
     verificationRequired: Boolean(metadata.verificationRequired ?? node.data?.verificationRequired),
     recommendedSkillIds: normalizeRecommendedSkillIds(metadata.recommendedSkillIds || node.data?.recommendedSkillIds || node.data?.recommendedSkillId)
   };
+}
+
+function getTaskExecutionPreflight(task: Task): TaskExecutionPreflightSnapshot | null {
+  const preflight = asRecord(task.context?.workflowExecutionPreflight);
+  if (preflight.schemaVersion !== 'workflow.executionPreflight.v1') {
+    return null;
+  }
+
+  return {
+    schemaVersion: 'workflow.executionPreflight.v1',
+    decision: preflight.decision === 'block' ? 'block' : preflight.decision === 'warn' ? 'warn' : 'allow',
+    mode: preflight.mode === 'blocked' ? 'blocked' : preflight.mode === 'warning' ? 'warning' : 'direct',
+    requiresApproval: Boolean(preflight.requiresApproval),
+    reasons: normalizeStringList(preflight.reasons),
+    actions: normalizeStringList(preflight.actions),
+    role: readString(preflight.role) || '-',
+    generatedAt: readString(preflight.generatedAt) || '',
+    summary: asRecord(preflight.summary) as TaskExecutionPreflightSnapshot['summary']
+  };
+}
+
+function TaskExecutionPreflightPanel({ preflight }: { preflight: TaskExecutionPreflightSnapshot | null }) {
+  const { locale, t } = useLocale();
+  const browserLocale = locale === 'zh-CN' ? 'zh-CN' : 'en-US';
+  if (!preflight) return null;
+
+  const bundles = preflight.summary?.channelBundles;
+  const gates = preflight.summary?.gates;
+  const mcpServers = preflight.summary?.mcpServers;
+  const decisionTone = preflight.decision === 'block'
+    ? 'warning'
+    : preflight.decision === 'warn'
+      ? 'warning'
+      : 'success';
+
+  return (
+    <div className="mb-4 rounded-xl border border-border bg-background/60 p-4">
+      <div className="flex items-start justify-between gap-3 mb-3">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <ShieldAlert className={clsx(
+              'w-4 h-4',
+              preflight.decision === 'allow' ? 'text-status-success' : 'text-amber-500'
+            )} />
+            <h3 className="text-sm font-semibold text-text-primary">{t('tasks.preflight.title')}</h3>
+          </div>
+          <p className="mt-1 text-xs text-text-tertiary">{t('tasks.preflight.subtitle')}</p>
+        </div>
+        {preflight.generatedAt && (
+          <span className="shrink-0 rounded-lg border border-border bg-surface px-2.5 py-1.5 text-xs text-text-secondary">
+            {new Date(preflight.generatedAt).toLocaleString(browserLocale)}
+          </span>
+        )}
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
+        <RunbookMetaItem
+          label={t('tasks.preflight.decision')}
+          value={formatPreflightDecision(preflight.decision, t)}
+          tone={decisionTone}
+        />
+        <RunbookMetaItem label={t('tasks.preflight.role')} value={preflight.role} />
+        <RunbookMetaItem label={t('tasks.preflight.approval')} value={preflight.requiresApproval ? t('common.yes') : t('common.no')} tone={preflight.requiresApproval ? 'warning' : 'normal'} />
+        <RunbookMetaItem
+          label={t('tasks.preflight.bundles')}
+          value={bundles ? `${bundles.ready}/${bundles.count}` : '-'}
+          tone={bundles && bundles.needsReview > 0 ? 'warning' : 'success'}
+        />
+      </div>
+
+      <div className="mt-3 grid grid-cols-1 lg:grid-cols-3 gap-3">
+        <EvidenceList
+          label={t('tasks.preflight.reasons')}
+          values={preflight.reasons.map((reason) => formatPreflightReason(reason, t))}
+        />
+        <EvidenceList
+          label={t('tasks.preflight.actions')}
+          values={preflight.actions.map((action) => formatPreflightAction(action, t))}
+        />
+        <EvidenceList
+          label={t('tasks.preflight.runtime')}
+          values={[
+            gates ? `${t('tasks.preflight.gates')}: ${gates.approvalCount}/${gates.verificationCount}` : '',
+            mcpServers ? `MCP: ${mcpServers.unhealthy}/${mcpServers.count}` : '',
+            bundles && bundles.warnings.length > 0 ? `${t('tasks.preflight.bundleWarnings')}: ${bundles.warnings.length}` : ''
+          ]}
+        />
+      </div>
+    </div>
+  );
+}
+
+function formatPreflightDecision(decision: TaskExecutionPreflightSnapshot['decision'], t: (key: MessageKey) => string) {
+  const keys: Record<TaskExecutionPreflightSnapshot['decision'], MessageKey> = {
+    allow: 'tasks.preflight.decision.allow',
+    warn: 'tasks.preflight.decision.warn',
+    block: 'tasks.preflight.decision.block'
+  };
+  return t(keys[decision]);
+}
+
+function formatPreflightReason(reason: string, t: (key: MessageKey) => string) {
+  const labels: Record<string, MessageKey> = {
+    role_viewer_cannot_execute: 'tasks.preflight.reason.role_viewer_cannot_execute',
+    capability_bundle_needs_review: 'tasks.preflight.reason.capability_bundle_needs_review',
+    capability_bundle_policy_risk: 'tasks.preflight.reason.capability_bundle_policy_risk',
+    mcp_server_unhealthy: 'tasks.preflight.reason.mcp_server_unhealthy',
+    workflow_requires_approval: 'tasks.preflight.reason.workflow_requires_approval',
+    high_risk_tools_require_approval: 'tasks.preflight.reason.high_risk_tools_require_approval',
+    workflow_requires_verification: 'tasks.preflight.reason.workflow_requires_verification',
+    recent_workflow_failures: 'tasks.preflight.reason.recent_workflow_failures'
+  };
+  return labels[reason] ? t(labels[reason]) : reason;
+}
+
+function formatPreflightAction(action: string, t: (key: MessageKey) => string) {
+  const labels: Record<string, MessageKey> = {
+    switch_operator_or_admin: 'tasks.preflight.action.switch_operator_or_admin',
+    review_capability_bundle: 'tasks.preflight.action.review_capability_bundle',
+    review_channel_policy: 'tasks.preflight.action.review_channel_policy',
+    check_mcp_server_health: 'tasks.preflight.action.check_mcp_server_health',
+    prepare_tool_approval: 'tasks.preflight.action.prepare_tool_approval',
+    prepare_verification_plan: 'tasks.preflight.action.prepare_verification_plan',
+    review_recent_failures: 'tasks.preflight.action.review_recent_failures'
+  };
+  return labels[action] ? t(labels[action]) : action;
 }
 
 function normalizeRecommendedSkillIds(value: unknown): string[] {
