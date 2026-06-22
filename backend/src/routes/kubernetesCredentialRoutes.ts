@@ -4,7 +4,7 @@ import { z } from 'zod';
 import db from '../models/database';
 import { requireRole } from '../middleware/auth';
 import { validateBody, validateParams } from '../middleware/validation';
-import { encrypt } from '../services/encryptionService';
+import { decrypt, encrypt } from '../services/encryptionService';
 import { logger } from '../utils/logger';
 
 const router = Router();
@@ -46,6 +46,30 @@ function normalizeText(value: string | null | undefined): string | null {
   return trimmed ? trimmed : null;
 }
 
+function stripYamlValue(value: string | undefined): string | null {
+  if (!value) return null;
+  const trimmed = value.trim();
+  if (!trimmed || trimmed === '|' || trimmed === '>') return null;
+  return trimmed.replace(/^['"]|['"]$/g, '');
+}
+
+function parseKubeconfigServer(rawKubeconfig: string | null | undefined): string | null {
+  if (!rawKubeconfig) return null;
+  try {
+    const kubeconfig = JSON.parse(rawKubeconfig);
+    const currentContextName = kubeconfig['current-context'];
+    const currentContext = kubeconfig.contexts?.find((item: any) => item.name === currentContextName)?.context || kubeconfig.contexts?.[0]?.context;
+    const clusterName = currentContext?.cluster;
+    const cluster = kubeconfig.clusters?.find((item: any) => item.name === clusterName)?.cluster || kubeconfig.clusters?.[0]?.cluster;
+    return normalizeText(cluster?.server);
+  } catch (error) {
+    if (error instanceof SyntaxError) {
+      return stripYamlValue(rawKubeconfig.match(/^\s*server:\s*(.+?)\s*$/m)?.[1]);
+    }
+    return null;
+  }
+}
+
 router.get('/', requireRole('admin', 'operator', 'viewer'), (_req: Request, res: Response) => {
   try {
     const credentials = db.prepare(`
@@ -72,6 +96,79 @@ router.get('/', requireRole('admin', 'operator', 'viewer'), (_req: Request, res:
   } catch (error) {
     logger.error('Failed to list Kubernetes credentials', error as Error);
     res.status(500).json({ success: false, error: 'Failed to list Kubernetes credentials' });
+  }
+});
+
+router.get('/:id', requireRole('admin', 'operator', 'viewer'), validateParams(credentialIdSchema), (req: Request, res: Response) => {
+  try {
+    const credential = db.prepare(`
+      SELECT
+        id,
+        name,
+        credential_type,
+        username,
+        server_url,
+        description,
+        created_by,
+        created_at,
+        updated_at,
+        token_secret,
+        kubeconfig,
+        client_certificate,
+        client_key
+      FROM kubernetes_credentials
+      WHERE id = ?
+    `).get(req.params.id) as {
+      id: string;
+      name: string;
+      credential_type: string;
+      username?: string | null;
+      server_url?: string | null;
+      description?: string | null;
+      created_by?: string | null;
+      created_at: string;
+      updated_at: string;
+      token_secret?: string | null;
+      kubeconfig?: string | null;
+      client_certificate?: string | null;
+      client_key?: string | null;
+    } | undefined;
+
+    if (!credential) {
+      return res.status(404).json({ success: false, error: 'Kubernetes credential not found' });
+    }
+
+    const clusters = db.prepare(`
+      SELECT id, name, environment, auth_type, api_server_url, last_sync_at
+      FROM kubernetes_clusters
+      WHERE credential_id = ?
+      ORDER BY created_at DESC
+    `).all(req.params.id);
+
+    const parsedServerUrl = credential.kubeconfig ? parseKubeconfigServer(decrypt(credential.kubeconfig)) : null;
+    const {
+      token_secret: _tokenSecret,
+      kubeconfig: _kubeconfig,
+      client_certificate: _clientCertificate,
+      client_key: _clientKey,
+      ...safeCredential
+    } = credential;
+
+    res.json({
+      success: true,
+      data: {
+        ...safeCredential,
+        has_token: Boolean(credential.token_secret),
+        has_kubeconfig: Boolean(credential.kubeconfig),
+        has_certificate: Boolean(credential.client_certificate && credential.client_key),
+        parsed_server_url: parsedServerUrl,
+        usage_count: clusters.length,
+        clusters,
+      },
+    });
+  } catch (error) {
+    logger.error('Failed to get Kubernetes credential', error as Error);
+    res.status(500).json({ success: false, error: 'Failed to get Kubernetes credential' });
   }
 });
 

@@ -119,7 +119,25 @@ interface CredentialOption {
   usage_count?: number;
   has_token?: number;
   has_kubeconfig?: number;
+  has_certificate?: number;
   description?: string | null;
+  server_url?: string | null;
+}
+
+interface CredentialClusterUsage {
+  id: string;
+  name: string;
+  environment?: string | null;
+  auth_type: KubernetesCluster['auth_type'];
+  api_server_url?: string | null;
+  last_sync_at?: string | null;
+}
+
+interface CredentialDetail extends CredentialOption {
+  created_at?: string;
+  updated_at?: string;
+  parsed_server_url?: string | null;
+  clusters: CredentialClusterUsage[];
 }
 
 const emptyForm = {
@@ -158,6 +176,8 @@ export default function KubernetesClusters() {
   const [syncTarget, setSyncTarget] = useState<KubernetesCluster | null>(null);
   const [assetSnapshotText, setAssetSnapshotText] = useState('');
   const [isCredentialModalOpen, setIsCredentialModalOpen] = useState(false);
+  const [credentialDetail, setCredentialDetail] = useState<CredentialDetail | null>(null);
+  const [deleteCredentialTarget, setDeleteCredentialTarget] = useState<CredentialOption | null>(null);
   const [formData, setFormData] = useState(emptyForm);
   const [credentialForm, setCredentialForm] = useState(emptyCredentialForm);
   const isAdmin = user?.role === 'admin';
@@ -167,6 +187,8 @@ export default function KubernetesClusters() {
   useEscapeKey({ onEscape: () => setDetailCluster(null), enabled: !!detailCluster });
   useEscapeKey({ onEscape: () => setSyncTarget(null), enabled: !!syncTarget });
   useEscapeKey({ onEscape: () => setIsCredentialModalOpen(false), enabled: isCredentialModalOpen });
+  useEscapeKey({ onEscape: () => setCredentialDetail(null), enabled: !!credentialDetail });
+  useEscapeKey({ onEscape: () => setDeleteCredentialTarget(null), enabled: !!deleteCredentialTarget });
 
   const { data: clusters = [], isLoading } = useQuery({
     queryKey: ['kubernetes-clusters'],
@@ -222,6 +244,33 @@ export default function KubernetesClusters() {
     },
     onError: (error: any) => {
       toast.error(error?.response?.data?.error || error?.response?.data?.message || t('kubernetes.credential.toast.createFailed'));
+    },
+  });
+
+  const credentialDetailMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await api.get(`/api/kubernetes-credentials/${id}`);
+      return res.data.data as CredentialDetail;
+    },
+    onSuccess: (result) => {
+      setCredentialDetail(result);
+    },
+    onError: (error: any) => {
+      toast.error(error?.response?.data?.error || error?.response?.data?.message || t('kubernetes.credential.toast.detailFailed'));
+    },
+  });
+
+  const deleteCredentialMutation = useMutation({
+    mutationFn: async (id: string) => {
+      await api.delete(`/api/kubernetes-credentials/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['credentials', 'kubernetes'] });
+      setDeleteCredentialTarget(null);
+      toast.success(t('kubernetes.credential.toast.deleted'));
+    },
+    onError: (error: any) => {
+      toast.error(error?.response?.data?.error || error?.response?.data?.message || t('kubernetes.credential.toast.deleteFailed'));
     },
   });
 
@@ -445,6 +494,27 @@ export default function KubernetesClusters() {
                   </span>
                 </div>
                 {credential.description ? <p className="text-xs text-text-secondary mt-3 line-clamp-2">{credential.description}</p> : null}
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <button
+                    onClick={() => credentialDetailMutation.mutate(credential.id)}
+                    disabled={credentialDetailMutation.isPending}
+                    className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-border text-xs text-text-primary hover:bg-surface transition-colors disabled:opacity-60"
+                  >
+                    {credentialDetailMutation.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Eye className="w-3.5 h-3.5" />}
+                    {t('common.details')}
+                  </button>
+                  {isAdmin && (
+                    <button
+                      onClick={() => setDeleteCredentialTarget(credential)}
+                      disabled={(credential.usage_count || 0) > 0}
+                      title={(credential.usage_count || 0) > 0 ? t('kubernetes.credential.delete.blocked') : undefined}
+                      className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-red-500/30 text-xs text-red-500 hover:bg-red-500/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      {t('common.delete')}
+                    </button>
+                  )}
+                </div>
               </div>
             ))}
           </div>
@@ -706,6 +776,77 @@ export default function KubernetesClusters() {
         </div>
       )}
 
+      {credentialDetail && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="w-full max-w-2xl max-h-[90vh] overflow-hidden bg-surface border border-border rounded-lg shadow-xl">
+            <div className="p-5 border-b border-border flex items-start justify-between gap-4">
+              <div className="min-w-0">
+                <h2 className="text-lg font-semibold text-text-primary truncate">{credentialDetail.name}</h2>
+                <p className="text-sm text-text-secondary mt-1">{t('kubernetes.credential.detail.title')}</p>
+              </div>
+              <button onClick={() => setCredentialDetail(null)} className="p-2 rounded-lg hover:bg-background">
+                <X className="w-4 h-4 text-text-secondary" />
+              </button>
+            </div>
+            <div className="p-5 overflow-auto max-h-[calc(90vh-88px)] space-y-5">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <InfoTile label={t('kubernetes.credential.field.type')} value={credentialDetail.credential_type} />
+                <InfoTile label={t('kubernetes.credential.field.username')} value={credentialDetail.username || t('common.unknown')} />
+                <InfoTile label={t('kubernetes.credential.detail.apiServer')} value={credentialDetail.server_url || credentialDetail.parsed_server_url || t('common.unknown')} />
+                <InfoTile label={t('kubernetes.credential.detail.usedClusterCount')} value={t('kubernetes.credential.usage', { count: credentialDetail.usage_count || 0 })} />
+              </div>
+
+              <section className="rounded-lg border border-border bg-background/40 p-4">
+                <h3 className="text-sm font-semibold text-text-primary">{t('kubernetes.credential.detail.secretState')}</h3>
+                <div className="mt-3 flex flex-wrap gap-2 text-xs">
+                  <StatusPill active={Boolean(credentialDetail.has_token)} label={t('kubernetes.credential.detail.hasToken')} />
+                  <StatusPill active={Boolean(credentialDetail.has_kubeconfig)} label={t('kubernetes.credential.detail.hasKubeconfig')} />
+                  <StatusPill active={Boolean(credentialDetail.has_certificate)} label={t('kubernetes.credential.detail.hasCertificate')} />
+                </div>
+              </section>
+
+              <section className="rounded-lg border border-border bg-background/40 p-4">
+                <h3 className="text-sm font-semibold text-text-primary">{t('kubernetes.credential.detail.usedBy')}</h3>
+                <div className="mt-3 space-y-2">
+                  {credentialDetail.clusters.length === 0 ? (
+                    <div className="text-sm text-text-secondary">{t('kubernetes.credential.detail.noClusters')}</div>
+                  ) : credentialDetail.clusters.map((cluster) => (
+                    <AssetRow
+                      key={cluster.id}
+                      title={cluster.name}
+                      meta={[cluster.environment || t('common.unknown'), cluster.auth_type, cluster.last_sync_at || t('kubernetes.neverSynced')].join(' · ')}
+                      extra={cluster.api_server_url || t('kubernetes.noApiServer')}
+                    />
+                  ))}
+                </div>
+              </section>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {deleteCredentialTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="w-full max-w-md bg-surface border border-border rounded-lg shadow-xl p-5">
+            <h2 className="text-lg font-semibold text-text-primary">{t('kubernetes.credential.delete.title')}</h2>
+            <p className="text-sm text-text-secondary mt-2">{t('kubernetes.credential.delete.desc', { name: deleteCredentialTarget.name })}</p>
+            <div className="flex justify-end gap-3 mt-5">
+              <button onClick={() => setDeleteCredentialTarget(null)} className="px-4 py-2 rounded-lg border border-border text-text-primary hover:bg-background">
+                {t('common.cancel')}
+              </button>
+              <button
+                onClick={() => deleteCredentialMutation.mutate(deleteCredentialTarget.id)}
+                disabled={deleteCredentialMutation.isPending}
+                className="px-4 py-2 rounded-lg bg-red-500 text-white hover:bg-red-600 disabled:opacity-60 inline-flex items-center gap-2"
+              >
+                {deleteCredentialMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
+                {t('common.delete')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {syncTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
           <div className="w-full max-w-3xl max-h-[90vh] overflow-hidden bg-surface border border-border rounded-lg shadow-xl">
@@ -873,6 +1014,23 @@ function SmallMetric({ label, value }: { label: string; value: number }) {
       <p className="text-xs text-text-secondary">{label}</p>
       <p className="text-lg font-semibold text-text-primary mt-1">{value}</p>
     </div>
+  );
+}
+
+function InfoTile({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg bg-background/60 border border-border p-3 min-w-0">
+      <p className="text-xs text-text-secondary">{label}</p>
+      <p className="text-sm font-medium text-text-primary mt-1 break-all">{value}</p>
+    </div>
+  );
+}
+
+function StatusPill({ active, label }: { active: boolean; label: string }) {
+  return (
+    <span className={`px-2 py-1 rounded-full border ${active ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-500' : 'bg-background border-border text-text-secondary'}`}>
+      {label}
+    </span>
   );
 }
 
