@@ -11,6 +11,7 @@ import {
   Link2,
   Loader2,
   Plus,
+  RefreshCw,
   Search,
   Server,
   Trash2,
@@ -131,12 +132,15 @@ export default function KubernetesClusters() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<KubernetesCluster | null>(null);
   const [detailCluster, setDetailCluster] = useState<KubernetesCluster | null>(null);
+  const [syncTarget, setSyncTarget] = useState<KubernetesCluster | null>(null);
+  const [assetSnapshotText, setAssetSnapshotText] = useState('');
   const [formData, setFormData] = useState(emptyForm);
   const isAdmin = user?.role === 'admin';
 
   useEscapeKey({ onEscape: () => setIsModalOpen(false), enabled: isModalOpen });
   useEscapeKey({ onEscape: () => setDeleteTarget(null), enabled: !!deleteTarget });
   useEscapeKey({ onEscape: () => setDetailCluster(null), enabled: !!detailCluster });
+  useEscapeKey({ onEscape: () => setSyncTarget(null), enabled: !!syncTarget });
 
   const { data: clusters = [], isLoading } = useQuery({
     queryKey: ['kubernetes-clusters'],
@@ -197,6 +201,23 @@ export default function KubernetesClusters() {
     },
   });
 
+  const syncAssetsMutation = useMutation({
+    mutationFn: async ({ clusterId, snapshot }: { clusterId: string; snapshot: unknown }) => {
+      const res = await api.post(`/api/kubernetes-clusters/${clusterId}/sync-assets`, snapshot);
+      return res.data.data as { counts: { nodes: number; namespaces: number; workloads: number; pods: number; services: number; events: number; boundServers: number } };
+    },
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ['kubernetes-clusters'] });
+      queryClient.invalidateQueries({ queryKey: ['kubernetes-cluster-assets'] });
+      setSyncTarget(null);
+      setAssetSnapshotText('');
+      toast.success(t('kubernetes.toast.synced', { nodes: result.counts.nodes, pods: result.counts.pods }));
+    },
+    onError: (error: any) => {
+      toast.error(error?.response?.data?.error || error?.response?.data?.message || t('kubernetes.toast.syncFailed'));
+    },
+  });
+
   const filteredClusters = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
     if (!query) return clusters;
@@ -222,6 +243,44 @@ export default function KubernetesClusters() {
   const handleSubmit = (event: FormEvent) => {
     event.preventDefault();
     createMutation.mutate();
+  };
+
+  const openSyncModal = (cluster: KubernetesCluster) => {
+    setSyncTarget(cluster);
+    setAssetSnapshotText(`{
+  "nodes": [
+    {
+      "name": "k8s-node01",
+      "internal_ip": "10.1.132.58",
+      "role": "worker",
+      "status": "Ready",
+      "kubelet_version": "v1.29.0"
+    }
+  ],
+  "namespaces": [
+    { "name": "default", "status": "Active" }
+  ],
+  "workloads": [
+    { "namespace": "default", "kind": "Deployment", "name": "nginx", "replicas": 2, "ready_replicas": 2, "status": "Ready" }
+  ],
+  "pods": [
+    { "namespace": "default", "name": "nginx-0", "phase": "Running", "node_name": "k8s-node01", "ready": true, "restart_count": 0 }
+  ],
+  "services": [
+    { "namespace": "default", "name": "nginx", "type": "ClusterIP", "cluster_ip": "10.96.0.10" }
+  ],
+  "events": []
+}`);
+  };
+
+  const handleSyncAssets = () => {
+    if (!syncTarget) return;
+    try {
+      const snapshot = JSON.parse(assetSnapshotText);
+      syncAssetsMutation.mutate({ clusterId: syncTarget.id, snapshot });
+    } catch {
+      toast.error(t('kubernetes.toast.invalidSnapshot'));
+    }
   };
 
   const openHermesDiagnosis = (cluster: KubernetesCluster) => {
@@ -347,6 +406,14 @@ export default function KubernetesClusters() {
                         {t('kubernetes.action.openKite')}
                       </button>
                       <button
+                        onClick={() => openSyncModal(cluster)}
+                        disabled={!isAdmin && user?.role !== 'operator'}
+                        className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-border text-text-primary hover:bg-background transition-colors disabled:opacity-60"
+                      >
+                        <RefreshCw className="w-4 h-4" />
+                        {t('kubernetes.action.syncAssets')}
+                      </button>
+                      <button
                         onClick={() => testMutation.mutate(cluster)}
                         disabled={testMutation.isPending}
                         className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-border text-text-primary hover:bg-background transition-colors disabled:opacity-60"
@@ -444,6 +511,46 @@ export default function KubernetesClusters() {
               <button onClick={() => deleteMutation.mutate(deleteTarget.id)} className="px-4 py-2 rounded-lg bg-red-500 text-white hover:bg-red-600">
                 {t('common.delete')}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {syncTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="w-full max-w-3xl max-h-[90vh] overflow-hidden bg-surface border border-border rounded-lg shadow-xl">
+            <div className="p-5 border-b border-border flex items-start justify-between gap-4">
+              <div>
+                <h2 className="text-lg font-semibold text-text-primary">{t('kubernetes.sync.title')}</h2>
+                <p className="text-sm text-text-secondary mt-1">{t('kubernetes.sync.desc', { name: syncTarget.name })}</p>
+              </div>
+              <button onClick={() => setSyncTarget(null)} className="p-2 rounded-lg hover:bg-background">
+                <X className="w-4 h-4 text-text-secondary" />
+              </button>
+            </div>
+            <div className="p-5 space-y-4">
+              <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-600">
+                {t('kubernetes.sync.notice')}
+              </div>
+              <textarea
+                value={assetSnapshotText}
+                onChange={(event) => setAssetSnapshotText(event.target.value)}
+                spellCheck={false}
+                className={`${inputClass} min-h-[360px] font-mono text-xs leading-relaxed`}
+              />
+              <div className="flex justify-end gap-3">
+                <button onClick={() => setSyncTarget(null)} className="px-4 py-2 rounded-lg border border-border text-text-primary hover:bg-background">
+                  {t('common.cancel')}
+                </button>
+                <button
+                  onClick={handleSyncAssets}
+                  disabled={syncAssetsMutation.isPending}
+                  className="px-4 py-2 rounded-lg bg-primary text-white hover:bg-primary/90 disabled:opacity-60 inline-flex items-center gap-2"
+                >
+                  {syncAssetsMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                  {t('kubernetes.action.syncAssets')}
+                </button>
+              </div>
             </div>
           </div>
         </div>

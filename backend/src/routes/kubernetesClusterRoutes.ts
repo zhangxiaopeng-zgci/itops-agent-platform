@@ -34,6 +34,76 @@ const updateClusterSchema = createClusterSchema.partial().extend({
   status: z.string().optional(),
 });
 
+const labelsSchema = z.union([z.record(z.unknown()), z.string()]).optional().nullable();
+
+const syncAssetsSchema = z.object({
+  nodes: z.array(z.object({
+    name: z.string().min(1),
+    internal_ip: z.string().optional().nullable(),
+    external_ip: z.string().optional().nullable(),
+    role: z.string().optional().nullable(),
+    status: z.string().optional().nullable(),
+    kubelet_version: z.string().optional().nullable(),
+    os_image: z.string().optional().nullable(),
+    container_runtime: z.string().optional().nullable(),
+    cpu_capacity: z.string().optional().nullable(),
+    memory_capacity: z.string().optional().nullable(),
+    pod_capacity: z.number().optional().nullable(),
+    server_id: z.string().optional().nullable(),
+    labels: labelsSchema,
+    annotations: labelsSchema,
+  })).optional().default([]),
+  namespaces: z.array(z.object({
+    name: z.string().min(1),
+    status: z.string().optional().nullable(),
+    labels: labelsSchema,
+    annotations: labelsSchema,
+  })).optional().default([]),
+  workloads: z.array(z.object({
+    namespace: z.string().optional().nullable(),
+    name: z.string().min(1),
+    kind: z.string().min(1),
+    replicas: z.number().optional().nullable(),
+    ready_replicas: z.number().optional().nullable(),
+    status: z.string().optional().nullable(),
+    labels: labelsSchema,
+    annotations: labelsSchema,
+  })).optional().default([]),
+  pods: z.array(z.object({
+    namespace: z.string().optional().nullable(),
+    name: z.string().min(1),
+    phase: z.string().optional().nullable(),
+    pod_ip: z.string().optional().nullable(),
+    host_ip: z.string().optional().nullable(),
+    node_name: z.string().optional().nullable(),
+    restart_count: z.number().optional().nullable(),
+    ready: z.union([z.boolean(), z.number()]).optional().nullable(),
+    labels: labelsSchema,
+    annotations: labelsSchema,
+  })).optional().default([]),
+  services: z.array(z.object({
+    namespace: z.string().optional().nullable(),
+    name: z.string().min(1),
+    type: z.string().optional().nullable(),
+    cluster_ip: z.string().optional().nullable(),
+    external_ip: z.string().optional().nullable(),
+    ports: z.unknown().optional().nullable(),
+    selector: z.unknown().optional().nullable(),
+    labels: labelsSchema,
+  })).optional().default([]),
+  events: z.array(z.object({
+    namespace: z.string().optional().nullable(),
+    involved_kind: z.string().optional().nullable(),
+    involved_name: z.string().optional().nullable(),
+    type: z.string().optional().nullable(),
+    reason: z.string().optional().nullable(),
+    message: z.string().optional().nullable(),
+    count: z.number().optional().nullable(),
+    first_seen_at: z.string().optional().nullable(),
+    last_seen_at: z.string().optional().nullable(),
+  })).optional().default([]),
+});
+
 router.get('/', (_req: Request, res: Response) => {
   try {
     const clusters = kubernetesClusterService.getAllClusters();
@@ -114,6 +184,20 @@ router.delete('/:id', requireRole('admin'), validateParams(clusterIdSchema), (re
   } catch (error) {
     logger.error('Failed to delete Kubernetes cluster', error as Error);
     res.status(500).json({ success: false, error: 'Failed to delete Kubernetes cluster' });
+  }
+});
+
+router.post('/:id/sync-assets', requireRole('admin', 'operator'), validateParams(clusterIdSchema), validateBody(syncAssetsSchema), (req: Request, res: Response) => {
+  try {
+    const result = kubernetesClusterService.syncClusterAssets(req.params.id, req.body);
+    if (!result) {
+      return res.status(404).json({ success: false, error: 'Kubernetes cluster not found' });
+    }
+    res.json({ success: true, data: result });
+  } catch (error) {
+    logger.error('Failed to sync Kubernetes cluster assets', error as Error);
+    const message = error instanceof Error ? error.message : 'Failed to sync Kubernetes cluster assets';
+    res.status(500).json({ success: false, error: message });
   }
 });
 
