@@ -9,6 +9,7 @@ import { listEvolutionReleaseVersions } from './evolutionReleaseService';
 import { listEvolutionProposals } from './evolutionProposalService';
 import { listBackupRestoreDrills } from './backupRestoreDrillService';
 import { listContainerRebuildDrills } from './containerRebuildDrillService';
+import { listKiteBackupDrills, listKiteBackups } from './kiteBackupService';
 
 export type OpsReadinessStatus = 'ready' | 'warning' | 'blocked';
 
@@ -74,6 +75,12 @@ export interface OpsReadinessSummary {
     kiteLatencyMs: number | null;
     kiteStatusCode: number | null;
     kiteError: string | null;
+    kiteBackups: number;
+    lastKiteBackupAt: string | null;
+    lastKiteBackupVerified: boolean;
+    kiteRestoreDrills: number;
+    lastKiteRestoreDrillAt: string | null;
+    lastKiteRestoreDrillStatus: string | null;
   };
   health: {
     status: SystemHealth['status'];
@@ -96,6 +103,10 @@ export async function buildOpsReadinessSummary(): Promise<OpsReadinessSummary> {
   const containerRebuildDrills = listContainerRebuildDrills(20);
   const lastContainerRebuildDrill = containerRebuildDrills[0] || null;
   const kiteStatus = await getKiteStatus();
+  const kiteBackups = listKiteBackups(20);
+  const lastKiteBackup = kiteBackups[0] || null;
+  const kiteRestoreDrills = listKiteBackupDrills(20);
+  const lastKiteRestoreDrill = kiteRestoreDrills[0] || null;
   const checks: OpsReadinessCheck[] = [];
 
   const databasePersistent = isPersistentDatabasePath(env.DATABASE_PATH);
@@ -224,6 +235,34 @@ export async function buildOpsReadinessSummary(): Promise<OpsReadinessSummary> {
     }
   }));
   checks.push(check({
+    key: 'kite_backup_available',
+    category: 'data',
+    status: lastKiteBackup?.verified ? 'ready' : 'warning',
+    required: false,
+    message: lastKiteBackup
+      ? `Latest Kite backup verified=${lastKiteBackup.verified}.`
+      : 'No Kite backup has been created yet.',
+    observed: {
+      backups: kiteBackups.length,
+      lastBackupAt: lastKiteBackup?.createdAt || null,
+      lastBackupSize: lastKiteBackup?.size || 0
+    }
+  }));
+  checks.push(check({
+    key: 'kite_restore_drill_recorded',
+    category: 'data',
+    status: lastKiteRestoreDrill?.status === 'passed' ? 'ready' : 'warning',
+    required: false,
+    message: lastKiteRestoreDrill
+      ? `Latest Kite restore drill status is ${lastKiteRestoreDrill.status}.`
+      : 'No Kite restore drill record has been created yet.',
+    observed: {
+      restoreDrills: kiteRestoreDrills.length,
+      lastRestoreDrillAt: lastKiteRestoreDrill?.completed_at || null,
+      lastRestoreDrillStatus: lastKiteRestoreDrill?.status || null
+    }
+  }));
+  checks.push(check({
     key: 'release_guard_available',
     category: 'release',
     status: 'ready',
@@ -312,7 +351,13 @@ export async function buildOpsReadinessSummary(): Promise<OpsReadinessSummary> {
       kiteDatabaseSize: kiteStatus.databaseSize,
       kiteLatencyMs: kiteStatus.latencyMs,
       kiteStatusCode: kiteStatus.statusCode,
-      kiteError: kiteStatus.error
+      kiteError: kiteStatus.error,
+      kiteBackups: kiteBackups.length,
+      lastKiteBackupAt: lastKiteBackup?.createdAt || null,
+      lastKiteBackupVerified: Boolean(lastKiteBackup?.verified),
+      kiteRestoreDrills: kiteRestoreDrills.length,
+      lastKiteRestoreDrillAt: lastKiteRestoreDrill?.completed_at || null,
+      lastKiteRestoreDrillStatus: lastKiteRestoreDrill?.status || null
     },
     health: {
       status: health.status,

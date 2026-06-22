@@ -26,6 +26,8 @@ const checks = [
   { name: 'users', path: '/api/users', auth: true },
   { name: 'settings', path: '/api/settings', auth: true },
   { name: 'ops-readiness', path: '/api/ops-readiness/summary', auth: true },
+  { name: 'kite-backups', path: '/api/ops-readiness/kite-backups?limit=5', auth: true },
+  { name: 'kite-restore-drills', path: '/api/ops-readiness/kite-restore-drills?limit=5', auth: true },
   { name: 'hermes-channels', path: '/api/hermes-channels', auth: true },
   { name: 'hermes-workers', path: '/api/hermes-workers', auth: true },
   { name: 'hermes-control-plane', path: '/api/hermes-control-plane/overview', auth: true },

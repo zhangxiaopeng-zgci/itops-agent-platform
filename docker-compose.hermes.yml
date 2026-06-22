@@ -35,6 +35,7 @@ services:
       KITE_URL: ${KITE_URL:-http://kite:8080}
       KITE_PUBLIC_URL: ${KITE_PUBLIC_URL:-http://10.1.132.58:3002}
       KITE_DATA_DIR: /app/kite-data
+      KITE_BACKUP_DIR: /app/backups/kite
     volumes:
       - /opt/itops-agent-platform/data:/app/data
       - /opt/itops-agent-platform/backups:/app/backups

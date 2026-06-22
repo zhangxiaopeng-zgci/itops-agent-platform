@@ -27,6 +27,7 @@ import v025AddKubernetesAssets from './v025_add_kubernetes_assets';
 import v026AddHermesDashboardBridge from './v026_add_hermes_dashboard_bridge';
 import v027AddHermesDelegationPolicy from './v027_add_hermes_delegation_policy';
 import v028AddHermesSessionSummariesAndFeedback from './v028_add_hermes_session_summaries_and_feedback';
+import v029AddKiteBackupDrills from './v029_add_kite_backup_drills';
 
 export const ALL_MIGRATIONS: Migration[] = [
   v001InitialSchema,
@@ -57,6 +58,7 @@ export const ALL_MIGRATIONS: Migration[] = [
   v026AddHermesDashboardBridge,
   v027AddHermesDelegationPolicy,
   v028AddHermesSessionSummariesAndFeedback,
+  v029AddKiteBackupDrills,
 ];
 
 export function createMigrationManager(db: any): MigrationManager {
