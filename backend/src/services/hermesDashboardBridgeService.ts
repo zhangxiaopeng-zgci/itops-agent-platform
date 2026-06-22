@@ -1,5 +1,6 @@
 import { randomUUID } from 'crypto';
 import db from '../models/database';
+import { createOrGetFeedbackDrivenProposal, EvolutionProposalRecord } from './evolutionProposalService';
 
 export type HermesDashboardEmbedMode = 'link' | 'iframe' | 'sidecar';
 export type HermesDashboardAuthMode = 'none' | 'reverse_proxy' | 'token';
@@ -52,6 +53,37 @@ export interface UpsertHermesExternalLinkInput {
   title?: string | null;
   metadata?: unknown;
   created_by?: string | null;
+}
+
+export type HermesBoardFeedbackCategory =
+  | 'useful'
+  | 'wrong_root_cause'
+  | 'missing_evidence'
+  | 'unsafe_action'
+  | 'needs_workflow';
+
+export interface HermesBoardFeedback {
+  id: string;
+  source_type: string;
+  source_id: string;
+  category: HermesBoardFeedbackCategory;
+  reason: string | null;
+  correlation_id: string | null;
+  evidence_refs: unknown;
+  generated_proposal_id: string | null;
+  created_by: string | null;
+  created_at: string;
+  proposal?: EvolutionProposalRecord | null;
+}
+
+export interface CreateHermesBoardFeedbackInput {
+  sourceType: string;
+  sourceId: string;
+  category: HermesBoardFeedbackCategory;
+  reason?: string | null;
+  correlationId?: string | null;
+  evidenceRefs?: unknown;
+  createdBy?: string | null;
 }
 
 const SETTING_KEYS = {
@@ -266,4 +298,137 @@ export function upsertHermesExternalLink(input: UpsertHermesExternalLinkInput): 
   }
 
   return row;
+}
+
+export function createHermesBoardFeedback(input: CreateHermesBoardFeedbackInput): HermesBoardFeedback {
+  const sourceType = normalizeFeedbackSourceType(input.sourceType);
+  const sourceId = normalizeFeedbackText(input.sourceId, 'sourceId', 160);
+  const category = normalizeFeedbackCategory(input.category);
+  const reason = normalizeOptionalFeedbackText(input.reason, 1000);
+  const correlationId = normalizeOptionalFeedbackText(input.correlationId, 128);
+  const evidenceRefs = input.evidenceRefs ?? {};
+  const id = randomUUID();
+
+  let proposal: EvolutionProposalRecord | null = null;
+  if (category !== 'useful') {
+    proposal = createOrGetFeedbackDrivenProposal({
+      sourceType,
+      sourceId,
+      reason: buildFeedbackReason(category, reason),
+      priority: category === 'unsafe_action' ? 'P1' : 'P2',
+      correlationId,
+      evidence: {
+        ...objectOrEmpty(evidenceRefs),
+        boardFeedback: {
+          category,
+          reason: reason || null
+        }
+      },
+      createdBy: input.createdBy || null
+    });
+  }
+
+  db.prepare(`
+    INSERT INTO hermes_board_feedback (
+      id, source_type, source_id, category, reason, correlation_id,
+      evidence_refs, generated_proposal_id, created_by
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    id,
+    sourceType,
+    sourceId,
+    category,
+    reason,
+    correlationId,
+    JSON.stringify(evidenceRefs),
+    proposal?.id || null,
+    input.createdBy || null
+  );
+
+  const row = db.prepare('SELECT * FROM hermes_board_feedback WHERE id = ?').get(id) as Record<string, unknown> | undefined;
+  if (!row) {
+    throw new Error('Failed to save Hermes board feedback');
+  }
+
+  return {
+    ...parseHermesBoardFeedback(row),
+    proposal
+  };
+}
+
+function parseHermesBoardFeedback(row: Record<string, unknown>): HermesBoardFeedback {
+  return {
+    id: String(row.id),
+    source_type: String(row.source_type),
+    source_id: String(row.source_id),
+    category: normalizeFeedbackCategory(String(row.category)),
+    reason: nullableString(row.reason),
+    correlation_id: nullableString(row.correlation_id),
+    evidence_refs: parseJson(row.evidence_refs, {}),
+    generated_proposal_id: nullableString(row.generated_proposal_id),
+    created_by: nullableString(row.created_by),
+    created_at: String(row.created_at || '')
+  };
+}
+
+function normalizeFeedbackSourceType(value: string): string {
+  const normalized = String(value || '').trim();
+  if (['hermes_session', 'worker_run', 'correlation_trace', 'tool_approval', 'task'].includes(normalized)) {
+    return normalized;
+  }
+  throw new Error('Invalid feedback source type');
+}
+
+function normalizeFeedbackCategory(value: string): HermesBoardFeedbackCategory {
+  if (
+    value === 'useful'
+    || value === 'wrong_root_cause'
+    || value === 'missing_evidence'
+    || value === 'unsafe_action'
+    || value === 'needs_workflow'
+  ) {
+    return value;
+  }
+  throw new Error('Invalid feedback category');
+}
+
+function buildFeedbackReason(category: HermesBoardFeedbackCategory, reason: string | null): string {
+  const categoryReason: Record<HermesBoardFeedbackCategory, string> = {
+    useful: 'useful',
+    wrong_root_cause: 'wrong root cause',
+    missing_evidence: 'missing evidence',
+    unsafe_action: 'unsafe action',
+    needs_workflow: 'needs workflow'
+  };
+  return [categoryReason[category], reason].filter(Boolean).join(': ');
+}
+
+function normalizeFeedbackText(value: unknown, field: string, maxLength: number): string {
+  const text = String(value || '').trim();
+  if (!text) throw new Error(`${field} is required`);
+  return text.slice(0, maxLength);
+}
+
+function normalizeOptionalFeedbackText(value: unknown, maxLength: number): string | null {
+  if (typeof value !== 'string') return null;
+  const text = value.trim();
+  return text ? text.slice(0, maxLength) : null;
+}
+
+function objectOrEmpty(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function parseJson<T>(value: unknown, fallback: T): T {
+  if (typeof value !== 'string' || !value) return fallback;
+  try {
+    return JSON.parse(value) as T;
+  } catch {
+    return fallback;
+  }
+}
+
+function nullableString(value: unknown): string | null {
+  return typeof value === 'string' && value.length > 0 ? value : null;
 }

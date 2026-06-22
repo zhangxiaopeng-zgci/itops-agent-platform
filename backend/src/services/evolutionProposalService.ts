@@ -482,6 +482,7 @@ export async function generateEvolutionProposal(input: {
       evidenceSummary: evidence
     },
     trace: runResult?.trace || [],
+    runtimeMetadata: runResult?.metadata || {},
     correlationId,
     status,
     createdBy: input.createdBy || null
@@ -626,6 +627,7 @@ export async function enrichEvolutionProposal(input: {
       evidencePackage
     },
     trace: runResult?.trace || [],
+    runtimeMetadata: runResult?.metadata || {},
     correlationId,
     status: executionStatus,
     createdBy: input.actorId || null

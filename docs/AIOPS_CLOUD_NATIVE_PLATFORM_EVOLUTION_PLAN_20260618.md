@@ -587,6 +587,12 @@ Recommended implementation slices:
 3B-5: Operational contract
   Define which internal board lane transitions can create AIOps proposals or approval drafts.
   Keep publish/execution gated inside AIOps.
+  Implemented:
+    The Hermes board detail drawer renders an Operational Contract section.
+    Board actions are explicitly read-only for evidence viewing.
+    Execution remains gated by Tool Approval and Task views.
+    Evolution remains proposal-only and must pass evaluation, staging replay, approval, and publish before runtime effect.
+    Viewer can inspect the contract but cannot submit feedback that creates proposals.
 
 3B-6: Intent and evidence contract
   Persist structured intent summaries from Hermes sessions:
@@ -603,6 +609,11 @@ Recommended implementation slices:
     confidence
     missingEvidence
     suggestedNextAction
+  Implemented:
+    hermes_sessions now includes intent_summary and evidence_summary JSON columns.
+    New Hermes sessions persist deterministic summaries at creation time.
+    Existing sessions are rendered with a client/server fallback summary when stored summaries are absent.
+    Runtime metadata is used to capture tools, skills, and MCP servers where available.
 
 3B-7: Bad Case feedback loop
   Add board-level feedback:
@@ -612,6 +623,12 @@ Recommended implementation slices:
     unsafe action
     needs workflow
   Feed Bad Cases into Evolution Governance as proposal candidates.
+  Implemented:
+    hermes_board_feedback records every board feedback action with source, category, correlationId, evidence refs, actor, and generated proposal id.
+    Useful feedback is audit-only.
+    Bad Case feedback uses createOrGetFeedbackDrivenProposal so repeated feedback reuses the same active proposal candidate.
+    Hermes board detail drawer exposes feedback buttons and links to generated evolution proposals.
+    Proposal publish remains gated by the existing Evolution Governance flow.
 ```
 
 ## Phase 4 - Unified Asset Topology

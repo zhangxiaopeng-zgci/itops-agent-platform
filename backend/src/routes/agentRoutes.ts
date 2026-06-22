@@ -377,6 +377,7 @@ router.post('/:id/test', async (req: Request, res: Response) => {
           userRole: executionContext.userRole
         },
         trace: runResult?.trace || [],
+        runtimeMetadata: runResult?.metadata || {},
         correlationId,
         status,
         createdBy: authUser?.id || null

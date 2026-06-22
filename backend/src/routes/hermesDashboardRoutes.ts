@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { requireRole } from '../middleware/auth';
 import { validateBody } from '../middleware/validation';
 import {
+  createHermesBoardFeedback,
   getHermesDashboardSettings,
   listHermesExternalLinks,
   probeHermesDashboard,
@@ -38,6 +39,15 @@ const externalLinkSchema = z.object({
   external_state: z.string().optional().nullable(),
   title: z.string().optional().nullable(),
   metadata: z.unknown().optional(),
+});
+
+const boardFeedbackSchema = z.object({
+  sourceType: z.enum(['hermes_session', 'worker_run', 'correlation_trace', 'tool_approval', 'task']),
+  sourceId: z.string().min(1).max(160),
+  category: z.enum(['useful', 'wrong_root_cause', 'missing_evidence', 'unsafe_action', 'needs_workflow']),
+  reason: z.string().max(1000).optional().nullable(),
+  correlationId: z.string().max(128).optional().nullable(),
+  evidenceRefs: z.unknown().optional(),
 });
 
 router.get('/settings', requireRole('admin', 'operator', 'viewer'), (_req: Request, res: Response) => {
@@ -90,6 +100,23 @@ router.post('/external-links', requireRole('admin', 'operator'), validateBody(ex
     res.status(201).json({ success: true, data: link });
   } catch (error) {
     res.status(500).json({ success: false, error: error instanceof Error ? error.message : 'Failed to save Hermes external link' });
+  }
+});
+
+router.post('/feedback', requireRole('admin', 'operator'), validateBody(boardFeedbackSchema), (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const feedback = createHermesBoardFeedback({
+      sourceType: req.body.sourceType,
+      sourceId: req.body.sourceId,
+      category: req.body.category,
+      reason: req.body.reason,
+      correlationId: req.body.correlationId,
+      evidenceRefs: req.body.evidenceRefs,
+      createdBy: req.user?.id || null,
+    });
+    res.status(201).json({ success: true, data: feedback });
+  } catch (error) {
+    res.status(400).json({ success: false, error: error instanceof Error ? error.message : 'Failed to save Hermes board feedback' });
   }
 });
 

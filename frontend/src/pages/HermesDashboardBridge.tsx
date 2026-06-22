@@ -1,10 +1,12 @@
 import { useMemo, useState, type ReactNode } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { Activity, AlertTriangle, Bot, CheckCircle2, Clock, GitBranch, KanbanSquare, Loader2, RefreshCw, ShieldCheck, X, XCircle, type LucideIcon } from 'lucide-react';
 import clsx from 'clsx';
 import api from '../lib/api';
+import { useAuth } from '../contexts/AuthContext';
 import { useLocale, type MessageKey } from '../contexts/LocaleContext';
+import { useToast } from '../contexts/ToastContext';
 
 interface HermesWorkerStatus {
   role: 'diagnose' | 'remediate' | 'evolve' | string;
@@ -49,6 +51,24 @@ interface HermesSessionRefs {
   correlationIds: string[];
 }
 
+interface HermesIntentSummary {
+  entities: string[];
+  action: string;
+  timeWindow: string | null;
+  environment: string | null;
+  assetRefs: string[];
+  expectedOutput: string;
+}
+
+interface HermesEvidenceSummary {
+  toolsUsed: string[];
+  skillsUsed: string[];
+  mcpServersUsed: string[];
+  confidence: 'low' | 'medium' | 'high';
+  missingEvidence: string[];
+  suggestedNextAction: string;
+}
+
 interface HermesSession {
   id: string;
   agent_execution_id: string | null;
@@ -58,6 +78,8 @@ interface HermesSession {
   input: string;
   output: string | null;
   extracted_refs: HermesSessionRefs;
+  intent_summary?: HermesIntentSummary;
+  evidence_summary?: HermesEvidenceSummary;
   correlation_id: string | null;
   status: string;
   created_at: string;
@@ -74,6 +96,16 @@ interface CorrelationTrace {
   workerRuns: Array<Record<string, unknown>>;
   executionEvidence: Array<Record<string, unknown>>;
   executionEvidenceSummary?: Record<string, unknown>;
+}
+
+type BoardFeedbackCategory = 'useful' | 'wrong_root_cause' | 'missing_evidence' | 'unsafe_action' | 'needs_workflow';
+
+interface BoardFeedbackResult {
+  generated_proposal_id?: string | null;
+  proposal?: {
+    id: string;
+    title: string;
+  } | null;
 }
 
 type BoardSelection =
@@ -417,6 +449,9 @@ function EvidenceLink({ to, value }: { to: string; value: string }) {
 
 function BoardDetailDrawer({ selection, onClose }: { selection: BoardSelection; onClose: () => void }) {
   const { t } = useLocale();
+  const { user } = useAuth();
+  const toast = useToast();
+  const queryClient = useQueryClient();
   const isRun = selection.type === 'run';
   const run = isRun ? selection.item : null;
   const session = !isRun ? selection.item : null;
@@ -433,6 +468,50 @@ function BoardDetailDrawer({ selection, onClose }: { selection: BoardSelection; 
     enabled: Boolean(correlationId),
     staleTime: 30000
   });
+  const feedbackMutation = useMutation({
+    mutationFn: async (category: BoardFeedbackCategory) => {
+      const sourceType = isRun ? 'worker_run' : 'hermes_session';
+      const sourceId = isRun ? run?.id : session?.id;
+      if (!sourceId) {
+        throw new Error(t('hermesDashboard.feedback.missingSource'));
+      }
+      const res = await api.post('/api/hermes-dashboard/feedback', {
+        sourceType,
+        sourceId,
+        category,
+        correlationId,
+        evidenceRefs: {
+          selectionType: selection.type,
+          run,
+          session: session ? {
+            id: session.id,
+            agentName: session.agent_name,
+            mode: session.mode,
+            status: session.status,
+            intentSummary: session.intent_summary || null,
+            evidenceSummary: session.evidence_summary || null,
+            extractedRefs: session.extracted_refs
+          } : null,
+          traceSummary: correlationTrace?.executionEvidenceSummary || null
+        }
+      });
+      return res.data.data as BoardFeedbackResult;
+    },
+    onSuccess: (feedback, category) => {
+      queryClient.invalidateQueries({ queryKey: ['evolution-proposals'] });
+      if (feedback.proposal?.id || feedback.generated_proposal_id) {
+        toast.success(t('hermesDashboard.feedback.proposalCreated'));
+      } else if (category === 'useful') {
+        toast.success(t('hermesDashboard.feedback.usefulSaved'));
+      } else {
+        toast.success(t('hermesDashboard.feedback.saved'));
+      }
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : t('hermesDashboard.feedback.failed'));
+    }
+  });
+  const canSubmitFeedback = user?.role === 'admin' || user?.role === 'operator';
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-black/35" onClick={onClose}>
@@ -522,6 +601,19 @@ function BoardDetailDrawer({ selection, onClose }: { selection: BoardSelection; 
             trace={correlationTrace}
             isFetching={traceFetching}
             isError={traceError}
+          />
+
+          <OperationalContractSection selection={selection} correlationTrace={correlationTrace} />
+
+          {session && (
+            <IntentEvidenceSection session={session} />
+          )}
+
+          <BoardFeedbackSection
+            canSubmit={canSubmitFeedback}
+            isSubmitting={feedbackMutation.isPending}
+            latestProposalId={feedbackMutation.data?.proposal?.id || feedbackMutation.data?.generated_proposal_id || null}
+            onSubmit={(category) => feedbackMutation.mutate(category)}
           />
 
           <DetailSection title={t('hermesDashboard.detail.nextActions')}>
@@ -663,6 +755,156 @@ function CorrelationTraceSection({
   );
 }
 
+function OperationalContractSection({
+  selection,
+  correlationTrace
+}: {
+  selection: BoardSelection;
+  correlationTrace?: CorrelationTrace;
+}) {
+  const { t } = useLocale();
+  const isRun = selection.type === 'run';
+  const status = isRun ? selection.item.status : selection.item.status;
+  const hasApprovals = Boolean(correlationTrace?.approvals.length);
+  const hasTasks = Boolean(correlationTrace?.tasks.length);
+  const hasFailures = status === 'failed' || status === 'error';
+  const contracts = [
+    {
+      label: t('hermesDashboard.contract.readOnly'),
+      value: t('hermesDashboard.contract.readOnlyDesc')
+    },
+    {
+      label: t('hermesDashboard.contract.executionGate'),
+      value: hasApprovals || hasTasks
+        ? t('hermesDashboard.contract.executionLinked')
+        : t('hermesDashboard.contract.executionGated')
+    },
+    {
+      label: t('hermesDashboard.contract.evolutionGate'),
+      value: hasFailures
+        ? t('hermesDashboard.contract.evolutionRecommended')
+        : t('hermesDashboard.contract.evolutionProposalOnly')
+    }
+  ];
+
+  return (
+    <DetailSection title={t('hermesDashboard.contract.title')}>
+      <div className="space-y-2">
+        {contracts.map((contract) => (
+          <div key={contract.label} className="rounded-lg border border-border bg-background/70 p-3">
+            <p className="text-xs font-semibold text-text-primary">{contract.label}</p>
+            <p className="mt-1 text-xs leading-5 text-text-secondary">{contract.value}</p>
+          </div>
+        ))}
+      </div>
+    </DetailSection>
+  );
+}
+
+function IntentEvidenceSection({ session }: { session: HermesSession }) {
+  const { t } = useLocale();
+  const intent = session.intent_summary || buildClientIntentFallback(session);
+  const evidence = session.evidence_summary || buildClientEvidenceFallback(session);
+
+  return (
+    <DetailSection title={t('hermesDashboard.summary.title')}>
+      <div className="space-y-3">
+        <DetailGrid
+          items={[
+            [t('hermesDashboard.summary.action'), intent.action || '-'],
+            [t('hermesDashboard.summary.expectedOutput'), intent.expectedOutput || '-'],
+            [t('hermesDashboard.summary.environment'), intent.environment || '-'],
+            [t('hermesDashboard.summary.confidence'), evidence.confidence || '-'],
+            [t('hermesDashboard.summary.suggestedNextAction'), evidence.suggestedNextAction || '-'],
+            [t('hermesDashboard.summary.timeWindow'), intent.timeWindow || '-']
+          ]}
+        />
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+          <SummaryChipPanel title={t('hermesDashboard.summary.entities')} values={intent.entities} />
+          <SummaryChipPanel title={t('hermesDashboard.summary.assetRefs')} values={intent.assetRefs} />
+          <SummaryChipPanel title={t('hermesDashboard.summary.toolsUsed')} values={evidence.toolsUsed} />
+          <SummaryChipPanel title={t('hermesDashboard.summary.skillsUsed')} values={evidence.skillsUsed} />
+          <SummaryChipPanel title={t('hermesDashboard.summary.mcpServersUsed')} values={evidence.mcpServersUsed} />
+          <SummaryChipPanel title={t('hermesDashboard.summary.missingEvidence')} values={evidence.missingEvidence} warning />
+        </div>
+      </div>
+    </DetailSection>
+  );
+}
+
+function SummaryChipPanel({ title, values, warning = false }: { title: string; values: string[]; warning?: boolean }) {
+  return (
+    <div className="rounded-lg border border-border bg-background/70 p-3">
+      <p className="mb-2 text-xs font-semibold text-text-primary">{title}</p>
+      <div className="flex flex-wrap gap-2 text-xs">
+        {values.length > 0
+          ? values.slice(0, 8).map((value) => <Chip key={value} value={value} warning={warning} />)
+          : <span className="text-text-tertiary">-</span>}
+      </div>
+    </div>
+  );
+}
+
+function BoardFeedbackSection({
+  canSubmit,
+  isSubmitting,
+  latestProposalId,
+  onSubmit
+}: {
+  canSubmit: boolean;
+  isSubmitting: boolean;
+  latestProposalId: string | null;
+  onSubmit: (category: BoardFeedbackCategory) => void;
+}) {
+  const { t } = useLocale();
+  const feedbackItems: Array<{ category: BoardFeedbackCategory; label: string; warning?: boolean }> = [
+    { category: 'useful', label: t('hermesDashboard.feedback.useful') },
+    { category: 'wrong_root_cause', label: t('hermesDashboard.feedback.wrongRootCause'), warning: true },
+    { category: 'missing_evidence', label: t('hermesDashboard.feedback.missingEvidence'), warning: true },
+    { category: 'unsafe_action', label: t('hermesDashboard.feedback.unsafeAction'), warning: true },
+    { category: 'needs_workflow', label: t('hermesDashboard.feedback.needsWorkflow'), warning: true }
+  ];
+
+  return (
+    <DetailSection title={t('hermesDashboard.feedback.title')}>
+      <div className="rounded-lg border border-border bg-background/70 p-3">
+        <p className="text-xs leading-5 text-text-secondary">
+          {t('hermesDashboard.feedback.desc')}
+        </p>
+        <div className="mt-3 flex flex-wrap gap-2 text-xs">
+          {feedbackItems.map((item) => (
+            <button
+              key={item.category}
+              type="button"
+              disabled={!canSubmit || isSubmitting}
+              onClick={() => onSubmit(item.category)}
+              className={clsx(
+                'rounded-md border px-3 py-2 transition-colors disabled:cursor-not-allowed disabled:opacity-50',
+                item.warning
+                  ? 'border-amber-500/25 bg-amber-500/10 text-amber-600 hover:bg-amber-500/15 dark:text-amber-400'
+                  : 'border-emerald-500/25 bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500/15 dark:text-emerald-400'
+              )}
+            >
+              {isSubmitting ? t('common.saving') : item.label}
+            </button>
+          ))}
+        </div>
+        {!canSubmit && (
+          <p className="mt-3 text-xs text-text-tertiary">{t('hermesDashboard.feedback.noPermission')}</p>
+        )}
+        {latestProposalId && (
+          <Link
+            to={`/evolution-proposals?proposalId=${encodeURIComponent(latestProposalId)}`}
+            className="mt-3 inline-flex rounded-md border border-primary/25 bg-primary/10 px-3 py-2 text-xs text-primary hover:bg-primary/15"
+          >
+            {t('hermesDashboard.feedback.openProposal')}
+          </Link>
+        )}
+      </div>
+    </DetailSection>
+  );
+}
+
 function TraceMetric({ label, value }: { label: string; value: number }) {
   return (
     <div className="rounded-lg border border-border bg-background/70 px-3 py-2">
@@ -730,6 +972,50 @@ function summaryStringList(trace: CorrelationTrace, key: string): string[] {
 
 function uniqueStrings(values: string[]): string[] {
   return Array.from(new Set(values.filter(Boolean)));
+}
+
+function buildClientIntentFallback(session: HermesSession): HermesIntentSummary {
+  return {
+    entities: [session.agent_name || session.agent_id || 'Hermes'].filter(Boolean),
+    action: session.mode || inferClientAction(session.input),
+    timeWindow: null,
+    environment: null,
+    assetRefs: [
+      ...session.extracted_refs.taskIds.map(id => `task:${id}`),
+      ...session.extracted_refs.approvalIds.map(id => `approval:${id}`)
+    ],
+    expectedOutput: session.mode === 'review'
+      ? 'facts_judgement_and_improvement_proposal'
+      : session.mode === 'remediate'
+        ? 'remediation_plan_risk_approval_and_verification'
+        : 'evidence_risk_and_recommended_action'
+  };
+}
+
+function buildClientEvidenceFallback(session: HermesSession): HermesEvidenceSummary {
+  const hasRefs = session.extracted_refs.approvalIds.length > 0
+    || session.extracted_refs.taskIds.length > 0
+    || session.extracted_refs.correlationIds.length > 0
+    || Boolean(session.correlation_id);
+  return {
+    toolsUsed: [],
+    skillsUsed: [],
+    mcpServersUsed: [],
+    confidence: hasRefs ? 'medium' : 'low',
+    missingEvidence: hasRefs ? ['tool_evidence'] : ['tool_evidence', 'correlation_id'],
+    suggestedNextAction: session.extracted_refs.taskIds.length > 0
+      ? 'track_task_and_verify_result'
+      : session.extracted_refs.approvalIds.length > 0
+        ? 'review_pending_or_completed_approval'
+        : 'review_trace_and_choose_next_action'
+  };
+}
+
+function inferClientAction(input: string): string {
+  if (/复盘|review|evolve|proposal|进化|优化/i.test(input)) return 'review_and_improve';
+  if (/修复|remediate|repair|审批|approval|执行/i.test(input)) return 'plan_remediation';
+  if (/诊断|diagnose|分析|告警|root cause|根因/i.test(input)) return 'diagnose_issue';
+  return 'answer_ops_request';
 }
 
 function minutesAgo(value: string): number {
