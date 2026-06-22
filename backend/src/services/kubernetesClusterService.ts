@@ -162,6 +162,14 @@ interface KubernetesCredential {
   private_key?: string | null;
 }
 
+interface DedicatedKubernetesCredential {
+  credential_type: string;
+  token_secret?: string | null;
+  kubeconfig?: string | null;
+  client_certificate?: string | null;
+  client_key?: string | null;
+}
+
 interface KubernetesApiList<T> {
   items?: T[];
 }
@@ -821,6 +829,22 @@ class KubernetesClusterService {
     const credentialId = normalizeText(cluster.credential_id);
     if (!credentialId) {
       throw new Error('Kubernetes token credential is not configured');
+    }
+
+    const dedicatedCredential = db.prepare(`
+      SELECT credential_type, token_secret, kubeconfig, client_certificate, client_key
+      FROM kubernetes_credentials
+      WHERE id = ?
+    `).get(credentialId) as DedicatedKubernetesCredential | undefined;
+
+    if (dedicatedCredential) {
+      if (dedicatedCredential.credential_type !== 'token') {
+        throw new Error('Live Kubernetes API sync currently supports token credentials');
+      }
+      if (!dedicatedCredential.token_secret) {
+        throw new Error('Kubernetes token credential has no token secret');
+      }
+      return decrypt(dedicatedCredential.token_secret);
     }
 
     const credential = db.prepare(`

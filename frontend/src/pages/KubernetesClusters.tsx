@@ -114,8 +114,11 @@ interface KubernetesClusterAssets {
 interface CredentialOption {
   id: string;
   name: string;
-  auth_type: 'key' | 'password';
+  credential_type: 'token' | 'kubeconfig' | 'certificate';
   username?: string | null;
+  usage_count?: number;
+  has_token?: number;
+  description?: string | null;
 }
 
 const emptyForm = {
@@ -126,6 +129,15 @@ const emptyForm = {
   version: '',
   auth_type: 'kubeconfig' as KubernetesCluster['auth_type'],
   credential_id: '',
+  description: '',
+};
+
+const emptyCredentialForm = {
+  name: '',
+  credential_type: 'token' as CredentialOption['credential_type'],
+  username: '',
+  token: '',
+  server_url: '',
   description: '',
 };
 
@@ -143,13 +155,16 @@ export default function KubernetesClusters() {
   const [detailCluster, setDetailCluster] = useState<KubernetesCluster | null>(null);
   const [syncTarget, setSyncTarget] = useState<KubernetesCluster | null>(null);
   const [assetSnapshotText, setAssetSnapshotText] = useState('');
+  const [isCredentialModalOpen, setIsCredentialModalOpen] = useState(false);
   const [formData, setFormData] = useState(emptyForm);
+  const [credentialForm, setCredentialForm] = useState(emptyCredentialForm);
   const isAdmin = user?.role === 'admin';
 
   useEscapeKey({ onEscape: () => setIsModalOpen(false), enabled: isModalOpen });
   useEscapeKey({ onEscape: () => setDeleteTarget(null), enabled: !!deleteTarget });
   useEscapeKey({ onEscape: () => setDetailCluster(null), enabled: !!detailCluster });
   useEscapeKey({ onEscape: () => setSyncTarget(null), enabled: !!syncTarget });
+  useEscapeKey({ onEscape: () => setIsCredentialModalOpen(false), enabled: isCredentialModalOpen });
 
   const { data: clusters = [], isLoading } = useQuery({
     queryKey: ['kubernetes-clusters'],
@@ -161,7 +176,7 @@ export default function KubernetesClusters() {
   const { data: credentials = [] } = useQuery({
     queryKey: ['credentials', 'kubernetes'],
     queryFn: async () => {
-      const res = await api.get('/api/ssh-keys');
+      const res = await api.get('/api/kubernetes-credentials');
       return res.data.data as CredentialOption[];
     },
   });
@@ -187,6 +202,23 @@ export default function KubernetesClusters() {
     },
     onError: (error: any) => {
       toast.error(error?.response?.data?.error || t('kubernetes.toast.createFailed'));
+    },
+  });
+
+  const createCredentialMutation = useMutation({
+    mutationFn: async () => {
+      const res = await api.post('/api/kubernetes-credentials', credentialForm);
+      return res.data.data as { id: string };
+    },
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ['credentials', 'kubernetes'] });
+      setCredentialForm(emptyCredentialForm);
+      setIsCredentialModalOpen(false);
+      setFormData((current) => ({ ...current, auth_type: 'token', credential_id: result.id }));
+      toast.success(t('kubernetes.credential.toast.created'));
+    },
+    onError: (error: any) => {
+      toast.error(error?.response?.data?.error || error?.response?.data?.message || t('kubernetes.credential.toast.createFailed'));
     },
   });
 
@@ -276,6 +308,11 @@ export default function KubernetesClusters() {
     createMutation.mutate();
   };
 
+  const handleCredentialSubmit = (event: FormEvent) => {
+    event.preventDefault();
+    createCredentialMutation.mutate();
+  };
+
   const openSyncModal = (cluster: KubernetesCluster) => {
     setSyncTarget(cluster);
     setAssetSnapshotText(`{
@@ -345,13 +382,22 @@ export default function KubernetesClusters() {
               {t('kubernetes.openConsole')}
             </button>
             {isAdmin && (
-              <button
-                onClick={() => setIsModalOpen(true)}
-                className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-primary text-white hover:bg-primary/90 transition-colors"
-              >
-                <Plus className="w-4 h-4" />
-                {t('kubernetes.add')}
-              </button>
+              <>
+                <button
+                  onClick={() => setIsCredentialModalOpen(true)}
+                  className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg border border-border text-text-primary hover:bg-background transition-colors"
+                >
+                  <Plus className="w-4 h-4" />
+                  {t('kubernetes.credential.add')}
+                </button>
+                <button
+                  onClick={() => setIsModalOpen(true)}
+                  className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-primary text-white hover:bg-primary/90 transition-colors"
+                >
+                  <Plus className="w-4 h-4" />
+                  {t('kubernetes.add')}
+                </button>
+              </>
             )}
           </div>
         </div>
@@ -361,6 +407,44 @@ export default function KubernetesClusters() {
           <MetricCard icon={Server} label={t('kubernetes.metric.nodes')} value={totals.nodes} />
           <MetricCard icon={Boxes} label={t('kubernetes.metric.workloads')} value={totals.workloads} />
           <MetricCard icon={Link2} label={t('kubernetes.metric.boundServers')} value={totals.boundServers} />
+        </div>
+
+        <div className="bg-surface border border-border rounded-lg p-4">
+          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+            <div>
+              <h2 className="text-lg font-semibold text-text-primary">{t('kubernetes.credential.title')}</h2>
+              <p className="text-sm text-text-secondary mt-1">{t('kubernetes.credential.subtitle')}</p>
+            </div>
+            {isAdmin && (
+              <button
+                onClick={() => setIsCredentialModalOpen(true)}
+                className="inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg border border-border text-text-primary hover:bg-background transition-colors"
+              >
+                <Plus className="w-4 h-4" />
+                {t('kubernetes.credential.add')}
+              </button>
+            )}
+          </div>
+          <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3">
+            {credentials.length === 0 ? (
+              <div className="md:col-span-3 rounded-lg bg-background/60 border border-border p-4 text-sm text-text-secondary">
+                {t('kubernetes.credential.empty')}
+              </div>
+            ) : credentials.map((credential) => (
+              <div key={credential.id} className="rounded-lg bg-background/60 border border-border p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="text-sm font-semibold text-text-primary truncate">{credential.name}</div>
+                    <div className="text-xs text-text-secondary mt-1">{credential.credential_type}</div>
+                  </div>
+                  <span className="text-xs px-2 py-0.5 rounded-full bg-primary/10 text-primary">
+                    {t('kubernetes.credential.usage', { count: credential.usage_count || 0 })}
+                  </span>
+                </div>
+                {credential.description ? <p className="text-xs text-text-secondary mt-3 line-clamp-2">{credential.description}</p> : null}
+              </div>
+            ))}
+          </div>
         </div>
 
         <div className="bg-surface border border-border rounded-lg">
@@ -520,7 +604,7 @@ export default function KubernetesClusters() {
                     <option value="">{t('kubernetes.credential.none')}</option>
                     {credentials.map((credential) => (
                       <option key={credential.id} value={credential.id}>
-                        {credential.name} · {credential.auth_type}
+                        {credential.name} · {credential.credential_type}
                       </option>
                     ))}
                   </select>
@@ -562,6 +646,52 @@ export default function KubernetesClusters() {
                 {t('common.delete')}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {isCredentialModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="w-full max-w-2xl bg-surface border border-border rounded-lg shadow-xl">
+            <div className="p-5 border-b border-border flex items-center justify-between">
+              <h2 className="text-lg font-semibold text-text-primary">{t('kubernetes.credential.modal.title')}</h2>
+              <button onClick={() => setIsCredentialModalOpen(false)} className="p-2 rounded-lg hover:bg-background">
+                <X className="w-4 h-4 text-text-secondary" />
+              </button>
+            </div>
+            <form onSubmit={handleCredentialSubmit} className="p-5 space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <Field label={t('kubernetes.credential.field.name')} required>
+                  <input className={inputClass} value={credentialForm.name} onChange={(event) => setCredentialForm({ ...credentialForm, name: event.target.value })} required />
+                </Field>
+                <Field label={t('kubernetes.credential.field.type')}>
+                  <select className={inputClass} value={credentialForm.credential_type} onChange={(event) => setCredentialForm({ ...credentialForm, credential_type: event.target.value as CredentialOption['credential_type'] })}>
+                    <option value="token">token</option>
+                  </select>
+                </Field>
+                <Field label={t('kubernetes.credential.field.username')}>
+                  <input className={inputClass} value={credentialForm.username} onChange={(event) => setCredentialForm({ ...credentialForm, username: event.target.value })} placeholder="bearer" />
+                </Field>
+                <Field label={t('kubernetes.credential.field.serverUrl')}>
+                  <input className={inputClass} value={credentialForm.server_url} onChange={(event) => setCredentialForm({ ...credentialForm, server_url: event.target.value })} placeholder="https://kubernetes.example:6443" />
+                </Field>
+              </div>
+              <Field label={t('kubernetes.credential.field.token')} required>
+                <textarea className={`${inputClass} min-h-[120px] font-mono text-xs`} value={credentialForm.token} onChange={(event) => setCredentialForm({ ...credentialForm, token: event.target.value })} required />
+              </Field>
+              <Field label={t('kubernetes.field.description')}>
+                <textarea className={`${inputClass} min-h-[72px]`} value={credentialForm.description} onChange={(event) => setCredentialForm({ ...credentialForm, description: event.target.value })} />
+              </Field>
+              <div className="flex justify-end gap-3 pt-2">
+                <button type="button" onClick={() => setIsCredentialModalOpen(false)} className="px-4 py-2 rounded-lg border border-border text-text-primary hover:bg-background">
+                  {t('common.cancel')}
+                </button>
+                <button type="submit" disabled={createCredentialMutation.isPending} className="px-4 py-2 rounded-lg bg-primary text-white hover:bg-primary/90 disabled:opacity-60 inline-flex items-center gap-2">
+                  {createCredentialMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
+                  {t('common.create')}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

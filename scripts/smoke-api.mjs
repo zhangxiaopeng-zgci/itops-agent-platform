@@ -43,6 +43,7 @@ const checks = [
   { name: 'remediation-executions', path: '/api/remediation-executions', auth: true },
   { name: 'network-devices', path: '/api/network-devices', auth: true },
   { name: 'credentials', path: '/api/ssh-keys', auth: true },
+  { name: 'kubernetes-credentials', path: '/api/kubernetes-credentials', auth: true },
   { name: 'topology-global', path: '/api/topology/global', auth: true },
   { name: 'topology-dependency', path: '/api/topology/dependency', auth: true },
 ];
