@@ -7,6 +7,7 @@ import {
   ArrowRight,
   Bell,
   Bot,
+  Boxes,
   BrainCircuit,
   CheckCircle2,
   Clock,
@@ -381,6 +382,46 @@ function collectTraceLinks(trace: TraceEvent[], correlationId?: string) {
     approvalIds: Array.from(approvalIds),
     taskIds: Array.from(taskIds),
     correlationIds: Array.from(correlationIds),
+  };
+}
+
+function detectKubernetesContext(result: AgentRunResponse | null, contextLines: string[]) {
+  if (!result) {
+    return { matched: false, signals: [] };
+  }
+
+  const traceText = (result.trace || result.metadata?.trace || [])
+    .map((event) => [event.type, event.content, JSON.stringify(event.metadata || {})].filter(Boolean).join(' '))
+    .join(' ');
+  const sourceText = [
+    result.output,
+    result.hermesSession?.input,
+    result.hermesSession?.output,
+    JSON.stringify(result.hermesSession?.selected_context || {}),
+    traceText,
+    contextLines.join('\n')
+  ].join('\n').toLowerCase();
+
+  const detectors = [
+    { label: 'Kubernetes', patterns: ['kubernetes', 'k8s'] },
+    { label: 'Cluster', patterns: ['cluster', '集群'] },
+    { label: 'Node', patterns: ['node', '节点'] },
+    { label: 'Namespace', patterns: ['namespace', '命名空间'] },
+    { label: 'Pod', patterns: ['pod'] },
+    { label: 'Workload', patterns: ['deployment', 'statefulset', 'daemonset', 'workload', '工作负载'] },
+    { label: 'Service', patterns: ['service', 'svc', '服务'] },
+    { label: 'Ingress', patterns: ['ingress'] },
+    { label: 'Helm', patterns: ['helm'] },
+  ];
+
+  const signals = detectors
+    .filter((detector) => detector.patterns.some((pattern) => sourceText.includes(pattern)))
+    .map((detector) => detector.label);
+  const strongSignals = new Set(['Kubernetes', 'Namespace', 'Pod', 'Workload', 'Ingress', 'Helm']);
+
+  return {
+    matched: signals.some((signal) => strongSignals.has(signal)),
+    signals: signals.slice(0, 6),
   };
 }
 
@@ -842,6 +883,10 @@ export default function HermesAssistant() {
     workflow: selectedWorkflow,
     knowledgeCategory: selectedKnowledgeCategory || undefined,
   }, contextLabels);
+  const kubernetesContext = useMemo(
+    () => detectKubernetesContext(lastResult, contextLines),
+    [lastResult, contextLines]
+  );
 
   const toggleServer = (serverId: string) => {
     setSelectedServerIds((current) => (
@@ -1553,6 +1598,55 @@ export default function HermesAssistant() {
                     ))}
                   </div>
                 </div>
+
+                {kubernetesContext.matched && (
+                  <div className="mb-4 rounded-xl bg-emerald-500/10 border border-emerald-500/20 p-4">
+                    <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                      <div className="flex items-start gap-3 min-w-0">
+                        <div className="w-9 h-9 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center justify-center flex-shrink-0">
+                          <Boxes className="w-4 h-4" />
+                        </div>
+                        <div className="min-w-0">
+                          <h3 className="text-sm font-semibold text-text-primary">{t('hermes.kubernetes.title')}</h3>
+                          <p className="text-xs text-text-secondary mt-1">{t('hermes.kubernetes.subtitle')}</p>
+                          <div className="mt-2 flex flex-wrap gap-1.5">
+                            {kubernetesContext.signals.map((signal) => (
+                              <span key={signal} className="px-2 py-1 rounded-lg bg-background border border-border text-[11px] text-text-secondary">
+                                {signal}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          onClick={() => navigate('/kubernetes-console')}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 hover:bg-emerald-500/20 text-xs"
+                        >
+                          {t('hermes.kubernetes.openConsole')}
+                          <ExternalLink className="w-3 h-3" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => navigate('/kubernetes-clusters')}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-background text-text-secondary border border-border hover:text-text-primary text-xs"
+                        >
+                          {t('hermes.kubernetes.openClusters')}
+                          <ExternalLink className="w-3 h-3" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => navigate('/topology')}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-background text-text-secondary border border-border hover:text-text-primary text-xs"
+                        >
+                          {t('hermes.kubernetes.openTopology')}
+                          <ExternalLink className="w-3 h-3" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 <div className="rounded-xl bg-background border border-border p-4">
                   <MarkdownOutput content={lastResult.output || t('hermes.result.empty')} />
