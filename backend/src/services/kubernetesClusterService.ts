@@ -189,7 +189,18 @@ class KubernetesClusterService {
 
     return {
       cluster,
-      nodes: db.prepare('SELECT * FROM kubernetes_nodes WHERE cluster_id = ? ORDER BY name').all(id),
+      nodes: db.prepare(`
+        SELECT
+          n.*,
+          s.name AS server_name,
+          s.hostname AS server_hostname,
+          s.enabled AS server_enabled,
+          s.os_type AS server_os_type
+        FROM kubernetes_nodes n
+        LEFT JOIN servers s ON s.id = n.server_id
+        WHERE n.cluster_id = ?
+        ORDER BY n.name
+      `).all(id),
       namespaces: db.prepare('SELECT * FROM kubernetes_namespaces WHERE cluster_id = ? ORDER BY name').all(id),
       workloads: db.prepare('SELECT * FROM kubernetes_workloads WHERE cluster_id = ? ORDER BY namespace, kind, name').all(id),
       pods: db.prepare('SELECT * FROM kubernetes_pods WHERE cluster_id = ? ORDER BY namespace, name LIMIT 200').all(id),

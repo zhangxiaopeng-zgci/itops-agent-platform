@@ -3,8 +3,10 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import {
   Boxes,
+  BrainCircuit,
   CheckCircle2,
   Cloud,
+  Eye,
   ExternalLink,
   Link2,
   Loader2,
@@ -42,6 +44,71 @@ interface KubernetesCluster {
   bound_server_count: number;
 }
 
+interface KubernetesNode {
+  id: string;
+  name: string;
+  internal_ip?: string | null;
+  role?: string | null;
+  status: string;
+  server_id?: string | null;
+  server_name?: string | null;
+  server_hostname?: string | null;
+}
+
+interface KubernetesNamespace {
+  id: string;
+  name: string;
+  status: string;
+}
+
+interface KubernetesWorkload {
+  id: string;
+  namespace: string;
+  name: string;
+  kind: string;
+  replicas?: number | null;
+  ready_replicas?: number | null;
+  status: string;
+}
+
+interface KubernetesPod {
+  id: string;
+  namespace: string;
+  name: string;
+  phase: string;
+  ready: number;
+  restart_count: number;
+}
+
+interface KubernetesServiceItem {
+  id: string;
+  namespace: string;
+  name: string;
+  type?: string | null;
+  cluster_ip?: string | null;
+}
+
+interface KubernetesEvent {
+  id: string;
+  namespace?: string | null;
+  involved_kind?: string | null;
+  involved_name?: string | null;
+  type?: string | null;
+  reason?: string | null;
+  message?: string | null;
+  last_seen_at?: string | null;
+}
+
+interface KubernetesClusterAssets {
+  cluster: KubernetesCluster;
+  nodes: KubernetesNode[];
+  namespaces: KubernetesNamespace[];
+  workloads: KubernetesWorkload[];
+  pods: KubernetesPod[];
+  services: KubernetesServiceItem[];
+  events: KubernetesEvent[];
+}
+
 const emptyForm = {
   name: '',
   api_server_url: '',
@@ -63,17 +130,27 @@ export default function KubernetesClusters() {
   const [searchQuery, setSearchQuery] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<KubernetesCluster | null>(null);
+  const [detailCluster, setDetailCluster] = useState<KubernetesCluster | null>(null);
   const [formData, setFormData] = useState(emptyForm);
   const isAdmin = user?.role === 'admin';
 
   useEscapeKey({ onEscape: () => setIsModalOpen(false), enabled: isModalOpen });
   useEscapeKey({ onEscape: () => setDeleteTarget(null), enabled: !!deleteTarget });
+  useEscapeKey({ onEscape: () => setDetailCluster(null), enabled: !!detailCluster });
 
   const { data: clusters = [], isLoading } = useQuery({
     queryKey: ['kubernetes-clusters'],
     queryFn: async () => {
       const res = await api.get('/api/kubernetes-clusters');
       return res.data.data as KubernetesCluster[];
+    },
+  });
+  const { data: clusterAssets, isFetching: isFetchingAssets } = useQuery({
+    queryKey: ['kubernetes-cluster-assets', detailCluster?.id],
+    enabled: Boolean(detailCluster),
+    queryFn: async () => {
+      const res = await api.get(`/api/kubernetes-clusters/${detailCluster!.id}/assets`);
+      return res.data.data as KubernetesClusterAssets;
     },
   });
 
@@ -145,6 +222,15 @@ export default function KubernetesClusters() {
   const handleSubmit = (event: FormEvent) => {
     event.preventDefault();
     createMutation.mutate();
+  };
+
+  const openHermesDiagnosis = (cluster: KubernetesCluster) => {
+    const prompt = t('kubernetes.hermesPrompt', {
+      name: cluster.name,
+      environment: cluster.environment || t('common.unknown'),
+      apiServer: cluster.api_server_url || t('kubernetes.noApiServer'),
+    });
+    navigate(`/hermes?mode=diagnose&prompt=${encodeURIComponent(prompt)}&knowledgeCategory=${encodeURIComponent('kubernetes')}`);
   };
 
   return (
@@ -239,6 +325,27 @@ export default function KubernetesClusters() {
                       </div>
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        onClick={() => setDetailCluster(cluster)}
+                        className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-border text-text-primary hover:bg-background transition-colors"
+                      >
+                        <Eye className="w-4 h-4" />
+                        {t('common.details')}
+                      </button>
+                      <button
+                        onClick={() => openHermesDiagnosis(cluster)}
+                        className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-primary/30 text-primary hover:bg-primary/10 transition-colors"
+                      >
+                        <BrainCircuit className="w-4 h-4" />
+                        {t('kubernetes.action.diagnose')}
+                      </button>
+                      <button
+                        onClick={() => navigate('/kubernetes-console')}
+                        className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-emerald-500/30 text-emerald-500 hover:bg-emerald-500/10 transition-colors"
+                      >
+                        <ExternalLink className="w-4 h-4" />
+                        {t('kubernetes.action.openKite')}
+                      </button>
                       <button
                         onClick={() => testMutation.mutate(cluster)}
                         disabled={testMutation.isPending}
@@ -341,6 +448,112 @@ export default function KubernetesClusters() {
           </div>
         </div>
       )}
+
+      {detailCluster && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="w-full max-w-5xl max-h-[90vh] overflow-hidden bg-surface border border-border rounded-lg shadow-xl">
+            <div className="p-5 border-b border-border flex items-start justify-between gap-4">
+              <div className="min-w-0">
+                <h2 className="text-lg font-semibold text-text-primary truncate">{detailCluster.name}</h2>
+                <p className="text-sm text-text-secondary mt-1 break-all">{detailCluster.api_server_url || t('kubernetes.noApiServer')}</p>
+              </div>
+              <button onClick={() => setDetailCluster(null)} className="p-2 rounded-lg hover:bg-background">
+                <X className="w-4 h-4 text-text-secondary" />
+              </button>
+            </div>
+            <div className="p-5 overflow-auto max-h-[calc(90vh-88px)] space-y-5">
+              {isFetchingAssets || !clusterAssets ? (
+                <div className="py-12 flex items-center justify-center">
+                  <Loader2 className="w-6 h-6 animate-spin text-primary" />
+                </div>
+              ) : (
+                <>
+                  <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
+                    <SmallMetric label={t('kubernetes.metric.nodes')} value={clusterAssets.nodes.length} />
+                    <SmallMetric label={t('kubernetes.metric.namespaces')} value={clusterAssets.namespaces.length} />
+                    <SmallMetric label={t('kubernetes.metric.workloads')} value={clusterAssets.workloads.length} />
+                    <SmallMetric label={t('kubernetes.metric.pods')} value={clusterAssets.pods.length} />
+                    <SmallMetric label={t('kubernetes.metric.services')} value={clusterAssets.services.length} />
+                    <SmallMetric label={t('kubernetes.metric.events')} value={clusterAssets.events.length} />
+                  </div>
+
+                  <DetailSection title={t('kubernetes.detail.nodes')} empty={t('kubernetes.detail.emptyNodes')}>
+                    {clusterAssets.nodes.slice(0, 8).map((node) => (
+                      <AssetRow
+                        key={node.id}
+                        title={node.name}
+                        meta={[node.role || '-', node.internal_ip || '-', node.status].join(' · ')}
+                        extra={node.server_name ? t('kubernetes.detail.boundServer', { name: node.server_name, host: node.server_hostname || '-' }) : t('kubernetes.detail.unboundServer')}
+                      />
+                    ))}
+                  </DetailSection>
+
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    <DetailSection title={t('kubernetes.detail.workloads')} empty={t('kubernetes.detail.emptyWorkloads')}>
+                      {clusterAssets.workloads.slice(0, 6).map((workload) => (
+                        <AssetRow
+                          key={workload.id}
+                          title={`${workload.kind}/${workload.name}`}
+                          meta={`${workload.namespace} · ${workload.status}`}
+                          extra={`${workload.ready_replicas ?? '-'} / ${workload.replicas ?? '-'}`}
+                        />
+                      ))}
+                    </DetailSection>
+                    <DetailSection title={t('kubernetes.detail.pods')} empty={t('kubernetes.detail.emptyPods')}>
+                      {clusterAssets.pods.slice(0, 6).map((pod) => (
+                        <AssetRow
+                          key={pod.id}
+                          title={pod.name}
+                          meta={`${pod.namespace} · ${pod.phase}`}
+                          extra={`${t('kubernetes.detail.restarts')}: ${pod.restart_count}`}
+                        />
+                      ))}
+                    </DetailSection>
+                  </div>
+
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    <DetailSection title={t('kubernetes.detail.services')} empty={t('kubernetes.detail.emptyServices')}>
+                      {clusterAssets.services.slice(0, 6).map((service) => (
+                        <AssetRow
+                          key={service.id}
+                          title={service.name}
+                          meta={`${service.namespace} · ${service.type || '-'}`}
+                          extra={service.cluster_ip || '-'}
+                        />
+                      ))}
+                    </DetailSection>
+                    <DetailSection title={t('kubernetes.detail.events')} empty={t('kubernetes.detail.emptyEvents')}>
+                      {clusterAssets.events.slice(0, 6).map((event) => (
+                        <AssetRow
+                          key={event.id}
+                          title={[event.involved_kind, event.involved_name].filter(Boolean).join('/') || event.reason || '-'}
+                          meta={[event.namespace, event.type, event.reason].filter(Boolean).join(' · ')}
+                          extra={event.message || event.last_seen_at || '-'}
+                        />
+                      ))}
+                    </DetailSection>
+                  </div>
+
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    <button onClick={() => openHermesDiagnosis(detailCluster)} className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-primary text-white hover:bg-primary/90">
+                      <BrainCircuit className="w-4 h-4" />
+                      {t('kubernetes.action.diagnose')}
+                    </button>
+                    <button onClick={() => navigate('/kubernetes-console')} className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-border text-text-primary hover:bg-background">
+                      <ExternalLink className="w-4 h-4" />
+                      {t('kubernetes.action.openKite')}
+                    </button>
+                    <button onClick={() => navigate('/topology')} className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-border text-text-primary hover:bg-background">
+                      <Link2 className="w-4 h-4" />
+                      {t('kubernetes.action.openTopology')}
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -375,5 +588,31 @@ function Field({ label, required, children }: { label: string; required?: boolea
       </span>
       {children}
     </label>
+  );
+}
+
+function DetailSection({ title, empty, children }: { title: string; empty: string; children: ReactNode }) {
+  const hasItems = Array.isArray(children) ? children.length > 0 : Boolean(children);
+  return (
+    <section className="rounded-lg border border-border bg-background/40 p-4">
+      <h3 className="text-sm font-semibold text-text-primary">{title}</h3>
+      <div className="mt-3 space-y-2">
+        {hasItems ? children : <div className="text-sm text-text-secondary">{empty}</div>}
+      </div>
+    </section>
+  );
+}
+
+function AssetRow({ title, meta, extra }: { title: string; meta: string; extra?: string }) {
+  return (
+    <div className="rounded-lg bg-surface border border-border px-3 py-2 min-w-0">
+      <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <div className="text-sm font-medium text-text-primary truncate">{title}</div>
+          <div className="text-xs text-text-secondary mt-1 truncate">{meta}</div>
+        </div>
+        {extra ? <div className="text-xs text-text-tertiary sm:text-right sm:max-w-[45%] truncate">{extra}</div> : null}
+      </div>
+    </div>
   );
 }
