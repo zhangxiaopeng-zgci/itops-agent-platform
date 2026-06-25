@@ -136,6 +136,15 @@ test.describe('AIOps Agent pilot acceptance smoke', () => {
     expect(bridgeBody.data.clusters.registered).toBeGreaterThan(0);
     expect(bridgeBody.data.kite.initialized).toBe(true);
     expect(typeof bridgeBody.data.kite.loginRequired).toBe('boolean');
+
+    const sessionResponse = await api.post('/api/kite-bridge/session');
+    expect(sessionResponse.ok()).toBeTruthy();
+    expect(sessionResponse.headers()['set-cookie']).toContain('auth_token=');
+
+    const authedKiteResponse = await api.get(`${kiteBase}/api/v1/bootstrap`);
+    expect(authedKiteResponse.ok()).toBeTruthy();
+    const authedKiteBody = await authedKiteResponse.json();
+    expect(authedKiteBody.user?.username).toBe('admin');
     await api.dispose();
   });
 

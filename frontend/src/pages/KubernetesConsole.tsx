@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Boxes,
@@ -36,6 +36,7 @@ interface KiteBridgeStatus {
     authProviders: string[];
     userPresent: boolean;
     loginRequired: boolean;
+    sessionBridgeConfigured: boolean;
     error?: string | null;
   };
   bridge: {
@@ -67,6 +68,8 @@ export default function KubernetesConsole() {
   const { user } = useAuth();
   const kiteUrl = useMemo(() => getKiteUrl(), []);
   const canSyncKite = user?.role === 'admin' || user?.role === 'operator';
+  const canCreateKiteSession = canSyncKite;
+  const [kiteFrameNonce, setKiteFrameNonce] = useState(0);
 
   const { data: bridgeStatus, isLoading } = useQuery({
     queryKey: ['kite-bridge-status'],
@@ -91,12 +94,46 @@ export default function KubernetesConsole() {
     },
   });
 
+  const sessionMutation = useMutation({
+    mutationFn: async () => {
+      const res = await api.post('/api/kite-bridge/session');
+      return res.data.data as { publicUrl?: string | null; username: string; userPresent: boolean };
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['kite-bridge-status'] });
+      setKiteFrameNonce(Date.now());
+      toast.success(t('kubernetesConsole.bridge.sessionCreated'));
+    },
+    onError: (error: unknown) => {
+      toast.error(error instanceof Error ? error.message : t('kubernetesConsole.bridge.sessionFailed'));
+    },
+  });
+
   const eligibleClusters = bridgeStatus?.clusters.items.filter((cluster) => (
     cluster.enabled === 1
     && cluster.auth_type === 'kubeconfig'
     && cluster.has_kubeconfig === 1
   )) || [];
   const selectedClusterId = bridgeStatus?.bridge.syncedClusterId || eligibleClusters[0]?.id || null;
+  const openKite = async () => {
+    const target = window.open('about:blank', '_blank', 'noopener,noreferrer');
+    const fallbackUrl = bridgeStatus?.kite.publicUrl || kiteUrl;
+
+    if (!canCreateKiteSession || !bridgeStatus?.kite.sessionBridgeConfigured) {
+      if (target) target.location.href = fallbackUrl;
+      return;
+    }
+
+    try {
+      const result = await sessionMutation.mutateAsync();
+      if (target) target.location.href = result.publicUrl || fallbackUrl;
+    } catch {
+      if (target) target.location.href = fallbackUrl;
+    }
+  };
+  const frameUrl = kiteFrameNonce > 0
+    ? `${kiteUrl}${kiteUrl.includes('?') ? '&' : '?'}aioSession=${kiteFrameNonce}`
+    : kiteUrl;
 
   return (
     <div className="h-full overflow-auto p-6">
@@ -111,15 +148,15 @@ export default function KubernetesConsole() {
               <p className="text-text-secondary mt-1">{t('kubernetesConsole.subtitle')}</p>
             </div>
           </div>
-          <a
-            href={bridgeStatus?.kite.publicUrl || kiteUrl}
-            target="_blank"
-            rel="noreferrer"
+          <button
+            type="button"
+            onClick={openKite}
+            disabled={sessionMutation.isPending}
             className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-primary text-white hover:bg-primary/90 transition-colors"
           >
             <ExternalLink className="w-4 h-4" />
-            {t('kubernetesConsole.open')}
-          </a>
+            {sessionMutation.isPending ? t('kubernetesConsole.bridge.creatingSession') : t('kubernetesConsole.open')}
+          </button>
         </div>
 
         <section className="bg-surface border border-border rounded-lg p-5">
@@ -136,6 +173,14 @@ export default function KubernetesConsole() {
             >
               <RefreshCw className={`w-4 h-4 ${syncMutation.isPending ? 'animate-spin' : ''}`} />
               {syncMutation.isPending ? t('kubernetesConsole.bridge.syncing') : t('kubernetesConsole.bridge.sync')}
+            </button>
+            <button
+              onClick={() => sessionMutation.mutate()}
+              disabled={!canCreateKiteSession || !bridgeStatus?.kite.sessionBridgeConfigured || sessionMutation.isPending}
+              className="inline-flex items-center justify-center gap-2 rounded-lg border border-border px-3 py-2 text-sm font-semibold text-text-primary hover:bg-background disabled:opacity-50"
+            >
+              <ShieldCheck className="w-4 h-4" />
+              {sessionMutation.isPending ? t('kubernetesConsole.bridge.creatingSession') : t('kubernetesConsole.bridge.createSession')}
             </button>
           </div>
 
@@ -162,7 +207,11 @@ export default function KubernetesConsole() {
               ok={Boolean(bridgeStatus?.kite.initialized)}
               label={t('kubernetesConsole.bridge.kiteReady')}
               value={bridgeStatus?.kite.reachable ? t('common.online') : t('common.offline')}
-              helper={bridgeStatus?.kite.loginRequired ? t('kubernetesConsole.bridge.loginRequired') : t('kubernetesConsole.bridge.sessionReady')}
+              helper={
+                bridgeStatus?.kite.loginRequired
+                  ? (bridgeStatus?.kite.sessionBridgeConfigured ? t('kubernetesConsole.bridge.sessionBridgeReady') : t('kubernetesConsole.bridge.loginRequired'))
+                  : t('kubernetesConsole.bridge.sessionReady')
+              }
             />
           </div>
 
@@ -244,7 +293,7 @@ export default function KubernetesConsole() {
           </div>
           <iframe
             title="Kite Kubernetes Console"
-            src={kiteUrl}
+            src={frameUrl}
             className="w-full min-h-[680px] bg-background"
           />
         </div>

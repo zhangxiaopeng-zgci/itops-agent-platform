@@ -35,6 +35,8 @@ services:
       HERMES_WORKER_FALLBACK_ENABLED: ${HERMES_WORKER_FALLBACK_ENABLED:-true}
       KITE_URL: ${KITE_URL:-http://kite:8080}
       KITE_PUBLIC_URL: ${KITE_PUBLIC_URL:-http://10.1.132.58:3002}
+      KITE_USERNAME: ${KITE_USERNAME:-admin}
+      KITE_PASSWORD: ${KITE_PASSWORD:?KITE_PASSWORD must be set}
       KITE_DATA_DIR: /app/kite-data
       KITE_BOOTSTRAP_DIR: /app/kite-bootstrap
       KITE_BOOTSTRAP_KUBECONFIG: /app/kite-bootstrap/kubeconfig

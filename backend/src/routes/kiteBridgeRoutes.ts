@@ -31,4 +31,22 @@ router.post('/sync-bootstrap', requireRole('admin', 'operator'), validateBody(sy
   }
 });
 
+router.post('/session', requireRole('admin', 'operator'), async (_req: Request, res: Response) => {
+  try {
+    const result = await kiteBridgeService.createSession();
+    res.setHeader('Set-Cookie', result.cookieHeaders);
+    res.json({
+      success: true,
+      data: {
+        publicUrl: result.publicUrl,
+        username: result.username,
+        userPresent: result.userPresent,
+      },
+    });
+  } catch (error) {
+    logger.error('Failed to create Kite bridge session', error as Error);
+    res.status(400).json({ success: false, error: error instanceof Error ? error.message : 'Failed to create Kite bridge session' });
+  }
+});
+
 export default router;

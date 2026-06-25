@@ -38,6 +38,21 @@ interface KiteBootstrapResponse {
   user?: unknown;
 }
 
+interface KiteHttpResponse<T> {
+  statusCode: number;
+  data: T | null;
+  headers: http.IncomingHttpHeaders;
+  rawBody: string;
+  error?: string;
+}
+
+interface KiteSessionResult {
+  publicUrl: string | null;
+  username: string;
+  userPresent: boolean;
+  cookieHeaders: string[];
+}
+
 function getBootstrapDir(): string {
   return process.env.KITE_BOOTSTRAP_DIR || '/app/kite-bootstrap';
 }
@@ -67,19 +82,35 @@ function getKitePublicUrl(): string | null {
   return process.env.KITE_PUBLIC_URL || null;
 }
 
-function requestJson<T>(url: string, timeoutMs = 5000): Promise<{ statusCode: number; data: T | null; error?: string }> {
+function requestJson<T>(
+  url: string,
+  timeoutMs = 5000,
+  options: {
+    method?: string;
+    headers?: Record<string, string>;
+    body?: unknown;
+  } = {}
+): Promise<KiteHttpResponse<T>> {
   return new Promise((resolve) => {
     const target = new URL(url);
     const client = target.protocol === 'https:' ? https : http;
-    const req = client.request(target, { method: 'GET', timeout: timeoutMs }, (res) => {
+    const body = options.body === undefined ? null : JSON.stringify(options.body);
+    const headers: Record<string, string> = {
+      ...(options.headers || {}),
+    };
+    if (body) {
+      headers['Content-Type'] = 'application/json';
+      headers['Content-Length'] = Buffer.byteLength(body).toString();
+    }
+    const req = client.request(target, { method: options.method || 'GET', headers, timeout: timeoutMs }, (res) => {
       const chunks: Buffer[] = [];
       res.on('data', (chunk) => chunks.push(Buffer.from(chunk)));
       res.on('end', () => {
-        const body = Buffer.concat(chunks).toString('utf8');
+        const rawBody = Buffer.concat(chunks).toString('utf8');
         try {
-          resolve({ statusCode: res.statusCode || 0, data: body ? JSON.parse(body) as T : null });
+          resolve({ statusCode: res.statusCode || 0, data: rawBody ? JSON.parse(rawBody) as T : null, headers: res.headers, rawBody });
         } catch (error) {
-          resolve({ statusCode: res.statusCode || 0, data: null, error: error instanceof Error ? error.message : 'Invalid JSON response' });
+          resolve({ statusCode: res.statusCode || 0, data: null, headers: res.headers, rawBody, error: error instanceof Error ? error.message : 'Invalid JSON response' });
         }
       });
     });
@@ -87,10 +118,19 @@ function requestJson<T>(url: string, timeoutMs = 5000): Promise<{ statusCode: nu
       req.destroy(new Error('Kite request timed out'));
     });
     req.on('error', (error) => {
-      resolve({ statusCode: 0, data: null, error: error.message });
+      resolve({ statusCode: 0, data: null, headers: {}, rawBody: '', error: error.message });
     });
+    if (body) {
+      req.write(body);
+    }
     req.end();
   });
+}
+
+function getSetCookieHeaders(headers: http.IncomingHttpHeaders): string[] {
+  const value = headers['set-cookie'];
+  if (!value) return [];
+  return Array.isArray(value) ? value : [value];
 }
 
 class KiteBridgeService {
@@ -148,6 +188,7 @@ class KiteBridgeService {
         authProviders: kiteBootstrap.data?.auth?.providers || [],
         userPresent: Boolean(kiteBootstrap.data?.user),
         loginRequired,
+        sessionBridgeConfigured: Boolean(process.env.KITE_PASSWORD),
       },
       bridge: {
         bootstrapDir: getBootstrapDir(),
@@ -217,6 +258,53 @@ class KiteBridgeService {
     };
     fs.writeFileSync(getBootstrapMetaPath(), `${JSON.stringify(meta, null, 2)}\n`, { mode: 0o600 });
     return meta;
+  }
+
+  async createSession(): Promise<KiteSessionResult> {
+    const kiteUrl = getKiteUrl();
+    if (!kiteUrl) {
+      throw new Error('KITE_URL is not configured');
+    }
+
+    const username = process.env.KITE_USERNAME || 'admin';
+    const password = process.env.KITE_PASSWORD;
+    if (!password) {
+      throw new Error('KITE_PASSWORD is not configured for Kite session bridge');
+    }
+
+    const baseUrl = kiteUrl.replace(/\/+$/, '');
+    const login = await requestJson<unknown>(`${baseUrl}/api/auth/login/password`, 8000, {
+      method: 'POST',
+      body: { username, password },
+    });
+
+    if (login.statusCode !== 204 && (login.statusCode < 200 || login.statusCode >= 300)) {
+      let message = `Kite login failed with status ${login.statusCode}`;
+      if (login.data && typeof login.data === 'object' && 'error' in login.data) {
+        message = String((login.data as { error?: unknown }).error || message);
+      } else if (login.rawBody) {
+        message = login.rawBody.slice(0, 200);
+      }
+      throw new Error(message);
+    }
+
+    const cookieHeaders = getSetCookieHeaders(login.headers);
+    if (cookieHeaders.length === 0) {
+      throw new Error('Kite login did not return a session cookie');
+    }
+
+    const bootstrap = await requestJson<KiteBootstrapResponse>(`${baseUrl}/api/v1/bootstrap`, 5000, {
+      headers: {
+        Cookie: cookieHeaders.map((cookie) => cookie.split(';')[0]).join('; '),
+      },
+    });
+
+    return {
+      publicUrl: getKitePublicUrl(),
+      username,
+      userPresent: Boolean(bootstrap.data?.user),
+      cookieHeaders,
+    };
   }
 }
 
