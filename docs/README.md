@@ -30,6 +30,7 @@ ITOps Agent Platform 所有技术文档集合。
 - [云原生 AIOps 平台演进计划](./AIOPS_CLOUD_NATIVE_PLATFORM_EVOLUTION_PLAN_20260618.md) — 从功能集合升级为基础设施与 Kubernetes 一体化 AIOps 工作台的阶段规划
 - [平台功能收口评审](./PLATFORM_CLOSURE_REVIEW_20260618.md) — 运行态验证、重复入口梳理、测试基线和产品化收口建议
 - [平台信息架构收敛](./PLATFORM_INFORMATION_ARCHITECTURE_CONVERGENCE_20260618.md) — 按操作者任务重组诊断、执行、资产、控制台和进化治理入口
+- [平台当前收口基线](./PLATFORM_CLOSURE_BASELINE_20260625.md) — 暂停横向加功能后的 Pilot 可用闭环、入口收敛、权限边界和下一步收口清单
 
 ### 👩‍💻 开发文档
 
