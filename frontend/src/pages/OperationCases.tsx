@@ -16,6 +16,7 @@ import {
   RefreshCw,
   ShieldAlert,
   TerminalSquare,
+  type LucideIcon,
 } from 'lucide-react';
 import clsx from 'clsx';
 import api from '../lib/api';
@@ -92,6 +93,15 @@ interface OperationCaseDetailResponse {
   case: OperationCase;
   events: OperationCaseEvent[];
   trace?: CorrelationTrace;
+}
+
+interface CaseNextAction {
+  icon: LucideIcon;
+  title: string;
+  description: string;
+  cta: string;
+  path: string;
+  tone: 'primary' | 'warning' | 'danger' | 'success';
 }
 
 const statusOrder: CaseStatus[] = [
@@ -203,6 +213,123 @@ function eventIcon(eventType: string) {
   return History;
 }
 
+function readRecordString(record: Record<string, unknown>, key: string): string | null {
+  return readString(record[key]);
+}
+
+function buildHermesPath(operationCase: OperationCase, mode: 'diagnose' | 'remediate' | 'review') {
+  const params = new URLSearchParams();
+  params.set('mode', mode);
+  params.set('caseId', operationCase.id);
+  if (operationCase.correlation_id) params.set('correlationId', operationCase.correlation_id);
+  return `/hermes?${params.toString()}`;
+}
+
+function buildNextAction(
+  operationCase: OperationCase,
+  trace: CorrelationTrace | undefined,
+  t: (key: MessageKey, values?: Record<string, string | number>) => string
+): CaseNextAction {
+  const approvals = toArray<Record<string, unknown>>(trace?.approvals);
+  const tasks = toArray<Record<string, unknown>>(trace?.tasks);
+  const proposals = toArray<Record<string, unknown>>(trace?.proposals);
+  const pendingApproval = approvals.find((item) => readRecordString(item, 'status') === 'pending');
+  if (pendingApproval) {
+    const id = readRecordString(pendingApproval, 'id') || '';
+    return {
+      icon: ShieldAlert,
+      title: t('operationCases.next.pendingApproval.title'),
+      description: t('operationCases.next.pendingApproval.description'),
+      cta: t('operationCases.next.pendingApproval.action'),
+      path: `/tool-approvals?approvalId=${encodeURIComponent(id)}`,
+      tone: 'warning',
+    };
+  }
+
+  const failedTask = tasks.find((item) => readRecordString(item, 'status') === 'failed');
+  if (failedTask) {
+    const id = readRecordString(failedTask, 'id') || '';
+    return {
+      icon: AlertTriangle,
+      title: t('operationCases.next.failedTask.title'),
+      description: t('operationCases.next.failedTask.description'),
+      cta: t('operationCases.next.failedTask.action'),
+      path: `/tasks?taskId=${encodeURIComponent(id)}`,
+      tone: 'danger',
+    };
+  }
+
+  const activeTask = tasks.find((item) => ['pending', 'running', 'paused'].includes(readRecordString(item, 'status') || ''));
+  if (activeTask) {
+    const id = readRecordString(activeTask, 'id') || '';
+    return {
+      icon: GitBranch,
+      title: t('operationCases.next.activeTask.title'),
+      description: t('operationCases.next.activeTask.description'),
+      cta: t('operationCases.next.activeTask.action'),
+      path: `/tasks?taskId=${encodeURIComponent(id)}`,
+      tone: 'primary',
+    };
+  }
+
+  const pendingProposal = proposals.find((item) => ['draft', 'pending', 'reviewing', 'staged'].includes(readRecordString(item, 'status') || ''));
+  if (pendingProposal) {
+    const id = readRecordString(pendingProposal, 'id') || '';
+    return {
+      icon: Lightbulb,
+      title: t('operationCases.next.proposal.title'),
+      description: t('operationCases.next.proposal.description'),
+      cta: t('operationCases.next.proposal.action'),
+      path: `/evolution-proposals?proposalId=${encodeURIComponent(id)}`,
+      tone: 'primary',
+    };
+  }
+
+  if (operationCase.status === 'closed') {
+    return {
+      icon: CheckCircle2,
+      title: t('operationCases.next.closed.title'),
+      description: t('operationCases.next.closed.description'),
+      cta: t('operationCases.action.openTrace'),
+      path: operationCase.correlation_id
+        ? `/hermes-dashboard?correlationId=${encodeURIComponent(operationCase.correlation_id)}`
+        : '/hermes-dashboard',
+      tone: 'success',
+    };
+  }
+
+  if (operationCase.status === 'diagnosing' || operationCase.status === 'diagnosis_ready') {
+    return {
+      icon: Bot,
+      title: t('operationCases.next.diagnose.title'),
+      description: t('operationCases.next.diagnose.description'),
+      cta: t('operationCases.next.diagnose.action'),
+      path: buildHermesPath(operationCase, 'diagnose'),
+      tone: 'primary',
+    };
+  }
+
+  if (operationCase.status === 'approval_pending' || operationCase.status === 'executing' || operationCase.status === 'verifying') {
+    return {
+      icon: Bot,
+      title: t('operationCases.next.remediate.title'),
+      description: t('operationCases.next.remediate.description'),
+      cta: t('operationCases.next.remediate.action'),
+      path: buildHermesPath(operationCase, 'remediate'),
+      tone: 'warning',
+    };
+  }
+
+  return {
+    icon: Bot,
+    title: t('operationCases.next.review.title'),
+    description: t('operationCases.next.review.description'),
+    cta: t('operationCases.next.review.action'),
+    path: buildHermesPath(operationCase, 'review'),
+    tone: 'primary',
+  };
+}
+
 export default function OperationCases() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -266,14 +393,11 @@ export default function OperationCases() {
   }, [t, trace]);
 
   const currentStatusIndex = selectedCase ? statusOrder.indexOf(selectedCase.status) : -1;
+  const nextAction = selectedCase ? buildNextAction(selectedCase, trace, t) : null;
 
   const openHermes = () => {
     if (!selectedCase) return;
-    const params = new URLSearchParams();
-    params.set('mode', selectedCase.status === 'evolving' ? 'review' : 'diagnose');
-    params.set('caseId', selectedCase.id);
-    if (selectedCase.correlation_id) params.set('correlationId', selectedCase.correlation_id);
-    navigate(`/hermes?${params.toString()}`);
+    navigate(buildHermesPath(selectedCase, selectedCase.status === 'evolving' ? 'review' : 'diagnose'));
   };
 
   return (
@@ -411,6 +535,10 @@ export default function OperationCases() {
                 <Fact label={t('operationCases.field.source')} value={selectedCase.source || '-'} />
               </div>
 
+              {nextAction && (
+                <NextActionPanel action={nextAction} onNavigate={(path) => navigate(path)} title={t('operationCases.next.title')} helper={t('operationCases.next.helper')} />
+              )}
+
               <div className="rounded-lg border border-border bg-background/35 p-4">
                 <div className="flex items-center justify-between gap-3 mb-4">
                   <h3 className="text-sm font-semibold text-text-primary">{t('operationCases.stage.title')}</h3>
@@ -514,6 +642,50 @@ export default function OperationCases() {
             </div>
           )}
         </section>
+      </div>
+    </div>
+  );
+}
+
+function NextActionPanel({
+  action,
+  title,
+  helper,
+  onNavigate,
+}: {
+  action: CaseNextAction;
+  title: string;
+  helper: string;
+  onNavigate: (path: string) => void;
+}) {
+  const Icon = action.icon;
+  return (
+    <div className={clsx(
+      'rounded-lg border p-4',
+      action.tone === 'warning' && 'border-amber-500/30 bg-amber-500/10',
+      action.tone === 'danger' && 'border-red-500/30 bg-red-500/10',
+      action.tone === 'success' && 'border-emerald-500/30 bg-emerald-500/10',
+      action.tone === 'primary' && 'border-primary/25 bg-primary/5'
+    )}>
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex items-start gap-3 min-w-0">
+          <div className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-border bg-surface">
+            <Icon className="w-5 h-5 text-primary" />
+          </div>
+          <div className="min-w-0">
+            <p className="text-xs font-medium uppercase tracking-wide text-text-tertiary">{title}</p>
+            <h3 className="mt-1 text-base font-semibold text-text-primary">{action.title}</h3>
+            <p className="mt-1 text-sm text-text-secondary">{action.description}</p>
+            <p className="mt-2 text-xs text-text-tertiary">{helper}</p>
+          </div>
+        </div>
+        <button
+          onClick={() => onNavigate(action.path)}
+          className="inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-semibold text-white hover:bg-primary/90 whitespace-nowrap"
+        >
+          {action.cta}
+          <ArrowRight className="w-4 h-4" />
+        </button>
       </div>
     </div>
   );
