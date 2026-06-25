@@ -53,6 +53,15 @@ interface ActionItem {
   icon: typeof Wrench;
 }
 
+interface ExecutionFocus {
+  titleKey: MessageKey;
+  descriptionKey: MessageKey;
+  ctaKey: MessageKey;
+  href: string;
+  icon: typeof Wrench;
+  tone: string;
+}
+
 function toArray<T>(value: unknown, keys: string[] = []): T[] {
   if (Array.isArray(value)) return value as T[];
   if (value && typeof value === 'object') {
@@ -87,6 +96,16 @@ function HandoffFact({ label, value }: { label: string; value: string }) {
     <div className="rounded-lg border border-border bg-background/40 p-3 min-w-0">
       <p className="text-xs text-text-secondary">{label}</p>
       <p className="mt-1 text-sm font-medium text-text-primary break-words">{value}</p>
+    </div>
+  );
+}
+
+function ExecutionQueueCard({ label, value, helper }: { label: string; value: number; helper: string }) {
+  return (
+    <div className="rounded-lg border border-border bg-surface p-3 min-w-0">
+      <p className="text-xs text-text-secondary">{label}</p>
+      <p className="mt-2 text-xl font-semibold text-text-primary">{value}</p>
+      <p className="mt-1 text-xs text-text-tertiary">{helper}</p>
     </div>
   );
 }
@@ -160,9 +179,45 @@ export default function ExecutionCenter() {
   const hasHandoffContext = Boolean(assetId || assetType || serverIds.length > 0);
 
   const runningTasks = tasks.filter((task) => task.status === 'running').length;
+  const failedTasks = tasks.filter((task) => task.status === 'failed').length;
   const pendingApprovals = approvals.filter((approval) => approval.status === 'pending').length;
   const workflowTemplates = workflows.filter((workflow) => workflow.is_template === 1).length;
   const failedExecutions = executions.filter((execution) => execution.status === 'failed').length;
+  const executionFocus: ExecutionFocus = pendingApprovals > 0
+    ? {
+      titleKey: 'executionCenter.focus.approval.title',
+      descriptionKey: 'executionCenter.focus.approval.desc',
+      ctaKey: 'executionCenter.focus.approval.cta',
+      href: '/tool-approvals',
+      icon: ShieldAlert,
+      tone: 'border-amber-500/30 bg-amber-500/10',
+    }
+    : failedTasks > 0 || failedExecutions > 0
+      ? {
+        titleKey: 'executionCenter.focus.failure.title',
+        descriptionKey: 'executionCenter.focus.failure.desc',
+        ctaKey: 'executionCenter.focus.failure.cta',
+        href: failedTasks > 0 ? '/tasks' : '/remediation-executions',
+        icon: RefreshCw,
+        tone: 'border-red-500/30 bg-red-500/10',
+      }
+      : runningTasks > 0
+        ? {
+          titleKey: 'executionCenter.focus.running.title',
+          descriptionKey: 'executionCenter.focus.running.desc',
+          ctaKey: 'executionCenter.focus.running.cta',
+          href: '/tasks',
+          icon: Play,
+          tone: 'border-sky-500/30 bg-sky-500/10',
+        }
+        : {
+          titleKey: 'executionCenter.focus.ready.title',
+          descriptionKey: 'executionCenter.focus.ready.desc',
+          ctaKey: 'executionCenter.focus.ready.cta',
+          href: '/remediation-workbench',
+          icon: Wrench,
+          tone: 'border-emerald-500/30 bg-emerald-500/10',
+        };
 
   const statusCards = [
     {
@@ -286,6 +341,50 @@ export default function ExecutionCenter() {
             </div>
           ))}
         </div>
+
+        <section className={`rounded-lg border p-5 ${executionFocus.tone}`}>
+          <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
+            <div className="min-w-0">
+              <div className="flex items-start gap-3">
+                <div className="w-10 h-10 rounded-lg bg-surface border border-border text-primary flex items-center justify-center flex-shrink-0">
+                  <executionFocus.icon className="w-5 h-5" />
+                </div>
+                <div>
+                  <p className="text-xs font-medium uppercase tracking-wide text-text-tertiary">{t('executionCenter.focus.eyebrow')}</p>
+                  <h2 className="mt-1 text-base font-semibold text-text-primary">{t(executionFocus.titleKey)}</h2>
+                  <p className="mt-1 text-sm text-text-secondary">{t(executionFocus.descriptionKey)}</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-3 xl:min-w-[420px]">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <ExecutionQueueCard
+                  label={t('executionCenter.focus.queue.approvals')}
+                  value={pendingApprovals}
+                  helper={t('executionCenter.focus.queue.approvalsHelper')}
+                />
+                <ExecutionQueueCard
+                  label={t('executionCenter.focus.queue.tasks')}
+                  value={runningTasks + failedTasks}
+                  helper={t('executionCenter.focus.queue.tasksHelper')}
+                />
+                <ExecutionQueueCard
+                  label={t('executionCenter.focus.queue.verification')}
+                  value={failedExecutions}
+                  helper={t('executionCenter.focus.queue.verificationHelper')}
+                />
+              </div>
+              <button
+                onClick={() => navigate(executionFocus.href)}
+                className="inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-semibold text-white hover:bg-primary/90"
+              >
+                {t(executionFocus.ctaKey)}
+                <ArrowRight className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        </section>
 
         {hasHandoffContext && (
           <div className="bg-surface border border-border rounded-lg p-5">

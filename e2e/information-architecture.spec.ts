@@ -46,6 +46,7 @@ test.describe('information architecture', () => {
 
     await page.goto('/execution-center');
     await expect(page.locator('body')).toContainText(/执行链路|Execution Flow/);
+    await expect(page.locator('body')).toContainText(/推荐动作|Recommended Action/);
     await expect(page.locator('body')).toContainText(/生产变更门禁|Production Change Gate/);
   });
 
