@@ -6,6 +6,7 @@
 #   /opt/itops-agent-platform/backups
 #   /opt/itops-agent-platform/secrets
 #   /opt/itops-agent-platform/kite-data
+#   /opt/itops-agent-platform/kite-bootstrap
 
 services:
   backend:
@@ -90,8 +91,12 @@ services:
     environment:
       DB_DSN: /data/db.sqlite
       KITE_ENCRYPT_KEY: ${KITE_ENCRYPT_KEY:?KITE_ENCRYPT_KEY must be set}
+      KITE_USERNAME: ${KITE_USERNAME:-admin}
+      KITE_PASSWORD: ${KITE_PASSWORD:?KITE_PASSWORD must be set}
+      KUBECONFIG: /bootstrap/kubeconfig
     volumes:
       - /opt/itops-agent-platform/kite-data:/data
+      - /opt/itops-agent-platform/kite-bootstrap:/bootstrap:ro
     networks:
       itops-runtime:
         aliases:

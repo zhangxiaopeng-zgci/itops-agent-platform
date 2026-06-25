@@ -1,6 +1,7 @@
 import { expect, request, test, type APIRequestContext, type Page } from '@playwright/test';
 
 const apiBase = (process.env.E2E_API_BASE || 'http://10.1.132.58:3001').replace(/\/$/, '');
+const kiteBase = (process.env.E2E_KITE_BASE || 'http://10.1.132.58:3002').replace(/\/$/, '');
 const username = process.env.E2E_USERNAME || 'admin';
 const password = process.env.E2E_PASSWORD || 'Admin@123';
 
@@ -117,6 +118,16 @@ test.describe('AIOps Agent pilot acceptance smoke', () => {
     expect(preflightBody.data.actions).not.toContain('check_mcp_server_health');
     expect(preflightBody.data.capabilitySummary.channelBundles.count).toBeGreaterThan(0);
     await api.dispose();
+  });
+
+  test('opens Kite without exposing the initial setup flow', async () => {
+    const kite = await request.newContext({ baseURL: kiteBase });
+    const response = await kite.get('/api/v1/bootstrap');
+    expect(response.ok()).toBeTruthy();
+    const body = await response.json();
+    expect(body.setup?.initialized).toBe(true);
+    expect(body.setup?.step).toBe(2);
+    await kite.dispose();
   });
 
   test('opens a pending tool approval deep link generated through the Tool API', async ({ page }) => {

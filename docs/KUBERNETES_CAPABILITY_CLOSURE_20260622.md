@@ -151,6 +151,34 @@ Recommended next steps:
 
 ```text
 Kite lifecycle is still an external container dependency.
+
+### Kite Bootstrap Contract
+
+Kite must not expose its initial setup wizard to AIOps operators. The platform owns the entry point and should prepare Kite before the user opens the Kubernetes Console.
+
+Deployment contract:
+
+- `docker-compose.hermes.yml` sets `KITE_USERNAME`, `KITE_PASSWORD`, and `KUBECONFIG` for the Kite container.
+- `KITE_PASSWORD` must come from the deployment `.env`, not from source control.
+- `/opt/itops-agent-platform/kite-bootstrap/kubeconfig` is mounted read-only into Kite as `/bootstrap/kubeconfig`.
+- On first start, Kite creates the super user from `KITE_USERNAME` / `KITE_PASSWORD` and imports clusters from `KUBECONFIG`.
+- After initialization, `GET /api/v1/bootstrap` should report `setup.initialized=true`.
+
+Before recreating Kite from an empty database, export the platform-managed kubeconfig:
+
+```bash
+docker run --rm -i \
+  -e NODE_PATH=/app/node_modules \
+  -e DATABASE_PATH=/app/data/app.db \
+  -e KITE_BOOTSTRAP_DIR=/app/kite-bootstrap \
+  -v /opt/itops-agent-platform/data:/app/data \
+  -v /opt/itops-agent-platform/kite-bootstrap:/app/kite-bootstrap \
+  -v /opt/itops-agent-platform/app/scripts:/app/scripts:ro \
+  -w /app app-backend:latest \
+  node /app/scripts/export-kite-bootstrap-kubeconfig.mjs
+```
+
+This keeps Kite as the Kubernetes visual console without requiring every operator to understand or complete Kite's own initial setup flow.
 The Kubernetes API sync baseline supports common token and kubeconfig paths, not every enterprise auth mode.
 Cluster resource operations are intentionally not first-class AIOps actions yet.
 Credential rotation policy is basic and should later be folded into the central credential governance model.
