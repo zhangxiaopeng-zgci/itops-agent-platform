@@ -570,55 +570,72 @@ export default function OperationCases() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
-                <Fact label={t('operationCases.field.correlation')} value={selectedCase.correlation_id || '-'} />
-                <Fact label={t('operationCases.field.asset')} value={selectedCase.asset_name || selectedCase.asset_id || '-'} />
-                <Fact label={t('operationCases.field.alert')} value={selectedCase.alert_id || '-'} />
-                <Fact label={t('operationCases.field.source')} value={selectedCase.source || '-'} />
-              </div>
-
               {nextAction && (
                 <NextActionPanel action={nextAction} onNavigate={(path) => navigate(path)} title={t('operationCases.next.title')} helper={t('operationCases.next.helper')} />
               )}
 
-              <div className="rounded-lg border border-border bg-background/35 p-4">
-                <div className="flex items-center justify-between gap-3 mb-4">
-                  <h3 className="text-sm font-semibold text-text-primary">{t('operationCases.stage.title')}</h3>
+              <section className="rounded-lg border border-border bg-background/35 p-4">
+                <div className="flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
+                  <div>
+                    <h3 className="text-sm font-semibold text-text-primary">{t('operationCases.snapshot.title')}</h3>
+                    <p className="mt-1 text-xs text-text-secondary">{t('operationCases.snapshot.subtitle')}</p>
+                  </div>
                   <span className="text-xs text-text-secondary">{t('operationCases.stage.auto')}</span>
                 </div>
-                <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-8 gap-2">
-                  {statusOrder.map((item, index) => {
-                    const done = selectedCase.status === 'closed' || (currentStatusIndex >= 0 && index <= currentStatusIndex);
-                    const active = selectedCase.status === item;
-                    return (
-                      <div
-                        key={item}
-                        className={clsx(
-                          'rounded-lg border px-2 py-3 text-center min-h-[72px]',
-                          active
-                            ? 'border-primary bg-primary/10 text-primary'
-                            : done
-                              ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-500'
-                              : 'border-border bg-surface text-text-tertiary'
-                        )}
-                      >
-                        <CheckCircle2 className="w-4 h-4 mx-auto mb-2" />
-                        <div className="text-[11px] font-semibold leading-tight">{t(statusLabelKeys[item])}</div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
 
-              <div className="grid grid-cols-2 lg:grid-cols-6 gap-3">
-                {metrics.map((metric) => (
-                  <div key={metric.label} className="rounded-lg border border-border bg-background/35 p-3">
-                    <metric.icon className="w-4 h-4 text-primary" />
-                    <p className="mt-2 text-xl font-semibold text-text-primary">{metric.value}</p>
-                    <p className="text-xs text-text-secondary">{metric.label}</p>
+                <div className="mt-4 grid grid-cols-1 2xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)] gap-4">
+                  <div>
+                    <div className="flex items-center justify-between gap-3 mb-3">
+                      <h4 className="text-xs font-semibold uppercase tracking-wide text-text-tertiary">{t('operationCases.stage.title')}</h4>
+                    </div>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                      {statusOrder.map((item, index) => {
+                        const done = selectedCase.status === 'closed' || (currentStatusIndex >= 0 && index <= currentStatusIndex);
+                        const active = selectedCase.status === item;
+                        return (
+                          <div
+                            key={item}
+                            className={clsx(
+                              'rounded-lg border px-2 py-3 text-center min-h-[72px]',
+                              active
+                                ? 'border-primary bg-primary/10 text-primary'
+                                : done
+                                  ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-500'
+                                  : 'border-border bg-surface text-text-tertiary'
+                            )}
+                          >
+                            <CheckCircle2 className="w-4 h-4 mx-auto mb-2" />
+                            <div className="text-[11px] font-semibold leading-tight">{t(statusLabelKeys[item])}</div>
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
-                ))}
-              </div>
+
+                  <div>
+                    <h4 className="mb-3 text-xs font-semibold uppercase tracking-wide text-text-tertiary">{t('operationCases.snapshot.facts')}</h4>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 2xl:grid-cols-1 gap-3">
+                      <Fact label={t('operationCases.field.correlation')} value={selectedCase.correlation_id || '-'} />
+                      <Fact label={t('operationCases.field.asset')} value={selectedCase.asset_name || selectedCase.asset_id || '-'} />
+                      <Fact label={t('operationCases.field.alert')} value={selectedCase.alert_id || '-'} />
+                      <Fact label={t('operationCases.field.source')} value={selectedCase.source || '-'} />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-4 border-t border-border pt-4">
+                  <h4 className="mb-3 text-xs font-semibold uppercase tracking-wide text-text-tertiary">{t('operationCases.snapshot.evidence')}</h4>
+                  <div className="grid grid-cols-2 lg:grid-cols-6 gap-3">
+                    {metrics.map((metric) => (
+                      <div key={metric.label} className="rounded-lg border border-border bg-surface p-3">
+                        <metric.icon className="w-4 h-4 text-primary" />
+                        <p className="mt-2 text-xl font-semibold text-text-primary">{metric.value}</p>
+                        <p className="text-xs text-text-secondary">{metric.label}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </section>
 
               <div className="grid grid-cols-1 2xl:grid-cols-[minmax(0,1fr)_340px] gap-5">
                 <div className="rounded-lg border border-border bg-background/35">

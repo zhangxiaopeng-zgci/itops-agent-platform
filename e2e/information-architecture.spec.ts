@@ -37,6 +37,12 @@ test.describe('information architecture', () => {
     await expect(page.locator('body')).toContainText(/Case 闭环主线|Case Closure Flow/);
     await expect(page.locator('body')).toContainText(/Hermes 分析|Hermes Analysis/);
     await expect(page.locator('body')).toContainText(/验证恢复|Verify Recovery/);
+    const hasCaseSnapshot = await page.getByText(/Case 快照|Case Snapshot/).count();
+    if (hasCaseSnapshot > 0) {
+      await expect(page.locator('body')).toContainText(/闭环证据|Closure Evidence/);
+    } else {
+      await expect(page.locator('body')).toContainText(/暂无 Case|No cases yet/);
+    }
 
     await page.goto('/execution-center');
     await expect(page.locator('body')).toContainText(/执行链路|Execution Flow/);
