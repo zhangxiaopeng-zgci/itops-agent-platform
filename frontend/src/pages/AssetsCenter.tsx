@@ -1,3 +1,4 @@
+import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -47,6 +48,17 @@ interface KubernetesCluster {
   pod_count?: number;
 }
 
+interface AssetOption {
+  id: string;
+  rawId: string;
+  name: string;
+  meta: string;
+  type: 'host' | 'network' | 'kubernetes';
+  typeKey: MessageKey;
+  href: string;
+  icon: typeof Server;
+}
+
 function toArray<T>(value: unknown, keys: string[] = []): T[] {
   if (Array.isArray(value)) return value as T[];
   if (value && typeof value === 'object') {
@@ -61,6 +73,7 @@ function toArray<T>(value: unknown, keys: string[] = []): T[] {
 export default function AssetsCenter() {
   const navigate = useNavigate();
   const { t } = useLocale();
+  const [selectedAssetId, setSelectedAssetId] = useState('');
 
   const { data: servers = [] } = useQuery({
     queryKey: ['assets-center', 'servers'],
@@ -176,32 +189,52 @@ export default function AssetsCenter() {
     },
   ];
 
-  const recentAssets = [
+  const recentAssets: AssetOption[] = [
     ...servers.slice(0, 4).map((server) => ({
       id: `server-${server.id}`,
+      rawId: server.id,
       name: server.name,
       meta: server.hostname,
+      type: 'host' as const,
       typeKey: 'assetsCenter.type.host' as MessageKey,
       href: '/servers',
       icon: Server,
     })),
     ...networkDevices.slice(0, 4).map((device) => ({
       id: `network-${device.id}`,
+      rawId: device.id,
       name: device.name,
       meta: device.ip_address,
+      type: 'network' as const,
       typeKey: 'assetsCenter.type.network' as MessageKey,
       href: '/network-devices',
       icon: Network,
     })),
     ...kubernetesClusters.slice(0, 4).map((cluster) => ({
       id: `kubernetes-${cluster.id}`,
+      rawId: cluster.id,
       name: cluster.name,
       meta: `${cluster.node_count || 0} nodes / ${cluster.pod_count || 0} pods`,
+      type: 'kubernetes' as const,
       typeKey: 'assetsCenter.type.kubernetes' as MessageKey,
       href: '/kubernetes-clusters',
       icon: Boxes,
     })),
   ].slice(0, 6);
+  const selectedAsset = useMemo(() => {
+    return recentAssets.find((asset) => asset.id === selectedAssetId) || recentAssets[0] || null;
+  }, [recentAssets, selectedAssetId]);
+  const selectedAssetType = selectedAsset ? t(selectedAsset.typeKey) : '-';
+  const selectedAssetConnectionHref = selectedAsset?.type === 'kubernetes'
+    ? '/kubernetes-console'
+    : selectedAsset?.type === 'host'
+      ? `/terminal?serverId=${encodeURIComponent(selectedAsset.rawId)}`
+      : selectedAsset?.href || '/assets-center';
+  const selectedAssetConnectionLabel = selectedAsset?.type === 'kubernetes'
+    ? t('assetsCenter.focus.openKite')
+    : selectedAsset?.type === 'host'
+      ? t('assetsCenter.focus.openTerminal')
+      : t('assetsCenter.focus.openAsset');
 
   return (
     <div className="h-full overflow-auto p-6">
@@ -248,6 +281,74 @@ export default function AssetsCenter() {
             </button>
           ))}
         </div>
+
+        <section className="bg-surface border border-border rounded-lg p-5">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+            <div className="min-w-0">
+              <p className="text-xs font-medium uppercase tracking-wide text-text-tertiary">{t('assetsCenter.focus.eyebrow')}</p>
+              <h2 className="mt-1 text-lg font-semibold text-text-primary">{t('assetsCenter.focus.title')}</h2>
+              <p className="mt-1 text-sm text-text-secondary">{t('assetsCenter.focus.subtitle')}</p>
+            </div>
+            <button
+              onClick={() => navigate(selectedAsset?.href || '/servers')}
+              disabled={!selectedAsset}
+              className="inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-semibold text-white hover:bg-primary/90 disabled:opacity-50"
+            >
+              <ArrowRight className="w-4 h-4" />
+              {t('assetsCenter.focus.openInventory')}
+            </button>
+          </div>
+
+          <div className="mt-4 grid grid-cols-1 xl:grid-cols-[minmax(260px,0.8fr)_minmax(0,1.2fr)] gap-4">
+            <div className="rounded-lg border border-border bg-background/50 p-4">
+              <label className="block">
+                <span className="text-xs font-medium text-text-secondary">{t('assetsCenter.focus.selectedAsset')}</span>
+                <select
+                  value={selectedAsset?.id || ''}
+                  onChange={(event) => setSelectedAssetId(event.target.value)}
+                  className="mt-2 w-full px-3 py-2 rounded-lg bg-surface border border-border text-text-primary focus:outline-none focus:border-primary"
+                >
+                  {recentAssets.map((asset) => (
+                    <option key={asset.id} value={asset.id}>
+                      {t(asset.typeKey)} - {asset.name}
+                    </option>
+                  ))}
+                  {recentAssets.length === 0 && (
+                    <option value="">{t('assetsCenter.recent.empty')}</option>
+                  )}
+                </select>
+              </label>
+              <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-1 gap-3">
+                <AssetFact label={t('assetsCenter.focus.assetType')} value={selectedAssetType} />
+                <AssetFact label={t('assetsCenter.focus.assetMeta')} value={selectedAsset?.meta || '-'} />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <AssetFocusAction
+                icon={Radar}
+                title={t('assetsCenter.focus.diagnose')}
+                description={t('assetsCenter.focus.diagnoseDesc')}
+                onClick={() => navigate('/diagnosis-center')}
+                disabled={!selectedAsset}
+              />
+              <AssetFocusAction
+                icon={Wrench}
+                title={t('assetsCenter.focus.execute')}
+                description={t('assetsCenter.focus.executeDesc')}
+                onClick={() => navigate('/execution-center')}
+                disabled={!selectedAsset}
+              />
+              <AssetFocusAction
+                icon={selectedAsset?.type === 'kubernetes' ? Boxes : Terminal}
+                title={selectedAssetConnectionLabel}
+                description={selectedAsset?.type === 'kubernetes' ? t('assetsCenter.focus.openKiteDesc') : t('assetsCenter.focus.openTerminalDesc')}
+                onClick={() => navigate(selectedAssetConnectionHref)}
+                disabled={!selectedAsset}
+              />
+            </div>
+          </div>
+        </section>
 
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
           <div className="xl:col-span-2 bg-surface border border-border rounded-lg p-5">
@@ -324,5 +425,42 @@ export default function AssetsCenter() {
         </div>
       </div>
     </div>
+  );
+}
+
+function AssetFact({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg border border-border bg-surface p-3 min-w-0">
+      <p className="text-xs text-text-secondary">{label}</p>
+      <p className="mt-1 text-sm font-medium text-text-primary truncate" title={value}>{value}</p>
+    </div>
+  );
+}
+
+function AssetFocusAction({
+  icon: Icon,
+  title,
+  description,
+  disabled,
+  onClick,
+}: {
+  icon: typeof Server;
+  title: string;
+  description: string;
+  disabled?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      className="text-left rounded-lg border border-border bg-background/50 p-4 hover:border-primary/60 hover:bg-primary/5 disabled:opacity-50 disabled:hover:border-border disabled:hover:bg-background/50 transition-colors"
+    >
+      <div className="w-10 h-10 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
+        <Icon className="w-5 h-5" />
+      </div>
+      <p className="font-semibold text-text-primary mt-4">{title}</p>
+      <p className="text-sm text-text-secondary mt-2">{description}</p>
+    </button>
   );
 }

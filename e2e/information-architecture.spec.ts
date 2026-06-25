@@ -50,6 +50,11 @@ test.describe('information architecture', () => {
     await expect(page.locator('body')).toContainText(/执行链路|Execution Flow/);
     await expect(page.locator('body')).toContainText(/推荐动作|Recommended Action/);
     await expect(page.locator('body')).toContainText(/生产变更门禁|Production Change Gate/);
+
+    await page.goto('/assets-center');
+    await expect(page.locator('body')).toContainText(/资产操作焦点|Asset Operation Focus/);
+    await expect(page.locator('body')).toContainText(/当前资产|Current Asset/);
+    await expect(page.locator('body')).toContainText(/诊断资产|Diagnose Asset/);
   });
 
   test('exposes consolidated primary entries instead of the legacy advanced menu', async ({ page }) => {
