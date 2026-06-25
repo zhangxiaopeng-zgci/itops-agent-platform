@@ -26,6 +26,23 @@ test.describe('information architecture', () => {
     await expect(page).toHaveURL(/\/operation-cases/);
   });
 
+  test('keeps the primary operator pages aligned to the same closed-loop path', async ({ page }) => {
+    await login(page);
+
+    await page.goto('/diagnosis-center');
+    await expect(page.locator('body')).toContainText(/诊断链路|Diagnosis Flow/);
+    await expect(page.locator('body')).toContainText(/带上下文诊断|Diagnose with Context/);
+
+    await page.goto('/operation-cases');
+    await expect(page.locator('body')).toContainText(/Case 闭环主线|Case Closure Flow/);
+    await expect(page.locator('body')).toContainText(/Hermes 分析|Hermes Analysis/);
+    await expect(page.locator('body')).toContainText(/验证恢复|Verify Recovery/);
+
+    await page.goto('/execution-center');
+    await expect(page.locator('body')).toContainText(/执行链路|Execution Flow/);
+    await expect(page.locator('body')).toContainText(/生产变更门禁|Production Change Gate/);
+  });
+
   test('exposes consolidated primary entries instead of the legacy advanced menu', async ({ page }) => {
     await login(page);
 

@@ -394,6 +394,14 @@ export default function OperationCases() {
 
   const currentStatusIndex = selectedCase ? statusOrder.indexOf(selectedCase.status) : -1;
   const nextAction = selectedCase ? buildNextAction(selectedCase, trace, t) : null;
+  const closureSteps = [
+    { labelKey: 'operationCases.flow.detect', helperKey: 'operationCases.flow.detectHelper', path: '/diagnosis-center', icon: AlertTriangle },
+    { labelKey: 'operationCases.flow.case', helperKey: 'operationCases.flow.caseHelper', path: '/operation-cases', icon: ClipboardList },
+    { labelKey: 'operationCases.flow.hermes', helperKey: 'operationCases.flow.hermesHelper', path: selectedCase ? buildHermesPath(selectedCase, 'diagnose') : '/hermes?mode=diagnose', icon: Bot },
+    { labelKey: 'operationCases.flow.execute', helperKey: 'operationCases.flow.executeHelper', path: '/execution-center', icon: ShieldAlert },
+    { labelKey: 'operationCases.flow.verify', helperKey: 'operationCases.flow.verifyHelper', path: '/tasks', icon: CheckCircle2 },
+    { labelKey: 'operationCases.flow.evolve', helperKey: 'operationCases.flow.evolveHelper', path: '/evolution-governance', icon: Lightbulb },
+  ];
 
   const openHermes = () => {
     if (!selectedCase) return;
@@ -431,6 +439,40 @@ export default function OperationCases() {
           </button>
         </div>
       </div>
+
+      <section className="rounded-lg border border-border bg-surface p-5">
+        <div className="flex flex-col gap-2 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <h2 className="text-base font-semibold text-text-primary">{t('operationCases.flow.title')}</h2>
+            <p className="mt-1 text-sm text-text-secondary">{t('operationCases.flow.subtitle')}</p>
+          </div>
+          <button
+            onClick={() => navigate('/diagnosis-center')}
+            className="inline-flex items-center justify-center gap-2 rounded-lg border border-border bg-background px-3 py-2 text-sm font-medium text-text-primary hover:bg-surface-hover"
+          >
+            <AlertTriangle className="w-4 h-4" />
+            {t('operationCases.action.newDiagnosis')}
+          </button>
+        </div>
+        <div className="mt-4 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-6 gap-3">
+          {closureSteps.map((step, index) => (
+            <button
+              key={step.labelKey}
+              onClick={() => navigate(step.path)}
+              className="text-left rounded-lg border border-border bg-background/40 p-3 hover:border-primary/60 hover:bg-primary/5 transition-colors min-h-[118px]"
+            >
+              <div className="flex items-center justify-between gap-3">
+                <div className="w-9 h-9 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
+                  <step.icon className="w-4 h-4" />
+                </div>
+                <span className="text-xs font-semibold text-text-tertiary">{index + 1}</span>
+              </div>
+              <p className="mt-3 text-sm font-semibold text-text-primary">{t(step.labelKey as MessageKey)}</p>
+              <p className="mt-1 text-xs leading-relaxed text-text-secondary">{t(step.helperKey as MessageKey)}</p>
+            </button>
+          ))}
+        </div>
+      </section>
 
       <div className="flex flex-wrap gap-2">
         <FilterButton active={!status} onClick={() => setStatus('')}>{t('common.all')}</FilterButton>
