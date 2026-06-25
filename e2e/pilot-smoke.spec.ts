@@ -120,7 +120,7 @@ test.describe('AIOps Agent pilot acceptance smoke', () => {
     await api.dispose();
   });
 
-  test('opens Kite without exposing the initial setup flow', async () => {
+  test('opens Kite without exposing the initial setup or login flow', async ({ page }) => {
     const kite = await request.newContext({ baseURL: kiteBase });
     const response = await kite.get('/api/v1/bootstrap');
     expect(response.ok()).toBeTruthy();
@@ -146,6 +146,20 @@ test.describe('AIOps Agent pilot acceptance smoke', () => {
     const authedKiteBody = await authedKiteResponse.json();
     expect(authedKiteBody.user?.username).toBe('admin');
     await api.dispose();
+
+    await loginInBrowser(page);
+    await page.goto('/kubernetes-console');
+    const kiteFrame = page.frameLocator('iframe[title="Kite Kubernetes Console"]');
+    await expect(kiteFrame.locator('body')).toContainText(/Overview|Pods|Workloads|概览|工作负载/i, { timeout: 20_000 });
+    await expect(kiteFrame.locator('body')).not.toContainText(/Sign In|Enter your username|登录/i);
+
+    const popupPromise = page.waitForEvent('popup');
+    await page.getByRole('button', { name: /新窗口打开 Kite|Open Kite/i }).click();
+    const popup = await popupPromise;
+    await popup.waitForURL(/:3002\//, { timeout: 20_000 });
+    await expect(popup.locator('body')).toContainText(/Overview|Pods|Workloads|概览|工作负载/i, { timeout: 20_000 });
+    await expect(popup.locator('body')).not.toContainText(/Sign In|Enter your username|登录/i);
+    await popup.close();
   });
 
   test('opens a pending tool approval deep link generated through the Tool API', async ({ page }) => {

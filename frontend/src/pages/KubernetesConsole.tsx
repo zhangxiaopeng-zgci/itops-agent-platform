@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Boxes,
@@ -70,6 +70,7 @@ export default function KubernetesConsole() {
   const canSyncKite = user?.role === 'admin' || user?.role === 'operator';
   const canCreateKiteSession = canSyncKite;
   const [kiteFrameNonce, setKiteFrameNonce] = useState(0);
+  const autoSessionAttemptedRef = useRef(false);
 
   const { data: bridgeStatus, isLoading } = useQuery({
     queryKey: ['kite-bridge-status'],
@@ -115,20 +116,48 @@ export default function KubernetesConsole() {
     && cluster.has_kubeconfig === 1
   )) || [];
   const selectedClusterId = bridgeStatus?.bridge.syncedClusterId || eligibleClusters[0]?.id || null;
+
+  useEffect(() => {
+    if (
+      autoSessionAttemptedRef.current
+      || !canCreateKiteSession
+      || !bridgeStatus?.kite.sessionBridgeConfigured
+      || !bridgeStatus?.kite.loginRequired
+      || sessionMutation.isPending
+    ) {
+      return;
+    }
+
+    autoSessionAttemptedRef.current = true;
+    sessionMutation.mutate();
+  }, [
+    bridgeStatus?.kite.loginRequired,
+    bridgeStatus?.kite.sessionBridgeConfigured,
+    canCreateKiteSession,
+    sessionMutation,
+  ]);
+
   const openKite = async () => {
-    const target = window.open('about:blank', '_blank', 'noopener,noreferrer');
+    const target = window.open('about:blank', '_blank');
     const fallbackUrl = bridgeStatus?.kite.publicUrl || kiteUrl;
+    if (target) {
+      target.document.write(`<title>Kite</title><body style="font-family: sans-serif; padding: 24px;">${t('kubernetesConsole.bridge.creatingSession')}</body>`);
+      target.document.close();
+    }
 
     if (!canCreateKiteSession || !bridgeStatus?.kite.sessionBridgeConfigured) {
       if (target) target.location.href = fallbackUrl;
+      else window.location.href = fallbackUrl;
       return;
     }
 
     try {
       const result = await sessionMutation.mutateAsync();
       if (target) target.location.href = result.publicUrl || fallbackUrl;
+      else window.location.href = result.publicUrl || fallbackUrl;
     } catch {
       if (target) target.location.href = fallbackUrl;
+      else window.location.href = fallbackUrl;
     }
   };
   const frameUrl = kiteFrameNonce > 0
