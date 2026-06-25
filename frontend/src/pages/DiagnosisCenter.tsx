@@ -200,6 +200,33 @@ function ContextMetric({
   );
 }
 
+function DiagnosisFocusStep({
+  index,
+  label,
+  helper,
+  activeLabel,
+  active,
+}: {
+  index: number;
+  label: string;
+  helper: string;
+  activeLabel: string;
+  active: boolean;
+}) {
+  return (
+    <div className={`rounded-lg border p-3 min-h-[104px] ${active ? 'border-primary bg-primary/10' : 'border-border bg-background/40'}`}>
+      <div className="flex items-center justify-between gap-3">
+        <span className={`inline-flex h-7 w-7 items-center justify-center rounded-lg text-xs font-semibold ${active ? 'bg-primary text-white' : 'bg-surface text-text-tertiary border border-border'}`}>
+          {index}
+        </span>
+        {active && <span className="text-xs font-medium text-primary">{activeLabel}</span>}
+      </div>
+      <p className="mt-3 text-sm font-semibold text-text-primary">{label}</p>
+      <p className="mt-1 text-xs leading-relaxed text-text-secondary">{helper}</p>
+    </div>
+  );
+}
+
 export default function DiagnosisCenter() {
   const navigate = useNavigate();
   const { t } = useLocale();
@@ -279,6 +306,28 @@ export default function DiagnosisCenter() {
         .slice(0, 6),
     };
   }, [selectedAsset, topologyEdges, topologyNodes]);
+  const diagnosisFocusSteps = [
+    {
+      labelKey: 'diagnosisCenter.focus.step.select',
+      helperKey: 'diagnosisCenter.focus.step.selectHelper',
+      active: Boolean(selectedAsset),
+    },
+    {
+      labelKey: 'diagnosisCenter.focus.step.context',
+      helperKey: 'diagnosisCenter.focus.step.contextHelper',
+      active: relatedServerIds.length > 0 || topologyImpact.upstream + topologyImpact.downstream > 0 || Boolean(selectedAlert),
+    },
+    {
+      labelKey: 'diagnosisCenter.focus.step.case',
+      helperKey: 'diagnosisCenter.focus.step.caseHelper',
+      active: false,
+    },
+    {
+      labelKey: 'diagnosisCenter.focus.step.handoff',
+      helperKey: 'diagnosisCenter.focus.step.handoffHelper',
+      active: false,
+    },
+  ];
   const contextFacts = useMemo(() => {
     if (!selectedAsset) return [];
     const facts = [
@@ -468,6 +517,43 @@ export default function DiagnosisCenter() {
             {createCaseMutation.isPending ? t('diagnosisCenter.workspace.creatingCase') : t('diagnosisCenter.primaryCta')}
           </button>
         </div>
+
+        <section className="rounded-lg border border-primary/25 bg-primary/5 p-5">
+          <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+            <div className="min-w-0">
+              <div className="flex items-start gap-3">
+                <div className="w-10 h-10 rounded-lg bg-surface border border-border text-primary flex items-center justify-center flex-shrink-0">
+                  <Radar className="w-5 h-5" />
+                </div>
+                <div>
+                  <p className="text-xs font-medium uppercase tracking-wide text-text-tertiary">{t('diagnosisCenter.focus.eyebrow')}</p>
+                  <h2 className="mt-1 text-base font-semibold text-text-primary">{t('diagnosisCenter.focus.title')}</h2>
+                  <p className="mt-1 text-sm text-text-secondary">{t('diagnosisCenter.focus.subtitle')}</p>
+                </div>
+              </div>
+            </div>
+            <button
+              onClick={openHermesDiagnosis}
+              disabled={!selectedAsset || createCaseMutation.isPending}
+              className="inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-semibold text-white hover:bg-primary/90 disabled:opacity-50"
+            >
+              <Brain className="w-4 h-4" />
+              {createCaseMutation.isPending ? t('diagnosisCenter.workspace.creatingCase') : t('diagnosisCenter.focus.cta')}
+            </button>
+          </div>
+          <div className="mt-4 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
+            {diagnosisFocusSteps.map((step, index) => (
+              <DiagnosisFocusStep
+                key={step.labelKey}
+                index={index + 1}
+                label={t(step.labelKey as MessageKey)}
+                helper={t(step.helperKey as MessageKey)}
+                activeLabel={t('diagnosisCenter.focus.active')}
+                active={step.active}
+              />
+            ))}
+          </div>
+        </section>
 
         <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.8fr)] gap-4">
           <div className="bg-surface border border-border rounded-lg p-5">

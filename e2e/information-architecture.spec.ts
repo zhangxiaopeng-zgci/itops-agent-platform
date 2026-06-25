@@ -31,6 +31,8 @@ test.describe('information architecture', () => {
 
     await page.goto('/diagnosis-center');
     await expect(page.locator('body')).toContainText(/诊断链路|Diagnosis Flow/);
+    await expect(page.locator('body')).toContainText(/推荐路径|Recommended Path/);
+    await expect(page.locator('body')).toContainText(/创建 Case 并诊断|Create Case & Diagnose/);
     await expect(page.locator('body')).toContainText(/带上下文诊断|Diagnose with Context/);
 
     await page.goto('/operation-cases');
