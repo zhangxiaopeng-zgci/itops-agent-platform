@@ -18,12 +18,15 @@
     "docker:rebuild": "docker-compose down && docker-compose up -d --build",
     "docker:status": "docker-compose ps",
     "docker:clean": "docker system prune -f",
-    "smoke:api": "node scripts/smoke-api.mjs"
+    "smoke:api": "node scripts/smoke-api.mjs",
+    "test:e2e": "playwright test",
+    "test:e2e:headed": "playwright test --headed"
   },
   "keywords": ["itops", "agent", "automation", "devops"],
   "author": "",
   "license": "MPL-2.0",
   "devDependencies": {
+    "@playwright/test": "1.61.0",
     "concurrently": "^8.2.2"
   }
 }

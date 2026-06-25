@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import {
   AlertTriangle,
@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import api from '../lib/api';
 import { useLocale, type MessageKey } from '../contexts/LocaleContext';
+import { useToast } from '../contexts/ToastContext';
 
 interface AlertItem {
   id: string;
@@ -41,6 +42,11 @@ interface HermesWorker {
   status?: string;
   healthStatus?: string;
   health_status?: string;
+}
+
+interface OperationCase {
+  id: string;
+  correlation_id: string;
 }
 
 interface TopologyPayload {
@@ -197,6 +203,7 @@ function ContextMetric({
 export default function DiagnosisCenter() {
   const navigate = useNavigate();
   const { t } = useLocale();
+  const toast = useToast();
   const [selectedAssetId, setSelectedAssetId] = useState('');
   const [selectedAlertId, setSelectedAlertId] = useState('');
 
@@ -290,7 +297,63 @@ export default function DiagnosisCenter() {
     return facts;
   }, [relatedServers, selectedAlert, selectedAsset, t, topologyImpact.downstream, topologyImpact.upstream]);
 
+  const createCaseMutation = useMutation({
+    mutationFn: async () => {
+      const prompt = buildDiagnosisPrompt(selectedAsset, selectedAlert, t);
+      const res = await api.post('/api/operation-cases', {
+        title: selectedAsset
+          ? `${getAssetDisplayName(selectedAsset)} ${t('diagnosisCenter.workspace.caseTitleSuffix')}`
+          : t('diagnosisCenter.workspace.caseTitleGeneric'),
+        caseType: 'incident',
+        status: 'diagnosing',
+        severity: selectedAlert?.severity || undefined,
+        source: 'diagnosis_center',
+        assetId: selectedAsset?.id || undefined,
+        assetType: selectedAsset?.type || undefined,
+        assetName: selectedAsset ? getAssetDisplayName(selectedAsset) : undefined,
+        alertId: selectedAlert?.id || undefined,
+        serverIds: relatedServerIds,
+        context: {
+          prompt,
+          selectedAsset,
+          selectedAlert,
+          relatedServerIds,
+          topologyImpact: {
+            upstream: topologyImpact.upstream,
+            downstream: topologyImpact.downstream,
+            nearbyAssetIds: topologyImpact.nearby.map((node) => node.id),
+          },
+        },
+      });
+
+      return {
+        operationCase: res.data.data as OperationCase,
+        prompt,
+        serverIds: relatedServerIds,
+        alertId: selectedAlert?.id || '',
+      };
+    },
+    onSuccess: ({ operationCase, prompt, serverIds, alertId }) => {
+      toast.success(t('diagnosisCenter.workspace.caseCreated'));
+      const params = new URLSearchParams();
+      params.set('mode', 'diagnose');
+      params.set('caseId', operationCase.id);
+      params.set('correlationId', operationCase.correlation_id);
+      if (serverIds.length > 0) params.set('serverIds', serverIds.join(','));
+      if (alertId) params.set('alertId', alertId);
+      params.set('prompt', prompt);
+      navigate(`/hermes?${params.toString()}`);
+    },
+    onError: (error: unknown) => {
+      toast.error(error instanceof Error ? error.message : t('diagnosisCenter.workspace.caseCreateFailed'));
+    },
+  });
+
   const openHermesDiagnosis = () => {
+    createCaseMutation.mutate();
+  };
+
+  const openHermesWithoutCase = () => {
     const params = new URLSearchParams();
     params.set('mode', 'diagnose');
     if (relatedServerIds.length > 0) params.set('serverIds', relatedServerIds.join(','));
@@ -344,7 +407,7 @@ export default function DiagnosisCenter() {
     {
       titleKey: 'diagnosisCenter.action.hermes',
       descriptionKey: 'diagnosisCenter.action.hermesDesc',
-      href: '/hermes',
+      href: '/hermes?mode=diagnose',
       icon: Brain,
     },
     {
@@ -398,10 +461,11 @@ export default function DiagnosisCenter() {
           </div>
           <button
             onClick={openHermesDiagnosis}
-            className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-primary text-white hover:bg-primary/90 transition-colors"
+            disabled={createCaseMutation.isPending}
+            className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-primary text-white hover:bg-primary/90 disabled:opacity-50 transition-colors"
           >
             <Brain className="w-4 h-4" />
-            {t('diagnosisCenter.primaryCta')}
+            {createCaseMutation.isPending ? t('diagnosisCenter.workspace.creatingCase') : t('diagnosisCenter.primaryCta')}
           </button>
         </div>
 
@@ -477,11 +541,19 @@ export default function DiagnosisCenter() {
             <div className="mt-4 flex flex-wrap gap-2">
               <button
                 onClick={openHermesDiagnosis}
-                disabled={!selectedAsset}
+                disabled={!selectedAsset || createCaseMutation.isPending}
                 className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-primary text-white hover:bg-primary/90 disabled:opacity-50 transition-colors text-sm"
               >
                 <Brain className="w-4 h-4" />
-                {t('diagnosisCenter.workspace.runHermes')}
+                {createCaseMutation.isPending ? t('diagnosisCenter.workspace.creatingCase') : t('diagnosisCenter.workspace.runHermes')}
+              </button>
+              <button
+                onClick={openHermesWithoutCase}
+                disabled={!selectedAsset}
+                className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-border text-text-primary hover:bg-background disabled:opacity-50 transition-colors text-sm"
+              >
+                <ArrowRight className="w-4 h-4" />
+                {t('diagnosisCenter.workspace.runHermesOnly')}
               </button>
               <button
                 onClick={() => navigate('/topology')}

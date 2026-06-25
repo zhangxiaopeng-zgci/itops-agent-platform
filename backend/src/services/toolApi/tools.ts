@@ -7,6 +7,7 @@ import { ToolContext, ToolDefinition, ToolInvocationResult } from './types';
 import { WorkflowParsed } from '../../types';
 import { getCorrelationTrace } from '../correlationTraceService';
 import { createOrGetVerificationFailureProposal } from '../evolutionProposalService';
+import { recordOperationCaseEvent } from '../operationCaseService';
 
 const VALID_ALERT_STATUSES = new Set(['new', 'acknowledged', 'resolved']);
 const VALID_ALERT_SEVERITIES = new Set(['critical', 'high', 'medium', 'low']);
@@ -425,8 +426,12 @@ export const runWorkflowTool: ToolDefinition = {
     }
 
     const taskId = randomUUID();
+    const inputContext = input.context && typeof input.context === 'object' && !Array.isArray(input.context)
+      ? input.context as Record<string, unknown>
+      : {};
+    const operationCaseId = typeof inputContext.operationCaseId === 'string' ? inputContext.operationCaseId : null;
     const taskContext = {
-      ...(input.context && typeof input.context === 'object' && !Array.isArray(input.context) ? input.context as Record<string, unknown> : {}),
+      ...inputContext,
       toolInvocation: {
         source: context.source || 'api',
         approvedBy: context.userId || null,
@@ -434,6 +439,7 @@ export const runWorkflowTool: ToolDefinition = {
         correlationId: context.correlationId || null,
         agentExecutionId: context.agentExecutionId || null
       },
+      operationCaseId,
       correlationId: context.correlationId || null,
       agentExecutionId: context.agentExecutionId || null
     };
@@ -458,6 +464,21 @@ export const runWorkflowTool: ToolDefinition = {
       ).catch(() => {
         // executeWorkflow already records failure state and logs details.
       });
+    });
+
+    recordOperationCaseEvent({
+      caseId: operationCaseId,
+      correlationId: context.correlationId || null,
+      eventType: 'workflow_task_created',
+      sourceType: 'task',
+      sourceId: taskId,
+      nextStatus: 'executing',
+      createdBy: context.userId || null,
+      payload: {
+        workflowId,
+        workflowName: workflow.name,
+        toolName: 'run_workflow'
+      }
     });
 
     return {
@@ -531,12 +552,24 @@ export const verifyRemediationTool: ToolDefinition = {
         ? 'Remediation task verification passed'
         : 'Remediation task verification did not pass'
     };
+    const correlationId = context.correlationId || extractCorrelationIdFromTask(parsedTask);
+
+    recordOperationCaseEvent({
+      correlationId,
+      eventType: verified ? 'remediation_verification_passed' : 'remediation_verification_failed',
+      sourceType: 'task',
+      sourceId: taskId,
+      nextStatus: verified ? 'reviewing' : 'evolving',
+      createdBy: context.userId || null,
+      payload: verificationResult
+    });
+
     const retrospectiveCandidate = verified
       ? null
       : createOrGetVerificationFailureProposal({
         task: parsedTask,
         verificationResult,
-        correlationId: context.correlationId || extractCorrelationIdFromTask(parsedTask),
+        correlationId,
         createdBy: context.userId || null
       });
 

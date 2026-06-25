@@ -1,8 +1,10 @@
 import db from '../models/database';
 import { listHermesSessionsByCorrelation } from './hermesSessionService';
+import { listOperationCasesByCorrelation } from './operationCaseService';
 
 export interface CorrelationTraceResult {
   correlationId: string;
+  operationCases: Array<Record<string, unknown>>;
   hermesSessions: Array<Record<string, unknown>>;
   agentExecutions: Array<Record<string, unknown>>;
   approvals: Array<Record<string, unknown>>;
@@ -34,6 +36,7 @@ export function getCorrelationTrace(correlationId: string): CorrelationTraceResu
   `).all(pattern).map(parseAgentExecution);
 
   const hermesSessions = listHermesSessionsByCorrelation(correlationId) as unknown as Array<Record<string, unknown>>;
+  const operationCases = listOperationCasesByCorrelation(correlationId) as unknown as Array<Record<string, unknown>>;
 
   const approvals = db.prepare(`
     SELECT *
@@ -116,6 +119,7 @@ export function getCorrelationTrace(correlationId: string): CorrelationTraceResu
 
   return {
     correlationId,
+    operationCases,
     hermesSessions,
     agentExecutions,
     approvals,
@@ -129,6 +133,7 @@ export function getCorrelationTrace(correlationId: string): CorrelationTraceResu
     executionEvidence,
     executionEvidenceSummary: buildExecutionEvidenceSummary({
       correlationId,
+      operationCases,
       hermesSessions,
       agentExecutions,
       approvals,
@@ -189,6 +194,7 @@ function collectExecutionEvidence(
 
 function buildExecutionEvidenceSummary(input: {
   correlationId: string;
+  operationCases: Array<Record<string, unknown>>;
   hermesSessions: Array<Record<string, unknown>>;
   agentExecutions: Array<Record<string, unknown>>;
   approvals: Array<Record<string, unknown>>;
@@ -205,6 +211,7 @@ function buildExecutionEvidenceSummary(input: {
   const toolCalls = new Set<string>();
   const approvalIds = new Set<string>();
   const taskIds = new Set<string>();
+  const caseIds = new Set<string>();
   const proposalIds = new Set<string>();
   const externalCardIds = new Set<string>();
   const correlationIds = new Set<string>([input.correlationId]);
@@ -215,6 +222,10 @@ function buildExecutionEvidenceSummary(input: {
   const preflightActions = new Set<string>();
   const preflightRoles = new Set<string>();
 
+  input.operationCases.forEach((operationCase) => {
+    addString(operationCase.id, caseIds);
+    addString(operationCase.correlation_id, correlationIds);
+  });
   input.executionEvidence.forEach((item) => {
     addString(item.riskLevel, riskLevels);
     addString(item.approvalId, approvalIds);
@@ -269,6 +280,7 @@ function buildExecutionEvidenceSummary(input: {
     correlationId: input.correlationId,
     counts: {
       evidence: input.executionEvidence.length,
+      operationCases: input.operationCases.length,
       hermesSessions: input.hermesSessions.length,
       agentExecutions: input.agentExecutions.length,
       approvals: input.approvals.length,
@@ -284,6 +296,7 @@ function buildExecutionEvidenceSummary(input: {
     toolCalls: Array.from(toolCalls),
     approvalIds: Array.from(approvalIds),
     taskIds: Array.from(taskIds),
+    caseIds: Array.from(caseIds),
     proposalIds: Array.from(proposalIds),
     externalCardIds: Array.from(externalCardIds),
     correlationIds: Array.from(correlationIds),

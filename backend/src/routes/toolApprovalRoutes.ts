@@ -44,7 +44,7 @@ router.get('/:id', requireRole('admin', 'operator', 'viewer'), (req: Request, re
   return res.json({ success: true, data: approval });
 });
 
-router.post('/:id/reject', requireRole('admin', 'operator'), (req: AuthenticatedRequest, res: Response) => {
+router.post('/:id/reject', requireRole('admin'), (req: AuthenticatedRequest, res: Response) => {
   try {
     const approval = markToolApprovalRejected(
       req.params.id,
@@ -58,7 +58,7 @@ router.post('/:id/reject', requireRole('admin', 'operator'), (req: Authenticated
   }
 });
 
-router.post('/:id/approve', requireRole('admin', 'operator'), async (req: AuthenticatedRequest, res: Response) => {
+router.post('/:id/approve', requireRole('admin'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const comment = typeof req.body?.comment === 'string' ? req.body.comment : undefined;
     const reviewerId = req.user?.id || 'unknown';

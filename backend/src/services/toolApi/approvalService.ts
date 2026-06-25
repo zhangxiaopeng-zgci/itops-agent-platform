@@ -1,5 +1,6 @@
 import { randomUUID } from 'crypto';
 import db from '../../models/database';
+import { recordOperationCaseEvent } from '../operationCaseService';
 import { ToolContext, ToolDecision, ToolInvocationResult } from './types';
 
 export type ToolApprovalStatus = 'pending' | 'approved' | 'rejected' | 'executed' | 'failed';
@@ -92,7 +93,23 @@ export function createToolApproval(data: {
     data.context.ipAddress || null
   );
 
-  return getToolApproval(id)!;
+  const approval = getToolApproval(id)!;
+  recordOperationCaseEvent({
+    correlationId: approval.correlation_id,
+    eventType: 'tool_approval_created',
+    sourceType: 'tool_approval',
+    sourceId: approval.id,
+    nextStatus: 'approval_pending',
+    createdBy: data.context.userId || null,
+    payload: {
+      toolName: approval.tool_name,
+      riskLevel: approval.risk_level,
+      reason: approval.reason || null,
+      requesterRole: approval.requester_role || null
+    }
+  });
+
+  return approval;
 }
 
 export function stripApprovalMetadata(input: Record<string, unknown>): Record<string, unknown> {
@@ -168,7 +185,21 @@ export function markToolApprovalRejected(id: string, reviewerId: string, comment
     WHERE id = ?
   `).run(reviewerId, comment || null, id);
 
-  return getToolApproval(id)!;
+  const approval = getToolApproval(id)!;
+  recordOperationCaseEvent({
+    correlationId: approval.correlation_id,
+    eventType: 'tool_approval_rejected',
+    sourceType: 'tool_approval',
+    sourceId: approval.id,
+    nextStatus: 'reviewing',
+    createdBy: reviewerId,
+    payload: {
+      toolName: approval.tool_name,
+      comment: comment || null
+    }
+  });
+
+  return approval;
 }
 
 export function markToolApprovalApproved(id: string, reviewerId: string, comment?: string): ToolApprovalRecord {
@@ -188,7 +219,21 @@ export function markToolApprovalApproved(id: string, reviewerId: string, comment
     throw new Error(`Tool approval is already ${current?.status || 'unavailable'}`);
   }
 
-  return getToolApproval(id)!;
+  const approval = getToolApproval(id)!;
+  recordOperationCaseEvent({
+    correlationId: approval.correlation_id,
+    eventType: 'tool_approval_approved',
+    sourceType: 'tool_approval',
+    sourceId: approval.id,
+    nextStatus: 'executing',
+    createdBy: reviewerId,
+    payload: {
+      toolName: approval.tool_name,
+      comment: comment || null
+    }
+  });
+
+  return approval;
 }
 
 export function markToolApprovalExecuted(
@@ -213,7 +258,25 @@ export function markToolApprovalExecuted(
     id
   );
 
-  return getToolApproval(id)!;
+  const approval = getToolApproval(id)!;
+  const taskId = extractTaskId(result);
+  recordOperationCaseEvent({
+    correlationId: approval.correlation_id,
+    eventType: result.success ? 'tool_approval_executed' : 'tool_approval_execution_failed',
+    sourceType: 'tool_approval',
+    sourceId: approval.id,
+    nextStatus: result.success ? (taskId ? 'executing' : 'verifying') : 'reviewing',
+    createdBy: reviewerId,
+    payload: {
+      toolName: approval.tool_name,
+      status,
+      taskId,
+      auditId: result.auditId || null,
+      error: result.error || null
+    }
+  });
+
+  return approval;
 }
 
 function parseApproval(row: RawToolApprovalRecord): ToolApprovalRecord {
@@ -230,6 +293,15 @@ function parseJson<T>(value: string, fallback: T): T {
   } catch {
     return fallback;
   }
+}
+
+function extractTaskId(result: ToolInvocationResult): string | null {
+  const data = result.data;
+  if (data && typeof data === 'object' && !Array.isArray(data)) {
+    const taskId = (data as Record<string, unknown>).taskId;
+    return typeof taskId === 'string' ? taskId : null;
+  }
+  return null;
 }
 
 function buildApprovalSafetyPlan(

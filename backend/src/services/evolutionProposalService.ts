@@ -3,6 +3,8 @@ import db from '../models/database';
 import type { AgentRunResult } from './agentRuntime/types';
 import { buildExecutionEvidenceSummary } from './executionEvidenceService';
 import { createHermesSession } from './hermesSessionService';
+import { recordOperationCaseEvent } from './operationCaseService';
+import type { OperationCaseStatus } from './operationCaseService';
 import { ensureStructuredPatchDescriptor } from './evolutionPatchService';
 import { getCorrelationTrace } from './correlationTraceService';
 
@@ -230,7 +232,24 @@ export function createEvolutionProposal(input: {
     priority
   });
 
-  return getEvolutionProposal(id)!;
+  const proposal = getEvolutionProposal(id)!;
+  recordOperationCaseEvent({
+    correlationId: proposal.correlation_id,
+    eventType: 'evolution_proposal_created',
+    sourceType: 'evolution_proposal',
+    sourceId: proposal.id,
+    nextStatus: 'evolving',
+    createdBy: input.createdBy || null,
+    payload: {
+      title: proposal.title,
+      type: proposal.type,
+      priority: proposal.priority,
+      source: proposal.source,
+      sourceRef: proposal.source_ref
+    }
+  });
+
+  return proposal;
 }
 
 export function createOrGetVerificationFailureProposal(
@@ -363,7 +382,23 @@ export function updateEvolutionProposalStatus(input: {
     evalSummary: input.evalSummary ?? null
   });
 
-  return getEvolutionProposal(input.id)!;
+  const proposal = getEvolutionProposal(input.id)!;
+  recordOperationCaseEvent({
+    correlationId: proposal.correlation_id,
+    eventType: 'evolution_proposal_status_changed',
+    sourceType: 'evolution_proposal',
+    sourceId: proposal.id,
+    nextStatus: mapProposalStatusToCaseStatus(status),
+    createdBy: input.actorId || null,
+    payload: {
+      title: proposal.title,
+      previousStatus: existing.status,
+      status,
+      comment: input.comment || null
+    }
+  });
+
+  return proposal;
 }
 
 export async function generateEvolutionProposal(input: {
@@ -1456,6 +1491,12 @@ function inferTargetDescriptor(type: EvolutionProposalType): Record<string, stri
     targetType: targetTypeMap[type],
     applyMode: 'proposal_only'
   };
+}
+
+function mapProposalStatusToCaseStatus(status: string): OperationCaseStatus {
+  if (status === 'published') return 'closed';
+  if (status === 'rejected' || status === 'archived') return 'reviewing';
+  return 'evolving';
 }
 
 function extractCorrelationId(metadata: unknown): string | null {

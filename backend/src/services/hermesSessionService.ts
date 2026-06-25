@@ -1,6 +1,7 @@
 import { randomUUID } from 'crypto';
 import db from '../models/database';
 import { AgentTraceEvent } from './agentRuntime/types';
+import { recordOperationCaseEvent, type OperationCaseStatus } from './operationCaseService';
 
 const REDACTED = '[REDACTED]';
 const SENSITIVE_KEY_PATTERN = /(api[_-]?key|token|secret|password|passwd|private[_-]?key|authorization|credential)/i;
@@ -114,7 +115,28 @@ export function createHermesSession(input: CreateHermesSessionInput): HermesSess
     input.createdBy || null
   );
 
-  return getHermesSession(id)!;
+  const session = getHermesSession(id)!;
+  recordOperationCaseEvent({
+    caseId: extractOperationCaseId(selectedContext) || extractOperationCaseId(input.runtimeMetadata),
+    correlationId: session.correlation_id,
+    eventType: inferHermesCaseEventType(session),
+    sourceType: 'hermes_session',
+    sourceId: session.id,
+    nextStatus: inferHermesCaseStatus(session),
+    payload: {
+      agentExecutionId: session.agent_execution_id,
+      agentId: session.agent_id,
+      agentName: session.agent_name,
+      mode: session.mode,
+      status: session.status,
+      intentSummary: session.intent_summary,
+      evidenceSummary: session.evidence_summary,
+      extractedRefs: session.extracted_refs
+    },
+    createdBy: input.createdBy || null
+  });
+
+  return session;
 }
 
 export function listHermesSessions(filters: {
@@ -278,6 +300,56 @@ function buildHermesEvidenceSummary(input: {
   };
 }
 
+function inferHermesCaseEventType(session: HermesSessionRecord): string {
+  const mode = (session.mode || '').toLowerCase();
+  const agentName = session.agent_name || '';
+  if (session.status !== 'success') {
+    return 'hermes_session_failed';
+  }
+  if (mode.includes('diagnose') || agentName.includes('诊断')) {
+    return 'hermes_diagnosis_completed';
+  }
+  if (mode.includes('remediate') || agentName.includes('修复')) {
+    return 'hermes_remediation_reviewed';
+  }
+  if (mode.includes('review') || mode.includes('evolve') || agentName.includes('复盘') || agentName.includes('进化')) {
+    return 'hermes_retrospective_completed';
+  }
+  return 'hermes_session_completed';
+}
+
+function inferHermesCaseStatus(session: HermesSessionRecord): OperationCaseStatus | undefined {
+  const mode = (session.mode || '').toLowerCase();
+  const agentName = session.agent_name || '';
+  if (session.status !== 'success') {
+    return 'reviewing';
+  }
+  if (mode.includes('diagnose') || agentName.includes('诊断')) {
+    return 'diagnosis_ready';
+  }
+  if (mode.includes('remediate') || agentName.includes('修复')) {
+    return 'reviewing';
+  }
+  if (mode.includes('review') || mode.includes('evolve') || agentName.includes('复盘') || agentName.includes('进化')) {
+    return 'evolving';
+  }
+  return undefined;
+}
+
+function extractOperationCaseId(value: unknown): string | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return undefined;
+  }
+  const record = value as Record<string, unknown>;
+  const direct = readNonEmptyString(record.operationCaseId) || readNonEmptyString(record.caseId);
+  if (direct) {
+    return direct;
+  }
+  return extractOperationCaseId(record.selectedContext)
+    || extractOperationCaseId(record.context)
+    || extractOperationCaseId(record.runtimeContext);
+}
+
 export function extractHermesRefs(trace: AgentTraceEvent[], correlationId?: string): HermesSessionRefs {
   const approvalIds = new Set<string>();
   const taskIds = new Set<string>();
@@ -374,6 +446,10 @@ function parseJsonField<T>(value: unknown, fallback: T): T {
 
 function nullableString(value: unknown): string | null {
   return typeof value === 'string' && value.length > 0 ? value : null;
+}
+
+function readNonEmptyString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined;
 }
 
 function escapeLike(value: string): string {

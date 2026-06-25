@@ -2,6 +2,7 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import db, { initializeDatabase } from '../../models/database';
 import { evolutionContinuousService } from '../evolutionContinuousService';
 import { createHermesSession } from '../hermesSessionService';
+import { buildWorkflowExecutionPreflight } from '../workflowCapabilityService';
 import { createToolApproval, markToolApprovalApproved } from './approvalService';
 import { invokeTool } from './toolRegistry';
 
@@ -128,6 +129,46 @@ describe('toolRegistry', () => {
     expect(runtimeConfig.allowedTools).toContain('list_agent_executions');
     expect(runtimeConfig.allowedTools).not.toContain('run_workflow');
     expect(runtimeConfig.allowedTools).not.toContain('submit_remediation_for_approval');
+  });
+
+  it('treats configured stdio MCP bindings as preflight-ready baseline', () => {
+    db.prepare(`
+      INSERT OR REPLACE INTO mcp_servers (
+        id, name, description, transport, command, args, timeout_ms, enabled,
+        health_status, last_checked_at, created_at, updated_at
+      )
+      VALUES (?, ?, ?, 'stdio', 'npx', '[]', 30000, 1, 'configured', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+    `).run(
+      'mcp-configured-preflight-test',
+      'Configured MCP Preflight Test',
+      'stdio MCP configuration should not be treated as unhealthy'
+    );
+
+    db.prepare(`
+      INSERT OR REPLACE INTO hermes_channel_mcp_servers (
+        id, channel_id, mcp_server_id, enabled, tool_import_mode, created_at
+      )
+      VALUES (?, 'hermes-channel-diagnose', ?, 1, 'disabled', CURRENT_TIMESTAMP)
+    `).run(
+      'hermes-channel-diagnose:mcp-configured-preflight-test',
+      'mcp-configured-preflight-test'
+    );
+
+    const workflow = db.prepare(`
+      SELECT *
+      FROM workflows
+      WHERE name = ?
+    `).get('Hermes 告警诊断与修复闭环') as Record<string, unknown> | undefined;
+
+    expect(workflow).toBeTruthy();
+
+    const preflight = buildWorkflowExecutionPreflight(workflow!, 'admin');
+
+    expect(preflight.capabilitySummary.mcpServers.unhealthy).toBe(0);
+    expect(preflight.reasons).not.toContain('mcp_server_unhealthy');
+    expect(preflight.actions).not.toContain('check_mcp_server_health');
+    expect(preflight.reasons).toContain('workflow_requires_approval');
+    expect(preflight.reasons).toContain('workflow_requires_verification');
   });
 
   it('reads correlated execution evidence for retrospective review', async () => {

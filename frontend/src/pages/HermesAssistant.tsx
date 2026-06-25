@@ -11,9 +11,11 @@ import {
   BrainCircuit,
   CheckCircle2,
   Clock,
+  ClipboardList,
   ExternalLink,
   FileSearch,
   GitBranch,
+  History,
   Loader2,
   MessageSquare,
   RefreshCw,
@@ -178,6 +180,7 @@ interface CorrelationEvidenceSummary {
 
 interface CorrelationChain {
   correlationId: string;
+  operationCases?: OperationCase[];
   hermesSessions?: HermesSession[];
   agentExecutions?: Array<Record<string, unknown>>;
   approvals?: ToolApprovalItem[];
@@ -187,6 +190,50 @@ interface CorrelationChain {
   workerRuns?: Array<Record<string, unknown>>;
   executionEvidence?: ExecutionEvidenceItem[];
   executionEvidenceSummary?: CorrelationEvidenceSummary;
+}
+
+type OperationCaseStatus =
+  | 'diagnosing'
+  | 'diagnosis_ready'
+  | 'approval_pending'
+  | 'executing'
+  | 'verifying'
+  | 'reviewing'
+  | 'evolving'
+  | 'closed'
+  | 'cancelled';
+
+interface OperationCase {
+  id: string;
+  title: string;
+  case_type?: string | null;
+  status: OperationCaseStatus;
+  severity?: string | null;
+  source?: string | null;
+  asset_id?: string | null;
+  asset_type?: string | null;
+  asset_name?: string | null;
+  alert_id?: string | null;
+  correlation_id?: string | null;
+  server_ids?: string[];
+  created_at: string;
+  updated_at: string;
+}
+
+interface OperationCaseEvent {
+  id: string;
+  event_type: string;
+  source_type?: string | null;
+  source_id?: string | null;
+  correlation_id?: string | null;
+  payload?: Record<string, unknown>;
+  created_at: string;
+}
+
+interface OperationCaseDetail {
+  case: OperationCase;
+  events: OperationCaseEvent[];
+  trace?: CorrelationChain;
 }
 
 interface HermesSession {
@@ -284,6 +331,41 @@ const HERMES_MODES: Array<{
   },
 ];
 
+const CASE_STATUS_LABEL_KEYS: Record<OperationCaseStatus, MessageKey> = {
+  diagnosing: 'operationCases.status.diagnosing',
+  diagnosis_ready: 'operationCases.status.diagnosisReady',
+  approval_pending: 'operationCases.status.approvalPending',
+  executing: 'operationCases.status.executing',
+  verifying: 'operationCases.status.verifying',
+  reviewing: 'operationCases.status.reviewing',
+  evolving: 'operationCases.status.evolving',
+  closed: 'operationCases.status.closed',
+  cancelled: 'operationCases.status.cancelled',
+};
+
+const CASE_EVENT_LABEL_KEYS: Record<string, MessageKey> = {
+  case_created: 'operationCases.event.caseCreated',
+  status_changed: 'operationCases.event.statusChanged',
+  tool_approval_created: 'operationCases.event.approvalCreated',
+  tool_approval_approved: 'operationCases.event.approvalApproved',
+  tool_approval_rejected: 'operationCases.event.approvalRejected',
+  tool_approval_executed: 'operationCases.event.approvalExecuted',
+  tool_approval_execution_failed: 'operationCases.event.approvalFailed',
+  workflow_task_created: 'operationCases.event.taskCreated',
+  workflow_task_started: 'operationCases.event.taskStarted',
+  workflow_task_completed: 'operationCases.event.taskCompleted',
+  workflow_task_failed: 'operationCases.event.taskFailed',
+  remediation_verification_passed: 'operationCases.event.verifyPassed',
+  remediation_verification_failed: 'operationCases.event.verifyFailed',
+  hermes_diagnosis_completed: 'operationCases.event.hermesDiagnosis',
+  hermes_remediation_reviewed: 'operationCases.event.hermesRemediation',
+  hermes_retrospective_completed: 'operationCases.event.hermesReview',
+  hermes_session_completed: 'operationCases.event.hermesSession',
+  hermes_session_failed: 'operationCases.event.hermesFailed',
+  evolution_proposal_created: 'operationCases.event.proposalCreated',
+  evolution_proposal_status_changed: 'operationCases.event.proposalStatus',
+};
+
 function createCorrelationId() {
   return `hermes-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
@@ -349,9 +431,16 @@ function parseTraceSummary(content?: string): TraceSummary | null {
   }
 }
 
-function shortId(value?: string) {
+function shortId(value?: string | null) {
   if (!value) return '';
   return value.length <= 12 ? value : `${value.slice(0, 8)}...${value.slice(-4)}`;
+}
+
+function formatDateTime(value?: string | null, locale = 'zh-CN') {
+  if (!value) return '-';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString(locale === 'zh-CN' ? 'zh-CN' : 'en-US');
 }
 
 function formatTraceContent(content?: string) {
@@ -635,6 +724,8 @@ export default function HermesAssistant() {
   const [approvalComment, setApprovalComment] = useState('');
   const [verificationResults, setVerificationResults] = useState<Record<string, VerificationResult>>({});
   const [verifyingTaskId, setVerifyingTaskId] = useState('');
+  const [urlCorrelationId, setUrlCorrelationId] = useState('');
+  const [urlCaseId, setUrlCaseId] = useState('');
   const [hasAppliedUrlContext, setHasAppliedUrlContext] = useState(false);
 
   const { data: agents, isLoading, refetch } = useQuery({
@@ -696,7 +787,7 @@ export default function HermesAssistant() {
   const mode = HERMES_MODES.find((item) => item.id === activeMode) || HERMES_MODES[0];
   const currentRole = user?.role || 'viewer';
   const canSubmitRemediation = currentRole === 'admin' || currentRole === 'operator';
-  const canHandleApprovals = currentRole === 'admin' || currentRole === 'operator';
+  const canHandleApprovals = currentRole === 'admin';
   const canUseActiveMode = activeMode !== 'remediate' || canSubmitRemediation;
 
   useEffect(() => {
@@ -734,6 +825,16 @@ export default function HermesAssistant() {
       setSelectedKnowledgeCategory(knowledgeCategory);
     }
 
+    const correlationId = searchParams.get('correlationId');
+    if (correlationId && /^[a-zA-Z0-9._:-]{8,128}$/.test(correlationId)) {
+      setUrlCorrelationId(correlationId);
+    }
+
+    const caseId = searchParams.get('caseId');
+    if (caseId) {
+      setUrlCaseId(caseId);
+    }
+
     const prompt = searchParams.get('prompt');
     if (prompt) {
       setActivePromptKey(null);
@@ -743,6 +844,20 @@ export default function HermesAssistant() {
     setHasAppliedUrlContext(true);
     setSearchParams({}, { replace: true });
   }, [hasAppliedUrlContext, searchParams, setSearchParams]);
+
+  const {
+    data: activeCaseDetail,
+    isFetching: isFetchingActiveCase,
+    refetch: refetchActiveCase,
+  } = useQuery({
+    queryKey: ['hermes-operation-case', urlCaseId],
+    enabled: Boolean(urlCaseId),
+    queryFn: async () => {
+      const res = await api.get(`/api/operation-cases/${encodeURIComponent(urlCaseId)}`);
+      return res.data.data as OperationCaseDetail;
+    },
+    refetchInterval: 20000,
+  });
 
   const selectedAgent = useMemo(() => {
     return (agents || []).find((agent) => agent.name === mode.agentName) || null;
@@ -901,6 +1016,8 @@ export default function HermesAssistant() {
     setSelectedAlertId('');
     setSelectedWorkflowId('');
     setSelectedKnowledgeCategory('');
+    setUrlCorrelationId('');
+    setUrlCaseId('');
   };
 
   const restoreSession = (session: HermesSession) => {
@@ -925,7 +1042,7 @@ export default function HermesAssistant() {
       if (!canUseActiveMode) {
         throw new Error(t('hermes.error.readOnlyRole'));
       }
-      const correlationId = createCorrelationId();
+      const correlationId = urlCorrelationId || createCorrelationId();
       const finalInput = buildPromptWithContext(input, contextLines, contextLabels);
       const res = await api.post(`/api/agents/${selectedAgent.id}/test`, {
         input: finalInput,
@@ -935,6 +1052,7 @@ export default function HermesAssistant() {
           source: 'hermes_assistant',
           mode: activeMode,
           correlationId,
+          operationCaseId: urlCaseId || undefined,
           serverIds: selectedServerIds,
           serverId: selectedServerIds[0],
           alertId: selectedAlertId || undefined,
@@ -965,6 +1083,9 @@ export default function HermesAssistant() {
       setVerificationResults({});
       setVerifyingTaskId('');
       queryClient.invalidateQueries({ queryKey: ['hermes-sessions'] });
+      if (urlCaseId) {
+        queryClient.invalidateQueries({ queryKey: ['hermes-operation-case', urlCaseId] });
+      }
       toast.success(t('hermes.toast.completed'));
     },
     onError: (error: unknown) => {
@@ -1009,6 +1130,7 @@ export default function HermesAssistant() {
     refetchCorrelations();
     refetchApprovals();
     refetchTasks();
+    refetchActiveCase();
   };
   const approveApprovalMutation = useMutation({
     mutationFn: async (approvalId: string) => {
@@ -1121,6 +1243,26 @@ export default function HermesAssistant() {
             </button>
           </div>
         </div>
+
+        {urlCaseId && (
+          <HermesCaseContextCard
+            caseId={urlCaseId}
+            detail={activeCaseDetail}
+            loading={isFetchingActiveCase}
+            locale={locale}
+            t={t}
+            onOpenCase={() => navigate(`/operation-cases?caseId=${encodeURIComponent(urlCaseId)}`)}
+            onRefresh={() => refetchActiveCase()}
+            onReview={(correlationId) => {
+              setActiveMode('review');
+              setActivePromptKey(null);
+              setInput(t('hermes.case.reviewInput', {
+                caseId: shortId(urlCaseId),
+                correlationId: correlationId || urlCorrelationId || '-',
+              }));
+            }}
+          />
+        )}
 
         <div className="grid grid-cols-1 xl:grid-cols-[360px_1fr] gap-6">
           <div className="space-y-4">
@@ -1868,6 +2010,11 @@ export default function HermesAssistant() {
                                   {t('hermes.closure.handleApproval')}
                                 </button>
                               )}
+                              {approval.status === 'pending' && !canHandleApprovals && (
+                                <span className="inline-flex items-center px-2.5 py-1.5 rounded-lg bg-background border border-border text-xs text-text-tertiary">
+                                  {t('hermes.closure.adminApprovalOnly')}
+                                </span>
+                              )}
                             </div>
                             {approval.status === 'pending' && canHandleApprovals && approvalActionId === approval.id && (
                               <div className="mt-3 pt-3 border-t border-border space-y-3">
@@ -2160,5 +2307,156 @@ export default function HermesAssistant() {
         </div>
       </div>
     </div>
+  );
+}
+
+function HermesCaseContextCard({
+  caseId,
+  detail,
+  loading,
+  locale,
+  t,
+  onOpenCase,
+  onRefresh,
+  onReview,
+}: {
+  caseId: string;
+  detail?: OperationCaseDetail;
+  loading: boolean;
+  locale: string;
+  t: (key: MessageKey, values?: Record<string, string | number>) => string;
+  onOpenCase: () => void;
+  onRefresh: () => void;
+  onReview: (correlationId?: string | null) => void;
+}) {
+  const operationCase = detail?.case;
+  const events = detail?.events || [];
+  const trace = detail?.trace;
+  const statusKey = operationCase ? CASE_STATUS_LABEL_KEYS[operationCase.status] : null;
+  const recentEvents = events.slice(0, 5);
+  const correlationId = operationCase?.correlation_id || detail?.trace?.correlationId || null;
+  const proposalCount = Number(trace?.executionEvidenceSummary?.counts?.proposals || 0);
+  const counts = [
+    { label: t('operationCases.metric.approvals'), value: trace?.approvals?.length || 0, icon: ShieldCheck },
+    { label: t('operationCases.metric.tasks'), value: trace?.tasks?.length || 0, icon: GitBranch },
+    { label: t('operationCases.metric.proposals'), value: Number.isFinite(proposalCount) ? proposalCount : 0, icon: Sparkles },
+    { label: t('operationCases.metric.evidence'), value: trace?.executionEvidence?.length || 0, icon: Activity },
+  ];
+
+  return (
+    <section className={clsx(panelClass, 'p-4 border-primary/20')}>
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2 text-xs text-text-secondary">
+            <span className="inline-flex items-center gap-1 rounded-lg border border-primary/20 bg-primary/10 px-2 py-1 text-primary">
+              <ClipboardList className="w-3.5 h-3.5" />
+              {t('hermes.case.active')}
+            </span>
+            <span className="rounded-lg border border-border bg-background px-2 py-1">
+              case {shortId(caseId)}
+            </span>
+            {correlationId && (
+              <span className="rounded-lg border border-border bg-background px-2 py-1">
+                corr {shortId(correlationId)}
+              </span>
+            )}
+            {statusKey && (
+              <span className={clsx('rounded-lg border px-2 py-1 font-semibold', getCaseStatusClass(operationCase!.status))}>
+                {t(statusKey)}
+              </span>
+            )}
+          </div>
+          <h2 className="mt-3 text-lg font-semibold text-text-primary break-words">
+            {operationCase?.title || (loading ? t('common.loading') : t('hermes.case.notLoaded'))}
+          </h2>
+          <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-text-secondary">
+            <span>{t('operationCases.field.asset')}: {operationCase?.asset_name || operationCase?.asset_id || '-'}</span>
+            <span>{t('operationCases.field.alert')}: {operationCase?.alert_id || '-'}</span>
+            <span>{t('hermes.case.updatedAt')}: {formatDateTime(operationCase?.updated_at || operationCase?.created_at, locale)}</span>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={onOpenCase}
+            className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-primary text-white hover:bg-primary/90 transition-colors text-sm font-medium"
+          >
+            <ExternalLink className="w-4 h-4" />
+            {t('hermes.case.openCase')}
+          </button>
+          <button
+            type="button"
+            onClick={() => onReview(correlationId)}
+            className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-surface border border-border text-text-secondary hover:text-text-primary transition-colors text-sm font-medium"
+          >
+            <History className="w-4 h-4" />
+            {t('hermes.case.review')}
+          </button>
+          <button
+            type="button"
+            onClick={onRefresh}
+            className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-surface border border-border text-text-secondary hover:text-text-primary transition-colors text-sm font-medium"
+          >
+            <RefreshCw className={clsx('w-4 h-4', loading && 'animate-spin')} />
+            {t('common.refresh')}
+          </button>
+        </div>
+      </div>
+
+      <div className="mt-4 grid grid-cols-2 lg:grid-cols-4 gap-3">
+        {counts.map((item) => (
+          <div key={item.label} className="rounded-xl border border-border bg-background/50 p-3">
+            <item.icon className="w-4 h-4 text-primary" />
+            <div className="mt-2 text-lg font-semibold text-text-primary">{item.value}</div>
+            <div className="text-xs text-text-secondary">{item.label}</div>
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-4 rounded-xl border border-border bg-background/40">
+        <div className="px-3 py-2 border-b border-border flex items-center justify-between">
+          <div className="flex items-center gap-2 text-sm font-semibold text-text-primary">
+            <Clock className="w-4 h-4 text-primary" />
+            {t('hermes.case.timeline')}
+          </div>
+          <span className="text-xs text-text-secondary">{t('operationCases.timeline.count', { count: events.length })}</span>
+        </div>
+        <div className="divide-y divide-border">
+          {recentEvents.length === 0 && (
+            <div className="px-3 py-3 text-sm text-text-secondary">
+              {loading ? t('common.loading') : t('operationCases.timeline.empty')}
+            </div>
+          )}
+          {recentEvents.map((event) => {
+            const labelKey = CASE_EVENT_LABEL_KEYS[event.event_type] || 'operationCases.event.unknown';
+            return (
+              <div key={event.id} className="px-3 py-2 flex items-start gap-3">
+                <div className="mt-1 h-2 w-2 rounded-full bg-primary flex-shrink-0" />
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm font-medium text-text-primary">{t(labelKey)}</div>
+                  <div className="mt-1 flex flex-wrap gap-2 text-xs text-text-tertiary">
+                    <span>{formatDateTime(event.created_at, locale)}</span>
+                    {event.source_type && <span>{event.source_type}</span>}
+                    {event.source_id && <span>{shortId(event.source_id)}</span>}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function getCaseStatusClass(status: OperationCaseStatus) {
+  return clsx(
+    status === 'closed' && 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30',
+    status === 'approval_pending' && 'bg-amber-500/10 text-amber-400 border-amber-500/30',
+    (status === 'executing' || status === 'verifying') && 'bg-sky-500/10 text-sky-400 border-sky-500/30',
+    status === 'evolving' && 'bg-violet-500/10 text-violet-400 border-violet-500/30',
+    status === 'cancelled' && 'bg-slate-500/10 text-slate-400 border-slate-500/30',
+    !['closed', 'approval_pending', 'executing', 'verifying', 'evolving', 'cancelled'].includes(status) && 'bg-primary/10 text-primary border-primary/30'
   );
 }

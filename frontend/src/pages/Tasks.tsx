@@ -2,7 +2,7 @@ import { useEffect, useState, useRef, type ReactNode } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { io, Socket } from 'socket.io-client';
-import { Play, Pause, XCircle, Clock, CheckCircle, XCircle as XIcon, FileText, Activity, List, FileCheck, ExternalLink, ShieldAlert } from 'lucide-react';
+import { Play, Pause, XCircle, Clock, CheckCircle, XCircle as XIcon, FileText, Activity, List, FileCheck, ExternalLink, ShieldAlert, ClipboardList } from 'lucide-react';
 import { formatDistanceToNow, format } from 'date-fns';
 import { enUS, zhCN } from 'date-fns/locale';
 import clsx from 'clsx';
@@ -91,6 +91,21 @@ interface SkillPack {
   name: string;
   category: string;
   version: string;
+}
+
+interface OperationCase {
+  id: string;
+  title: string;
+  status: string;
+  asset_name?: string | null;
+  asset_id?: string | null;
+  correlation_id?: string | null;
+  updated_at?: string | null;
+  created_at?: string | null;
+}
+
+interface CorrelationTrace {
+  operationCases?: OperationCase[];
 }
 
 const taskStatusKeys: Record<string, MessageKey> = {
@@ -199,6 +214,17 @@ export default function Tasks() {
   });
 
   const skillNameById = new Map((skills || []).map((skill) => [skill.id, skill.name]));
+  const selectedCorrelationId = selectedTask ? readString(selectedTask.context?.correlationId) : null;
+  const { data: selectedCaseTrace } = useQuery({
+    queryKey: ['task-case-trace', selectedCorrelationId],
+    enabled: Boolean(selectedCorrelationId),
+    queryFn: async () => {
+      const res = await api.get(`/api/correlations/${encodeURIComponent(selectedCorrelationId!)}`);
+      return res.data.data as CorrelationTrace;
+    },
+    staleTime: 15000,
+  });
+  const selectedOperationCase = selectedCaseTrace?.operationCases?.[0] || null;
 
   useEffect(() => {
     if (!token) return;
@@ -571,6 +597,13 @@ export default function Tasks() {
                 </div>
 
                 <TaskExecutionPreflightPanel task={selectedTask} preflight={getTaskExecutionPreflight(selectedTask)} />
+                {selectedOperationCase && (
+                  <RelatedTaskCaseCard
+                    operationCase={selectedOperationCase}
+                    onOpen={() => navigate(`/operation-cases?caseId=${encodeURIComponent(selectedOperationCase.id)}`)}
+                    t={t}
+                  />
+                )}
 
                 <div className="flex gap-2 overflow-x-auto pb-2">
                   {(() => {
@@ -1138,6 +1171,65 @@ function getTaskExecutionPreflight(task: Task): TaskExecutionPreflightSnapshot |
     generatedAt: readString(preflight.generatedAt) || '',
     summary: asRecord(preflight.summary) as TaskExecutionPreflightSnapshot['summary']
   };
+}
+
+function RelatedTaskCaseCard({
+  operationCase,
+  onOpen,
+  t,
+}: {
+  operationCase: OperationCase;
+  onOpen: () => void;
+  t: (key: MessageKey, values?: Record<string, string | number>) => string;
+}) {
+  return (
+    <div className="mb-4 rounded-xl border border-primary/20 bg-primary/5 p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-xs text-text-secondary mb-1">{t('tasks.relatedCase')}</p>
+          <div className="flex items-center gap-2">
+            <ClipboardList className="w-4 h-4 text-primary flex-shrink-0" />
+            <p className="text-sm font-semibold text-text-primary truncate">{operationCase.title || operationCase.id}</p>
+          </div>
+          <div className="mt-2 flex flex-wrap gap-2 text-xs text-text-tertiary">
+            <span className="rounded-md border border-border bg-background px-2 py-1">
+              {t(getCaseStatusKey(operationCase.status))}
+            </span>
+            <span className="rounded-md border border-border bg-background px-2 py-1">
+              {operationCase.asset_name || operationCase.asset_id || '-'}
+            </span>
+            {operationCase.correlation_id && (
+              <span className="rounded-md border border-border bg-background px-2 py-1">
+                corr {shortId(operationCase.correlation_id)}
+              </span>
+            )}
+          </div>
+        </div>
+        <button
+          onClick={onOpen}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary/10 text-primary border border-primary/20 hover:bg-primary/20 transition-colors whitespace-nowrap text-sm"
+        >
+          <ExternalLink className="w-4 h-4" />
+          {t('tasks.openCase')}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function getCaseStatusKey(status: string): MessageKey {
+  const keys: Record<string, MessageKey> = {
+    diagnosing: 'operationCases.status.diagnosing',
+    diagnosis_ready: 'operationCases.status.diagnosisReady',
+    approval_pending: 'operationCases.status.approvalPending',
+    executing: 'operationCases.status.executing',
+    verifying: 'operationCases.status.verifying',
+    reviewing: 'operationCases.status.reviewing',
+    evolving: 'operationCases.status.evolving',
+    closed: 'operationCases.status.closed',
+    cancelled: 'operationCases.status.cancelled',
+  };
+  return keys[status] || 'common.unknown';
 }
 
 function TaskExecutionPreflightPanel({ task, preflight }: { task: Task; preflight: TaskExecutionPreflightSnapshot | null }) {

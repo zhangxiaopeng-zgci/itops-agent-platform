@@ -2,6 +2,8 @@ import db from '../models/database';
 import { WorkflowNode } from '../types';
 import { listHermesChannels } from './hermesChannelService';
 
+const PREFLIGHT_ACCEPTABLE_MCP_HEALTH = new Set(['healthy', 'unknown', 'configured']);
+
 export interface WorkflowCapabilitySummary {
   hermesEnhanced: boolean;
   runbookDriven: boolean;
@@ -164,7 +166,7 @@ export function summarizeWorkflowCapability(workflow: WorkflowCapabilityInput): 
     },
     mcpServers: {
       count: mcpIds.length,
-      unhealthy: mcpRecords.filter((server) => !['healthy', 'unknown'].includes(server.health_status)).length,
+      unhealthy: mcpRecords.filter((server) => !PREFLIGHT_ACCEPTABLE_MCP_HEALTH.has(server.health_status)).length,
       ids: mcpIds,
       names: mcpRecords.map((server) => server.name)
     },

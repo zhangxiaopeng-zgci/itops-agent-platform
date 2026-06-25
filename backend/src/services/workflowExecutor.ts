@@ -3,6 +3,7 @@ import db, { getIOInstance } from '../models/database';
 import { logger } from '../utils/logger';
 import { executeAgentRun, getThinkingSteps } from './agentExecutor';
 import { buildExecutionEvidenceSummary } from './executionEvidenceService';
+import { recordOperationCaseEvent } from './operationCaseService';
 import { reportService } from './reportService';
 import {
   WorkflowNode,
@@ -89,6 +90,12 @@ export async function executeWorkflow(
       logger.error(`❌ Workflow ${workflow.name} has circular dependencies, aborting execution`);
       db.prepare('UPDATE tasks SET status = ?, end_time = CURRENT_TIMESTAMP WHERE id = ?')
         .run('failed', taskId);
+      recordWorkflowCaseEvent(context, {
+        taskId,
+        eventType: 'workflow_task_failed',
+        nextStatus: 'reviewing',
+        payload: { workflowId: workflow.id, workflowName: workflow.name, error: 'Circular dependency detected in workflow' }
+      });
       io?.to(`task:${taskId}`).emit('task:failed', { taskId, error: 'Circular dependency detected in workflow' });
       return;
     }
@@ -98,6 +105,12 @@ export async function executeWorkflow(
     
     db.prepare('UPDATE tasks SET status = ?, start_time = CURRENT_TIMESTAMP, execution_order = ? WHERE id = ?')
       .run('running', JSON.stringify(executionOrder), taskId);
+    recordWorkflowCaseEvent(context, {
+      taskId,
+      eventType: 'workflow_task_started',
+      nextStatus: 'executing',
+      payload: { workflowId: workflow.id, workflowName: workflow.name, executionOrder }
+    });
     
     io?.to(`task:${taskId}`).emit('task:started', { taskId, executionOrder });
     
@@ -274,6 +287,17 @@ export async function executeWorkflow(
           node_results = ?, current_node_id = NULL
       WHERE id = ?
     `).run('completed', JSON.stringify(nodeResults), taskId);
+    recordWorkflowCaseEvent(context, {
+      taskId,
+      eventType: 'workflow_task_completed',
+      nextStatus: 'verifying',
+      payload: {
+        workflowId: workflow.id,
+        workflowName: workflow.name,
+        successNodes: Object.values(nodeResults).filter((result) => result.status === 'success').length,
+        failedNodes: Object.values(nodeResults).filter((result) => result.status === 'failed').length
+      }
+    });
     
     try {
       const failedNodes = Object.entries(nodeResults)
@@ -324,6 +348,12 @@ export async function executeWorkflow(
       SET status = ?, end_time = CURRENT_TIMESTAMP, current_node_id = NULL
       WHERE id = ?
     `).run('failed', taskId);
+    recordWorkflowCaseEvent(context, {
+      taskId,
+      eventType: 'workflow_task_failed',
+      nextStatus: 'reviewing',
+      payload: { workflowId: workflow.id, workflowName: workflow.name, error: errorMessage }
+    });
     
     try {
       await generateWorkflowExecutionReport(taskId, workflow, nodes, nodeResults, executionOrder, 'failed', errorMessage);
@@ -336,6 +366,26 @@ export async function executeWorkflow(
       error: errorMessage
     });
   }
+}
+
+function recordWorkflowCaseEvent(
+  context: Record<string, unknown> | undefined,
+  input: {
+    taskId: string;
+    eventType: string;
+    nextStatus: 'executing' | 'verifying' | 'reviewing';
+    payload: Record<string, unknown>;
+  }
+) {
+  recordOperationCaseEvent({
+    caseId: typeof context?.operationCaseId === 'string' ? context.operationCaseId : null,
+    correlationId: typeof context?.correlationId === 'string' ? context.correlationId : null,
+    eventType: input.eventType,
+    sourceType: 'task',
+    sourceId: input.taskId,
+    nextStatus: input.nextStatus,
+    payload: input.payload
+  });
 }
 
 function buildRunbookNodeContext(node: WorkflowNode) {

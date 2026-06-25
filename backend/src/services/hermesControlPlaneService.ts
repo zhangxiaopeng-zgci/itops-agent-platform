@@ -3,6 +3,8 @@ import { listHermesChannels } from './hermesChannelService';
 import { getHermesWorkerStatuses, HermesWorkerStatus } from './hermesWorkerService';
 import { listEvolutionReleaseVersions } from './evolutionReleaseService';
 
+const CONTROL_PLANE_ACCEPTABLE_MCP_HEALTH = new Set(['healthy', 'unknown', 'configured']);
+
 export interface HermesControlPlaneAgentBinding {
   id: string;
   name: string;
@@ -252,7 +254,7 @@ function buildCapabilityInventory(
       highRiskTools: enabledTools.filter(tool => ['high', 'critical'].includes(String(tool.risk_level_override || '').toLowerCase())).length,
       enabledSkills: enabledSkills.length,
       enabledMcpServers: enabledMcpServers.length,
-      unhealthyMcpServers: enabledMcpServers.filter(server => !['healthy', 'unknown'].includes(String(server.health_status))).length,
+      unhealthyMcpServers: enabledMcpServers.filter(server => !CONTROL_PLANE_ACCEPTABLE_MCP_HEALTH.has(String(server.health_status))).length,
       secretRef: channel.api_key_ref,
       workerRole: worker?.role || null,
       workerHealthy: Boolean(worker?.healthy),

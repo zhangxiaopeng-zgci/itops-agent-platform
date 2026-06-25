@@ -11,6 +11,7 @@ import Login from './pages/Login';
 import ForcePasswordChange from './pages/ForcePasswordChange';
 import Dashboard from './pages/Dashboard';
 import DiagnosisCenter from './pages/DiagnosisCenter';
+import OperationCases from './pages/OperationCases';
 import ExecutionCenter from './pages/ExecutionCenter';
 import AssetsCenter from './pages/AssetsCenter';
 import Servers from './pages/Servers';
@@ -91,6 +92,7 @@ function App() {
               <Route index element={<Navigate to="/dashboard" replace />} />
               <Route path="dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
               <Route path="diagnosis-center" element={<ProtectedRoute><DiagnosisCenter /></ProtectedRoute>} />
+              <Route path="operation-cases" element={<ProtectedRoute><OperationCases /></ProtectedRoute>} />
               <Route path="execution-center" element={<ProtectedRoute><ExecutionCenter /></ProtectedRoute>} />
               <Route path="assets-center" element={<ProtectedRoute><AssetsCenter /></ProtectedRoute>} />
               <Route path="servers" element={<ProtectedRoute><Servers /></ProtectedRoute>} />

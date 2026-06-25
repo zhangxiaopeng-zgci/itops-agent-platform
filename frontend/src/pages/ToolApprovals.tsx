@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { CheckCircle2, Clock, ShieldAlert, XCircle, RefreshCw, ExternalLink } from 'lucide-react';
+import { CheckCircle2, Clock, ClipboardList, ShieldAlert, XCircle, RefreshCw, ExternalLink } from 'lucide-react';
 import clsx from 'clsx';
 import api from '../lib/api';
 import { useLocale, type MessageKey } from '../contexts/LocaleContext';
+import { useAuth } from '../contexts/AuthContext';
 
 interface ToolApproval {
   id: string;
@@ -26,6 +27,21 @@ interface ToolApproval {
     error?: string;
     data?: unknown;
   } | null;
+}
+
+interface OperationCase {
+  id: string;
+  title: string;
+  status: string;
+  asset_name?: string | null;
+  asset_id?: string | null;
+  correlation_id?: string | null;
+  updated_at?: string | null;
+  created_at?: string | null;
+}
+
+interface CorrelationTrace {
+  operationCases?: OperationCase[];
 }
 
 interface ApprovalSafetyPlan {
@@ -81,6 +97,7 @@ const statusLabelKeys: Record<ToolApproval['status'], MessageKey> = {
 
 export default function ToolApprovals() {
   const { locale, t } = useLocale();
+  const { user } = useAuth();
   const browserLocale = locale === 'zh-CN' ? 'zh-CN' : 'en-US';
   const queryClient = useQueryClient();
   const navigate = useNavigate();
@@ -129,6 +146,24 @@ export default function ToolApprovals() {
   const selectedSafetyPlan = selectedApproval ? getSafetyPlan(selectedApproval) : null;
   const selectedSafetyReview = selectedApproval ? getSafetyReview(selectedApproval) : null;
   const selectedVerificationRequirement = selectedApproval ? getVerificationRequirement(selectedApproval) : null;
+  const selectedCorrelationId = selectedApproval
+    ? selectedApproval.correlation_id
+      || findStringField(selectedApproval.input, 'correlationId')
+      || findStringField(selectedApproval.execution_result, 'correlationId')
+    : null;
+  const canApproveTools = user?.role === 'admin';
+
+  const { data: selectedCaseTrace } = useQuery({
+    queryKey: ['tool-approval-case-trace', selectedCorrelationId],
+    enabled: Boolean(selectedCorrelationId),
+    queryFn: async () => {
+      const res = await api.get(`/api/correlations/${encodeURIComponent(selectedCorrelationId!)}`);
+      return res.data.data as CorrelationTrace;
+    },
+    staleTime: 15000,
+  });
+
+  const selectedOperationCase = selectedCaseTrace?.operationCases?.[0] || null;
 
   useEffect(() => {
     const approvalId = searchParams.get('approvalId');
@@ -268,6 +303,14 @@ export default function ToolApprovals() {
 	                <DetailRow label={t('toolApprovals.detail.requesterRole')} value={selectedApproval.requester_role || '-'} />
 	                <DetailRow label={t('toolApprovals.detail.correlation')} value={selectedApproval.correlation_id || '-'} />
 	                <DetailRow label={t('toolApprovals.detail.reason')} value={selectedApproval.reason || '-'} />
+                {selectedOperationCase && (
+                  <RelatedCaseCard
+                    title={t('toolApprovals.relatedCase')}
+                    operationCase={selectedOperationCase}
+                    onOpen={() => navigate(`/operation-cases?caseId=${encodeURIComponent(selectedOperationCase.id)}`)}
+                    t={t}
+                  />
+                )}
 	                {selectedTaskId && (
 	                  <div className="rounded-lg border border-primary/20 bg-primary/5 p-3">
 	                    <p className="text-xs text-text-secondary mb-1">{t('toolApprovals.relatedTask')}</p>
@@ -412,7 +455,7 @@ export default function ToolApprovals() {
                   </div>
                 )}
 
-                {selectedApproval.status === 'pending' && (
+                {selectedApproval.status === 'pending' && canApproveTools && (
                   <div className="space-y-3 pt-3 border-t border-border">
                     <textarea
                       value={comment}
@@ -438,6 +481,12 @@ export default function ToolApprovals() {
                         {t('toolApprovals.approveAndExecute')}
                       </button>
                     </div>
+                  </div>
+                )}
+
+                {selectedApproval.status === 'pending' && !canApproveTools && (
+                  <div className="rounded-lg bg-background border border-border px-3 py-2 text-xs text-text-secondary">
+                    {t('toolApprovals.adminOnly')}
                   </div>
                 )}
               </div>
@@ -489,6 +538,67 @@ function SafetyText({ label, value }: { label: string; value?: string }) {
       <p className="text-sm text-text-secondary leading-5">{value || '-'}</p>
     </div>
   );
+}
+
+function RelatedCaseCard({
+  title,
+  operationCase,
+  onOpen,
+  t,
+}: {
+  title: string;
+  operationCase: OperationCase;
+  onOpen: () => void;
+  t: (key: MessageKey, values?: Record<string, string | number>) => string;
+}) {
+  return (
+    <div className="rounded-lg border border-primary/20 bg-primary/5 p-3">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-xs text-text-secondary mb-1">{title}</p>
+          <div className="flex items-center gap-2">
+            <ClipboardList className="w-4 h-4 text-primary flex-shrink-0" />
+            <p className="text-sm font-semibold text-text-primary truncate">{operationCase.title || operationCase.id}</p>
+          </div>
+          <div className="mt-2 flex flex-wrap gap-2 text-xs text-text-tertiary">
+            <span className="rounded-md border border-border bg-background px-2 py-1">
+              {t(getCaseStatusKey(operationCase.status))}
+            </span>
+            <span className="rounded-md border border-border bg-background px-2 py-1">
+              {operationCase.asset_name || operationCase.asset_id || '-'}
+            </span>
+            {operationCase.correlation_id && (
+              <span className="rounded-md border border-border bg-background px-2 py-1">
+                corr {shortId(operationCase.correlation_id)}
+              </span>
+            )}
+          </div>
+        </div>
+        <button
+          onClick={onOpen}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary/10 text-primary border border-primary/20 hover:bg-primary/20 transition-colors whitespace-nowrap text-sm"
+        >
+          <ExternalLink className="w-4 h-4" />
+          {t('toolApprovals.openCase')}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function getCaseStatusKey(status: string): MessageKey {
+  const keys: Record<string, MessageKey> = {
+    diagnosing: 'operationCases.status.diagnosing',
+    diagnosis_ready: 'operationCases.status.diagnosisReady',
+    approval_pending: 'operationCases.status.approvalPending',
+    executing: 'operationCases.status.executing',
+    verifying: 'operationCases.status.verifying',
+    reviewing: 'operationCases.status.reviewing',
+    evolving: 'operationCases.status.evolving',
+    closed: 'operationCases.status.closed',
+    cancelled: 'operationCases.status.cancelled',
+  };
+  return keys[status] || 'common.unknown';
 }
 
 function extractTaskId(approval: ToolApproval): string | null {

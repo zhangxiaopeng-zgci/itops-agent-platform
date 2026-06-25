@@ -373,6 +373,7 @@ router.post('/:id/test', async (req: Request, res: Response) => {
           alert: executionContext.alert,
           workflowId: executionContext.workflowId,
           workflow: executionContext.workflow,
+          operationCaseId: executionContext.operationCaseId,
           knowledgeCategory: executionContext.knowledgeCategory,
           userRole: executionContext.userRole
         },

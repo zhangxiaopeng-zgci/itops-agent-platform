@@ -73,6 +73,7 @@ const navigationGroups: Array<{
     icon: ServerCog,
     items: [
       { labelKey: 'nav.diagnosisCenter', href: '/diagnosis-center', icon: AlertTriangle },
+      { labelKey: 'nav.operationCases', href: '/operation-cases', icon: ListChecks },
       { labelKey: 'nav.executionCenter', href: '/execution-center', icon: Workflow },
       { labelKey: 'nav.assetsCenter', href: '/assets-center', icon: Server },
     ]

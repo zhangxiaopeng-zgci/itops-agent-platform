@@ -4,9 +4,11 @@ import db from '../models/database';
 import { executeWorkflow } from '../services/workflowExecutor';
 import { WorkflowParsed } from '../types';
 import { buildWorkflowExecutionPreflight, createWorkflowExecutionPreflightSnapshot } from '../services/workflowCapabilityService';
+import { requireRole } from '../middleware/auth';
+import { recordOperationCaseEvent } from '../services/operationCaseService';
 
 const router = Router();
-type AuthenticatedRequest = Request & { user?: { role?: string } };
+type AuthenticatedRequest = Request & { user?: { id?: string; role?: string } };
 
 router.get('/', (req: Request, res: Response) => {
   try {
@@ -58,7 +60,7 @@ router.get('/:id', (req: Request, res: Response) => {
   }
 });
 
-router.post('/', async (req: AuthenticatedRequest, res: Response) => {
+router.post('/', requireRole('admin', 'operator'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const { workflow_id, name, input, context } = req.body;
     
@@ -98,6 +100,21 @@ router.post('/', async (req: AuthenticatedRequest, res: Response) => {
       INSERT INTO tasks (id, workflow_id, name, status, context)
       VALUES (?, ?, ?, 'pending', ?)
     `).run(taskId, workflow_id, name || 'Task', JSON.stringify(executionContext));
+
+    recordOperationCaseEvent({
+      caseId: typeof executionContext.operationCaseId === 'string' ? executionContext.operationCaseId : null,
+      correlationId: typeof executionContext.correlationId === 'string' ? executionContext.correlationId : null,
+      eventType: 'workflow_task_created',
+      sourceType: 'task',
+      sourceId: taskId,
+      nextStatus: 'executing',
+      createdBy: req.user?.id || null,
+      payload: {
+        workflowId: workflow_id,
+        workflowName: workflow.name,
+        taskName: name || 'Task'
+      }
+    });
     
     executeWorkflow(taskId, parsedWorkflow, input, executionContext);
     
@@ -107,7 +124,7 @@ router.post('/', async (req: AuthenticatedRequest, res: Response) => {
   }
 });
 
-router.put('/:id/pause', (req: Request, res: Response) => {
+router.put('/:id/pause', requireRole('admin', 'operator'), (req: Request, res: Response) => {
   try {
     const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(req.params.id);
     if (!task) {
@@ -121,7 +138,7 @@ router.put('/:id/pause', (req: Request, res: Response) => {
   }
 });
 
-router.put('/:id/resume', (req: Request, res: Response) => {
+router.put('/:id/resume', requireRole('admin', 'operator'), (req: Request, res: Response) => {
   try {
     const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(req.params.id);
     if (!task) {
@@ -135,7 +152,7 @@ router.put('/:id/resume', (req: Request, res: Response) => {
   }
 });
 
-router.put('/:id/cancel', (req: Request, res: Response) => {
+router.put('/:id/cancel', requireRole('admin', 'operator'), (req: Request, res: Response) => {
   try {
     const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(req.params.id);
     if (!task) {
@@ -149,7 +166,7 @@ router.put('/:id/cancel', (req: Request, res: Response) => {
   }
 });
 
-router.put('/:id/intervene', (req: Request, res: Response) => {
+router.put('/:id/intervene', requireRole('admin', 'operator'), (req: Request, res: Response) => {
   try {
     const { node_id, action, data } = req.body;
     
