@@ -14,6 +14,9 @@ import DiagnosisCenter from './pages/DiagnosisCenter';
 import OperationCases from './pages/OperationCases';
 import ExecutionCenter from './pages/ExecutionCenter';
 import AssetsCenter from './pages/AssetsCenter';
+import HermesConsole from './pages/HermesConsole';
+import EvolutionGovernance from './pages/EvolutionGovernance';
+import PlatformOperations from './pages/PlatformOperations';
 import Servers from './pages/Servers';
 import Agents from './pages/Agents';
 import HermesAssistant from './pages/HermesAssistant';
@@ -95,6 +98,9 @@ function App() {
               <Route path="operation-cases" element={<ProtectedRoute><OperationCases /></ProtectedRoute>} />
               <Route path="execution-center" element={<ProtectedRoute><ExecutionCenter /></ProtectedRoute>} />
               <Route path="assets-center" element={<ProtectedRoute><AssetsCenter /></ProtectedRoute>} />
+              <Route path="hermes-console" element={<ProtectedRoute><HermesConsole /></ProtectedRoute>} />
+              <Route path="evolution-governance" element={<ProtectedRoute><EvolutionGovernance /></ProtectedRoute>} />
+              <Route path="platform-operations" element={<ProtectedRoute><PlatformOperations /></ProtectedRoute>} />
               <Route path="servers" element={<ProtectedRoute><Servers /></ProtectedRoute>} />
               <Route path="ssh-keys" element={<ProtectedRoute><SSHKeys /></ProtectedRoute>} />
               <Route path="network-devices" element={<ProtectedRoute><NetworkDevices /></ProtectedRoute>} />

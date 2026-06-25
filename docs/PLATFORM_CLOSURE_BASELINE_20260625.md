@@ -428,6 +428,18 @@ Pass criteria:
 
 ## Immediate Closure Backlog
 
+### IA Phase 1: Completed
+
+Implemented in the first information-architecture closure pass:
+
+- Top-level navigation now exposes operator jobs instead of the old large Advanced menu.
+- Added `Hermes Console` as the capability-management entry for Channels, Assistant, Board, Agents, Skills, MCP, policy, and settings.
+- Added `Evolution Governance` as the proposal, evaluation, replay, approval, publish, and audit entry.
+- Added `Platform Operations` as the readiness, health, backup/restore, audit, report, user, and settings entry.
+- Dashboard capability and evolution cards now point to the new grouped entries.
+- Legacy technical pages remain routable and are reached from centers or context links.
+- Added browser E2E coverage for the consolidated navigation.
+
 ### P0: Product Usability
 
 - Make Case Workbench the default post-diagnosis landing page.
