@@ -128,6 +128,15 @@ test.describe('AIOps Agent pilot acceptance smoke', () => {
     expect(body.setup?.initialized).toBe(true);
     expect(body.setup?.step).toBe(2);
     await kite.dispose();
+
+    const api = await newAuthedApi();
+    const bridgeResponse = await api.get('/api/kite-bridge/status');
+    expect(bridgeResponse.ok()).toBeTruthy();
+    const bridgeBody = await bridgeResponse.json();
+    expect(bridgeBody.data.clusters.registered).toBeGreaterThan(0);
+    expect(bridgeBody.data.kite.initialized).toBe(true);
+    expect(typeof bridgeBody.data.kite.loginRequired).toBe('boolean');
+    await api.dispose();
   });
 
   test('opens a pending tool approval deep link generated through the Tool API', async ({ page }) => {

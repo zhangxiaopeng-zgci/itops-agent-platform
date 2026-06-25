@@ -36,11 +36,14 @@ services:
       KITE_URL: ${KITE_URL:-http://kite:8080}
       KITE_PUBLIC_URL: ${KITE_PUBLIC_URL:-http://10.1.132.58:3002}
       KITE_DATA_DIR: /app/kite-data
+      KITE_BOOTSTRAP_DIR: /app/kite-bootstrap
+      KITE_BOOTSTRAP_KUBECONFIG: /app/kite-bootstrap/kubeconfig
       KITE_BACKUP_DIR: /app/backups/kite
     volumes:
       - /opt/itops-agent-platform/data:/app/data
       - /opt/itops-agent-platform/backups:/app/backups
       - /opt/itops-agent-platform/kite-data:/app/kite-data:ro
+      - /opt/itops-agent-platform/kite-bootstrap:/app/kite-bootstrap
       - /opt/itops-agent-platform/secrets:/run/secrets:ro
     depends_on:
       hermes-diagnose:
