@@ -54,6 +54,249 @@ L1  Data, Asset & Execution Substrate Layer
 
 The layers are intentionally separated so the platform can grow without mixing user experience, reasoning, execution, governance, and infrastructure concerns.
 
+## Embedded Observability Six-Layer Model
+
+The Hermes-centric architecture needs a concrete operations data model underneath it. The target observability model should follow six layers:
+
+```text
+6. Operations Management & Intelligent Analysis
+5. Business & User Experience Monitoring
+4. Application & Service Monitoring
+3. Platform & Middleware Monitoring
+2. Resource & Virtualization Monitoring
+1. Infrastructure Monitoring
+```
+
+This six-layer model is not a competing architecture. It is the observability and operations-data backbone inside the seven-layer target architecture:
+
+```text
+Six-layer monitoring
+  -> provides full-stack evidence
+  -> feeds Case context and correlation trace
+  -> gives Hermes reliable context
+  -> enables diagnosis, approval-gated remediation, verification, and evolution
+```
+
+The lower three layers answer:
+
+```text
+Where is the resource or platform failure?
+```
+
+The upper three layers answer:
+
+```text
+How much business impact does it have?
+Should we act?
+How should we act?
+```
+
+Without the upper three layers, monitoring becomes an expensive alarm speaker. Without the lower three layers, business impact cannot be traced to reliable causes.
+
+### Layer 1: Infrastructure Monitoring
+
+Positioning:
+
+```text
+Data center, network, and physical equipment.
+```
+
+Scope:
+
+- Data center power and environment: power distribution, UPS, air conditioning, temperature, humidity, water leakage, smoke detection.
+- Network devices: core switches, routers, firewalls, load balancers.
+- Physical servers: CPU, memory, disk, hardware health.
+
+Core indicators:
+
+- Device online rate.
+- Resource utilization.
+- Network latency and packet loss.
+- Hardware alert events.
+
+Platform mapping:
+
+- Assets & Access: servers and network devices.
+- Case context: physical asset, network device, hardware event.
+- MCP Center: monitoring, SNMP, IPMI, DCIM, or network telemetry providers.
+
+### Layer 2: Resource & Virtualization Monitoring
+
+Positioning:
+
+```text
+Containers, Kubernetes, virtual machines, and cloud resource pools.
+```
+
+Scope:
+
+- Virtual machine instances.
+- Kubernetes clusters, nodes, pods, and containers.
+- Cloud resource pools: compute, storage, and network resource watermarks.
+
+Core indicators:
+
+- Node resource watermark.
+- Pod and container runtime status.
+- Scheduling success rate.
+- Resource overcommitment risk.
+
+Platform mapping:
+
+- Assets & Access: Kubernetes / Kite, cloud resources, VM inventory.
+- Case context: cluster, node, pod, namespace, workload, backing host.
+- MCP Center: Kubernetes, cloud, and virtualization providers.
+
+### Layer 3: Platform & Middleware Monitoring
+
+Positioning:
+
+```text
+Database, cache, message queue, registry, configuration center, and gateway.
+```
+
+Scope:
+
+- Relational and distributed databases.
+- Redis, Memcached, and cache systems.
+- Kafka, RabbitMQ, RocketMQ, and message queues.
+- Registry, configuration center, and API gateway.
+
+Core indicators:
+
+- QPS / TPS.
+- Response time and latency.
+- Connection count and queue backlog.
+- Replication and cluster health.
+
+Platform mapping:
+
+- MCP Center: database, cache, queue, gateway, and middleware providers.
+- Skill Center: database diagnosis, cache pressure, queue backlog, and gateway failure SOPs.
+- Case context: middleware dependency and platform health evidence.
+
+### Layer 4: Application & Service Monitoring
+
+Positioning:
+
+```text
+Microservices, interfaces, dependencies, and runtime.
+```
+
+Scope:
+
+- Application instances: health checks and runtime state.
+- Microservice APIs: traffic, success rate, latency.
+- Service dependency relationships.
+- Runtime environment: JVM memory, GC, thread pools, process health.
+
+Core indicators:
+
+- Service availability.
+- Interface success rate.
+- Request response time.
+- Error rate and exceptions.
+
+Platform mapping:
+
+- Diagnosis Center: service context and dependency evidence.
+- Case Workbench: affected service and suspected dependency chain.
+- Hermes: service-level diagnosis and stage judgment.
+- Skill Center: service troubleshooting SOPs.
+
+### Layer 5: Business & User Experience Monitoring
+
+Positioning:
+
+```text
+Business flow, user experience, SLA, and SLO.
+```
+
+Scope:
+
+- Core business flows: login, order, payment, refund, settlement.
+- Business metrics: conversion rate, order volume, GMV, payment success rate.
+- User experience: page load time, first-byte time, blank-screen time.
+- End-to-end trace and business journey profiles.
+
+Core indicators:
+
+- SLA / SLO.
+- Business success rate.
+- Page load performance.
+- Core business availability.
+
+Platform mapping:
+
+- Dashboard: business impact overview.
+- Case Workbench: impact summary and business severity.
+- Hermes: impact-aware prioritization and escalation advice.
+- API Layer: business event intake from application platforms and BI systems.
+
+### Layer 6: Operations Management & Intelligent Analysis
+
+Positioning:
+
+```text
+Alert, RCA, capacity prediction, automation, self-healing, and AIOps.
+```
+
+Scope:
+
+- Centralized alert management and assignment.
+- Alert correlation and noise reduction.
+- Root cause analysis.
+- Capacity trend analysis and prediction.
+- Automated remediation and self-healing.
+
+Core target:
+
+```text
+Merge 100 alerts into 1 root cause.
+If a repair is safe and approved, do not wait for manual toil.
+```
+
+Platform mapping:
+
+- Hermes Intelligence: reasoning, diagnosis, remediation planning, retrospective analysis, and skill evolution.
+- Case Workbench: operator spine and next action.
+- Execution Center: approval, workflow, task, and verification.
+- Evolution Governance: reusable lessons, skill drafts, evaluation, staging replay, and release guard.
+
+## Six-Layer Design Principles
+
+The observability model follows five principles:
+
+### 1. Full-Stack Coverage
+
+The platform must cover everything from data-center hardware to user experience. Any missing layer can become a blind spot.
+
+### 2. Layered Decoupling
+
+Each layer should do its own job. Infrastructure alerts, application alerts, and business alerts must be correlated, but not mixed into the same unstructured bucket.
+
+### 3. Business-Oriented Monitoring
+
+All monitoring should eventually answer:
+
+```text
+Is the business affected?
+```
+
+CPU at 100% matters less than whether users can still log in, order, pay, and receive service.
+
+### 4. Unified Standards
+
+Metric names, alert rules, log formats, labels, resource identifiers, severity levels, and correlation keys must be normalized.
+
+Without standards, more data only creates more noise.
+
+### 5. Extensibility And Intelligence
+
+Monitoring data should be governed as future AIOps fuel.
+
+Interfaces, metadata, label standards, and event schemas should be designed so Hermes can use them for diagnosis, automation, retrospective review, and self-evolution.
+
 ## L1: Data, Asset & Execution Substrate Layer
 
 Purpose:
@@ -464,6 +707,25 @@ Alert / Asset / Operator Input
 | Release overlays | L4 Evolution Governance + L5 Audit |
 | Servers / Network / Kubernetes | L1 Substrate + L4 Assets & Access |
 
+## Mapping Six-Layer Monitoring To The Seven-Layer Architecture
+
+| Monitoring layer | Primary seven-layer home | Product surface | Hermes usage |
+| --- | --- | --- | --- |
+| 1. Infrastructure | L1 Data, Asset & Execution Substrate | Assets & Access | Hardware, network, and data-center evidence |
+| 2. Resource & Virtualization | L1 Data + L4 Control Plane | Assets & Access, Kubernetes / Kite | Cluster, node, pod, VM, and resource scheduling evidence |
+| 3. Platform & Middleware | L1 Data + L3 MCP/Skill | MCP Center, Skill Center | Database, cache, queue, gateway, and middleware diagnosis context |
+| 4. Application & Service | L4 Control Plane + L3 Skill | Diagnosis Center, Case Workbench | Service dependency, interface, runtime, and error analysis |
+| 5. Business & UX | L4 Control Plane + L6 API | Dashboard, Case Workbench, external APIs | Business impact, SLA/SLO, and escalation judgment |
+| 6. Operations Intelligence | L2 Hermes + L5 Governance | Case Workbench, Execution Center, Evolution Governance | Alert convergence, RCA, remediation planning, verification, retrospective, and skill evolution |
+
+The implementation rule is:
+
+```text
+Monitoring layers 1-5 provide evidence.
+Layer 6 turns evidence into decision, action, and improvement.
+Hermes powers layer 6, but all execution still passes governance.
+```
+
 ## Architecture Principles
 
 ### 1. Hermes Is The Brain, Not The Executor
@@ -545,7 +807,24 @@ Work:
 - Add Case evidence summary by layer: Hermes, MCP, Skill, Approval, Task, Proposal.
 - Add Case owner, severity, SLA, and team fields.
 
-### Phase C: MCP And Skill Productization
+### Phase C: Six-Layer Observability Normalization
+
+Goal:
+
+```text
+Make monitoring evidence usable by Case and Hermes across all six layers.
+```
+
+Work:
+
+- Define common resource identity for data center, network, host, Kubernetes, middleware, service, and business flow.
+- Add layer labels to alerts, metrics, logs, trace evidence, and Case context.
+- Normalize severity, status, ownership, environment, and correlation fields.
+- Add Case evidence summary grouped by monitoring layer.
+- Add read-only MCP providers for the first three layers before mutating tools.
+- Add business impact fields from layer 5 into Case severity and next-action judgment.
+
+### Phase D: MCP And Skill Productization
 
 Goal:
 
@@ -560,7 +839,7 @@ Work:
 - Add import/export and backup/restore checks.
 - Add policy and permission summary per Channel.
 
-### Phase D: API Platformization
+### Phase E: API Platformization
 
 Goal:
 
@@ -576,7 +855,7 @@ Work:
 - Add OpenAPI docs.
 - Add idempotent event ingestion.
 
-### Phase E: Controlled Self-Evolution
+### Phase F: Controlled Self-Evolution
 
 Goal:
 
@@ -613,7 +892,7 @@ Phase A + Phase B minimal slice:
   2. Keep Case Workbench as the default operational spine.
   3. Group Execution Center secondary links: approvals, tasks, workflows, verification.
   4. Group Assets & Access secondary links: servers, network, Kubernetes/Kite, credentials, terminal.
-  5. Add Case evidence summary by architecture layer.
+  5. Add Case evidence summary by architecture layer and monitoring layer.
 ```
 
 This makes the platform feel less like a collection of pages and more like a layered AIOps operating system.
