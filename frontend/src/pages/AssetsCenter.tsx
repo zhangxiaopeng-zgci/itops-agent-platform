@@ -51,11 +51,14 @@ interface KubernetesCluster {
 interface AssetOption {
   id: string;
   rawId: string;
+  contextAssetId: string;
+  assetType: 'server' | 'network_device' | 'kubernetes_cluster';
   name: string;
   meta: string;
   type: 'host' | 'network' | 'kubernetes';
   typeKey: MessageKey;
   href: string;
+  serverIds: string[];
   icon: typeof Server;
 }
 
@@ -68,6 +71,18 @@ function toArray<T>(value: unknown, keys: string[] = []): T[] {
     }
   }
   return [];
+}
+
+function buildAssetContextPath(basePath: string, asset: AssetOption | null): string {
+  if (!asset) return basePath;
+
+  const params = new URLSearchParams();
+  params.set('assetId', asset.contextAssetId);
+  params.set('assetType', asset.assetType);
+  params.set('assetName', asset.name);
+  if (asset.serverIds.length > 0) params.set('serverIds', asset.serverIds.join(','));
+  if (asset.type === 'kubernetes') params.set('k8sClusterId', asset.rawId);
+  return `${basePath}?${params.toString()}`;
 }
 
 export default function AssetsCenter() {
@@ -193,31 +208,40 @@ export default function AssetsCenter() {
     ...servers.slice(0, 4).map((server) => ({
       id: `server-${server.id}`,
       rawId: server.id,
+      contextAssetId: server.id,
+      assetType: 'server' as const,
       name: server.name,
       meta: server.hostname,
       type: 'host' as const,
       typeKey: 'assetsCenter.type.host' as MessageKey,
       href: '/servers',
+      serverIds: [server.id],
       icon: Server,
     })),
     ...networkDevices.slice(0, 4).map((device) => ({
       id: `network-${device.id}`,
       rawId: device.id,
+      contextAssetId: `network-device:${device.id}`,
+      assetType: 'network_device' as const,
       name: device.name,
       meta: device.ip_address,
       type: 'network' as const,
       typeKey: 'assetsCenter.type.network' as MessageKey,
       href: '/network-devices',
+      serverIds: [],
       icon: Network,
     })),
     ...kubernetesClusters.slice(0, 4).map((cluster) => ({
       id: `kubernetes-${cluster.id}`,
       rawId: cluster.id,
+      contextAssetId: `k8s-cluster:${cluster.id}`,
+      assetType: 'kubernetes_cluster' as const,
       name: cluster.name,
       meta: `${cluster.node_count || 0} nodes / ${cluster.pod_count || 0} pods`,
       type: 'kubernetes' as const,
       typeKey: 'assetsCenter.type.kubernetes' as MessageKey,
       href: '/kubernetes-clusters',
+      serverIds: [],
       icon: Boxes,
     })),
   ].slice(0, 6);
@@ -329,14 +353,14 @@ export default function AssetsCenter() {
                 icon={Radar}
                 title={t('assetsCenter.focus.diagnose')}
                 description={t('assetsCenter.focus.diagnoseDesc')}
-                onClick={() => navigate('/diagnosis-center')}
+                onClick={() => navigate(buildAssetContextPath('/diagnosis-center', selectedAsset))}
                 disabled={!selectedAsset}
               />
               <AssetFocusAction
                 icon={Wrench}
                 title={t('assetsCenter.focus.execute')}
                 description={t('assetsCenter.focus.executeDesc')}
-                onClick={() => navigate('/execution-center')}
+                onClick={() => navigate(buildAssetContextPath('/execution-center', selectedAsset))}
                 disabled={!selectedAsset}
               />
               <AssetFocusAction

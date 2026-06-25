@@ -1,6 +1,6 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   AlertTriangle,
   ArrowRight,
@@ -101,6 +101,18 @@ function formatServerName(server: ServerItem): string {
   return server.name || server.hostname || server.id;
 }
 
+function splitCsv(value: string | null): string[] {
+  return (value || '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function getMetadataString(node: TopologyAssetNode, key: string): string | undefined {
+  const value = node.metadata?.[key];
+  return typeof value === 'string' && value ? value : undefined;
+}
+
 function getAssetTypeLabel(type: string | undefined, t: (key: MessageKey, values?: Record<string, string | number>) => string): string {
   const keys: Record<string, MessageKey> = {
     server: 'topology.asset.server',
@@ -113,6 +125,39 @@ function getAssetTypeLabel(type: string | undefined, t: (key: MessageKey, values
     kubernetes_service: 'topology.asset.kubernetesService',
   };
   return type && keys[type] ? t(keys[type]) : t('topology.asset.generic');
+}
+
+function findContextAsset(
+  nodes: TopologyAssetNode[],
+  assetId: string | null,
+  assetType: string | null,
+  serverIds: string[]
+): TopologyAssetNode | null {
+  const normalizedAssetId = assetId || '';
+  const normalizedType = assetType || '';
+
+  if (normalizedAssetId) {
+    const exact = nodes.find((node) => node.id === normalizedAssetId);
+    if (exact) return exact;
+
+    const byServer = nodes.find((node) => node.server_id === normalizedAssetId || (node.type === 'server' && node.id === normalizedAssetId));
+    if (byServer) return byServer;
+
+    const byMetadataAsset = nodes.find((node) => {
+      const metadataAssetId = getMetadataString(node, 'asset_id');
+      if (metadataAssetId !== normalizedAssetId) return false;
+      return !normalizedType || node.type === normalizedType;
+    });
+    if (byMetadataAsset) return byMetadataAsset;
+  }
+
+  if (serverIds.length > 0) {
+    const serverIdSet = new Set(serverIds);
+    const byServerIds = nodes.find((node) => serverIdSet.has(node.server_id || node.id));
+    if (byServerIds) return byServerIds;
+  }
+
+  return null;
 }
 
 function findRelatedServerIds(asset: TopologyAssetNode, nodes: TopologyAssetNode[], edges: TopologyAssetEdge[]): string[] {
@@ -229,10 +274,17 @@ function DiagnosisFocusStep({
 
 export default function DiagnosisCenter() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { t } = useLocale();
   const toast = useToast();
   const [selectedAssetId, setSelectedAssetId] = useState('');
-  const [selectedAlertId, setSelectedAlertId] = useState('');
+  const [selectedAlertId, setSelectedAlertId] = useState(searchParams.get('alertId') || '');
+  const [urlContextApplied, setUrlContextApplied] = useState(false);
+  const urlAssetId = searchParams.get('assetId');
+  const urlAssetType = searchParams.get('assetType');
+  const urlAssetName = searchParams.get('assetName') || '';
+  const urlServerIds = useMemo(() => splitCsv(searchParams.get('serverIds')), [searchParams]);
+  const urlK8sClusterId = searchParams.get('k8sClusterId') || '';
 
   const { data: alerts = [] } = useQuery({
     queryKey: ['diagnosis-center', 'alerts'],
@@ -286,9 +338,12 @@ export default function DiagnosisCenter() {
     return alerts.find((alert) => alert.id === selectedAlertId) || null;
   }, [alerts, selectedAlertId]);
   const relatedServerIds = useMemo(() => {
-    if (!selectedAsset) return [];
-    return findRelatedServerIds(selectedAsset, topologyNodes, topologyEdges);
-  }, [selectedAsset, topologyNodes, topologyEdges]);
+    const related = new Set(urlServerIds);
+    if (selectedAsset) {
+      findRelatedServerIds(selectedAsset, topologyNodes, topologyEdges).forEach((serverId) => related.add(serverId));
+    }
+    return Array.from(related);
+  }, [selectedAsset, topologyNodes, topologyEdges, urlServerIds]);
   const relatedServers = useMemo(() => {
     return servers.filter((server) => relatedServerIds.includes(server.id));
   }, [relatedServerIds, servers]);
@@ -346,6 +401,14 @@ export default function DiagnosisCenter() {
     return facts;
   }, [relatedServers, selectedAlert, selectedAsset, t, topologyImpact.downstream, topologyImpact.upstream]);
 
+  useEffect(() => {
+    if (urlContextApplied || topologyNodes.length === 0) return;
+    const urlAsset = findContextAsset(topologyNodes, urlAssetId, urlAssetType, urlServerIds);
+    if (urlAsset) setSelectedAssetId(urlAsset.id);
+    if (searchParams.get('alertId')) setSelectedAlertId(searchParams.get('alertId') || '');
+    setUrlContextApplied(true);
+  }, [searchParams, topologyNodes, urlAssetId, urlAssetType, urlContextApplied, urlServerIds]);
+
   const createCaseMutation = useMutation({
     mutationFn: async () => {
       const prompt = buildDiagnosisPrompt(selectedAsset, selectedAlert, t);
@@ -359,7 +422,7 @@ export default function DiagnosisCenter() {
         source: 'diagnosis_center',
         assetId: selectedAsset?.id || undefined,
         assetType: selectedAsset?.type || undefined,
-        assetName: selectedAsset ? getAssetDisplayName(selectedAsset) : undefined,
+        assetName: selectedAsset ? getAssetDisplayName(selectedAsset) : urlAssetName || undefined,
         alertId: selectedAlert?.id || undefined,
         serverIds: relatedServerIds,
         context: {
@@ -367,6 +430,12 @@ export default function DiagnosisCenter() {
           selectedAsset,
           selectedAlert,
           relatedServerIds,
+          handoff: {
+            assetId: urlAssetId || selectedAsset?.id || undefined,
+            assetType: urlAssetType || selectedAsset?.type || undefined,
+            assetName: urlAssetName || (selectedAsset ? getAssetDisplayName(selectedAsset) : undefined),
+            k8sClusterId: urlK8sClusterId || undefined,
+          },
           topologyImpact: {
             upstream: topologyImpact.upstream,
             downstream: topologyImpact.downstream,
@@ -390,6 +459,10 @@ export default function DiagnosisCenter() {
       params.set('correlationId', operationCase.correlation_id);
       if (serverIds.length > 0) params.set('serverIds', serverIds.join(','));
       if (alertId) params.set('alertId', alertId);
+      if (selectedAsset?.id) params.set('assetId', selectedAsset.id);
+      if (selectedAsset?.type) params.set('assetType', selectedAsset.type);
+      if (selectedAsset) params.set('assetName', getAssetDisplayName(selectedAsset));
+      if (urlK8sClusterId) params.set('k8sClusterId', urlK8sClusterId);
       params.set('prompt', prompt);
       navigate(`/hermes?${params.toString()}`);
     },
@@ -407,6 +480,10 @@ export default function DiagnosisCenter() {
     params.set('mode', 'diagnose');
     if (relatedServerIds.length > 0) params.set('serverIds', relatedServerIds.join(','));
     if (selectedAlert?.id) params.set('alertId', selectedAlert.id);
+    if (selectedAsset?.id) params.set('assetId', selectedAsset.id);
+    if (selectedAsset?.type) params.set('assetType', selectedAsset.type);
+    if (selectedAsset) params.set('assetName', getAssetDisplayName(selectedAsset));
+    if (urlK8sClusterId) params.set('k8sClusterId', urlK8sClusterId);
     params.set('prompt', buildDiagnosisPrompt(selectedAsset, selectedAlert, t));
     navigate(`/hermes?${params.toString()}`);
   };
@@ -415,7 +492,9 @@ export default function DiagnosisCenter() {
     const params = new URLSearchParams();
     if (selectedAsset?.id) params.set('assetId', selectedAsset.id);
     if (selectedAsset?.type) params.set('assetType', selectedAsset.type);
+    if (selectedAsset) params.set('assetName', getAssetDisplayName(selectedAsset));
     if (relatedServerIds.length > 0) params.set('serverIds', relatedServerIds.join(','));
+    if (urlK8sClusterId) params.set('k8sClusterId', urlK8sClusterId);
     navigate(`/execution-center?${params.toString()}`);
   };
 

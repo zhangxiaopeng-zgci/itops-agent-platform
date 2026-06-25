@@ -116,6 +116,7 @@ export default function ExecutionCenter() {
   const { t } = useLocale();
   const assetId = searchParams.get('assetId');
   const assetType = searchParams.get('assetType');
+  const assetName = searchParams.get('assetName');
   const serverIds = useMemo(() => {
     return (searchParams.get('serverIds') || '')
       .split(',')
@@ -172,10 +173,11 @@ export default function ExecutionCenter() {
     return servers.filter((server) => serverIds.includes(server.id));
   }, [serverIds, servers]);
   const handoffAssetLabel = useMemo(() => {
+    if (assetName) return assetName;
     if (!assetId) return '-';
     const matchedServer = servers.find((server) => server.id === assetId);
     return matchedServer ? formatServerName(matchedServer) : assetId;
-  }, [assetId, servers]);
+  }, [assetId, assetName, servers]);
   const hasHandoffContext = Boolean(assetId || assetType || serverIds.length > 0);
 
   const runningTasks = tasks.filter((task) => task.status === 'running').length;

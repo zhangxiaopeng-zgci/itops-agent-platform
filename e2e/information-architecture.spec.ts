@@ -55,6 +55,19 @@ test.describe('information architecture', () => {
     await expect(page.locator('body')).toContainText(/资产操作焦点|Asset Operation Focus/);
     await expect(page.locator('body')).toContainText(/当前资产|Current Asset/);
     await expect(page.locator('body')).toContainText(/诊断资产|Diagnose Asset/);
+
+    const diagnoseAsset = page.getByRole('button', { name: /诊断资产|Diagnose Asset/ }).first();
+    if (await diagnoseAsset.isEnabled()) {
+      await diagnoseAsset.click();
+      await expect(page).toHaveURL(/\/diagnosis-center\?.*assetId=/);
+      await expect(page.locator('body')).toContainText(/上下文摘要|Context Summary/);
+
+      await page.goto('/assets-center');
+      const executeAsset = page.getByRole('button', { name: /执行修复|Execute Repair/ }).first();
+      await executeAsset.click();
+      await expect(page).toHaveURL(/\/execution-center\?.*assetId=/);
+      await expect(page.locator('body')).toContainText(/诊断交接上下文|Diagnosis Handoff Context/);
+    }
   });
 
   test('exposes consolidated primary entries instead of the legacy advanced menu', async ({ page }) => {
