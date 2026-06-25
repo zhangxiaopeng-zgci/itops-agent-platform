@@ -6,6 +6,7 @@ import {
   Bot,
   Brain,
   CheckCircle2,
+  ClipboardList,
   Clock,
   GitBranch,
   LayoutDashboard,
@@ -249,6 +250,72 @@ export default function Dashboard() {
     },
   ];
 
+  const usageSteps = [
+    {
+      titleKey: 'dashboard.usage.step.detect.title',
+      descKey: 'dashboard.usage.step.detect.desc',
+      href: '/diagnosis-center',
+      icon: Radar,
+    },
+    {
+      titleKey: 'dashboard.usage.step.case.title',
+      descKey: 'dashboard.usage.step.case.desc',
+      href: '/operation-cases',
+      icon: ClipboardList,
+    },
+    {
+      titleKey: 'dashboard.usage.step.hermes.title',
+      descKey: 'dashboard.usage.step.hermes.desc',
+      href: '/hermes',
+      icon: Brain,
+    },
+    {
+      titleKey: 'dashboard.usage.step.approval.title',
+      descKey: 'dashboard.usage.step.approval.desc',
+      href: '/execution-center',
+      icon: ShieldAlert,
+    },
+    {
+      titleKey: 'dashboard.usage.step.verify.title',
+      descKey: 'dashboard.usage.step.verify.desc',
+      href: '/tasks',
+      icon: CheckCircle2,
+    },
+    {
+      titleKey: 'dashboard.usage.step.evolve.title',
+      descKey: 'dashboard.usage.step.evolve.desc',
+      href: '/evolution-governance',
+      icon: Sparkles,
+    },
+  ];
+
+  const startOptions = [
+    {
+      titleKey: 'dashboard.start.issue.title',
+      descKey: 'dashboard.start.issue.desc',
+      href: '/diagnosis-center',
+      icon: AlertTriangle,
+    },
+    {
+      titleKey: 'dashboard.start.case.title',
+      descKey: 'dashboard.start.case.desc',
+      href: '/operation-cases',
+      icon: ClipboardList,
+    },
+    {
+      titleKey: 'dashboard.start.execution.title',
+      descKey: 'dashboard.start.execution.desc',
+      href: '/execution-center',
+      icon: Route,
+    },
+    {
+      titleKey: 'dashboard.start.assets.title',
+      descKey: 'dashboard.start.assets.desc',
+      href: '/assets-center',
+      icon: Server,
+    },
+  ];
+
   const formatTaskStatus = (status: string) => {
     const key = `status.task.${status}` as MessageKey;
     const text = t(key);
@@ -293,6 +360,56 @@ export default function Dashboard() {
             </button>
           </div>
         </div>
+
+        <section className="space-y-4">
+          <div>
+            <h2 className="text-lg font-semibold text-text-primary">{t('dashboard.start.title')}</h2>
+            <p className="text-sm text-text-secondary mt-1">{t('dashboard.start.subtitle')}</p>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+            {startOptions.map((option) => (
+              <button
+                key={option.href}
+                onClick={() => navigate(option.href)}
+                className="text-left rounded-lg border border-border bg-surface p-4 hover:border-primary/60 hover:bg-primary/5 transition-colors"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="w-10 h-10 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
+                    <option.icon className="w-5 h-5" />
+                  </div>
+                  <ArrowRight className="w-4 h-4 text-text-secondary" />
+                </div>
+                <p className="font-semibold text-text-primary mt-4">{t(option.titleKey as MessageKey)}</p>
+                <p className="text-sm text-text-secondary mt-2">{t(option.descKey as MessageKey)}</p>
+              </button>
+            ))}
+          </div>
+        </section>
+
+        <section className="space-y-4">
+          <div>
+            <h2 className="text-lg font-semibold text-text-primary">{t('dashboard.usage.title')}</h2>
+            <p className="text-sm text-text-secondary mt-1">{t('dashboard.usage.subtitle')}</p>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-6 gap-3">
+            {usageSteps.map((step, index) => (
+              <button
+                key={step.href}
+                onClick={() => navigate(step.href)}
+                className="text-left rounded-lg border border-border bg-surface p-4 hover:border-primary/60 hover:bg-primary/5 transition-colors min-h-[150px]"
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <div className="w-9 h-9 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
+                    <step.icon className="w-4 h-4" />
+                  </div>
+                  <span className="text-xs font-semibold text-text-tertiary">{index + 1}</span>
+                </div>
+                <p className="font-semibold text-text-primary mt-4">{t(step.titleKey as MessageKey)}</p>
+                <p className="text-xs text-text-secondary mt-2 leading-relaxed">{t(step.descKey as MessageKey)}</p>
+              </button>
+            ))}
+          </div>
+        </section>
 
         {isLoading ? (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">

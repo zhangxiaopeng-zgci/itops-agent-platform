@@ -12,6 +12,20 @@ async function login(page: Page) {
 }
 
 test.describe('information architecture', () => {
+  test('guides operators from the dashboard into the standard case flow', async ({ page }) => {
+    await login(page);
+
+    await expect(page.locator('body')).toContainText(/从这里开始|Start Here/);
+    await expect(page.locator('body')).toContainText(/标准处理路径|Standard Handling Flow/);
+    await expect(page.locator('body')).toContainText(/我遇到告警或故障|I have an alert or incident/);
+    await expect(page.locator('body')).toContainText(/我接手一个处理中事项|I am taking over an active Case/);
+    await expect(page.locator('body')).toContainText(/审批与执行|Approve & Execute/);
+    await expect(page.locator('body')).toContainText(/复盘进化|Review & Evolve/);
+
+    await page.getByText(/我接手一个处理中事项|I am taking over an active Case/).click();
+    await expect(page).toHaveURL(/\/operation-cases/);
+  });
+
   test('exposes consolidated primary entries instead of the legacy advanced menu', async ({ page }) => {
     await login(page);
 
