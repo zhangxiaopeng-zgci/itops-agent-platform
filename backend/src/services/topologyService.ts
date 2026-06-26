@@ -495,7 +495,7 @@ class TopologyService {
     }));
   }
 
-  private getCloudNativeTopology(servers: ServerDB[]): TopologyGraph {
+  private getCloudNativeTopology(_servers: ServerDB[]): TopologyGraph {
     const nodes: TopologyNode[] = [];
     const edges: TopologyEdge[] = [];
 
@@ -510,67 +510,6 @@ class TopologyService {
       FROM kubernetes_nodes
       ORDER BY name
     `).all() as KubernetesNodeDB[];
-
-    const namespaces = db.prepare(`
-      SELECT id, cluster_id, name, status
-      FROM kubernetes_namespaces
-      ORDER BY name
-    `).all() as KubernetesNamespaceDB[];
-
-    const workloads = db.prepare(`
-      SELECT id, cluster_id, namespace_id, namespace, name, kind, replicas, ready_replicas, status, labels
-      FROM kubernetes_workloads
-      ORDER BY namespace, kind, name
-    `).all() as KubernetesWorkloadDB[];
-
-    const pods = db.prepare(`
-      SELECT id, cluster_id, namespace_id, node_id, namespace, name, phase, pod_ip, host_ip, restart_count, ready, labels
-      FROM kubernetes_pods
-      ORDER BY namespace, name
-      LIMIT 500
-    `).all() as KubernetesPodDB[];
-
-    const services = db.prepare(`
-      SELECT id, cluster_id, namespace_id, namespace, name, type, cluster_ip, external_ip, selector
-      FROM kubernetes_services
-      ORDER BY namespace, name
-    `).all() as KubernetesServiceDB[];
-
-    const namespaceByClusterAndName = new Map<string, KubernetesNamespaceDB>();
-    const nodeById = new Map(kubernetesNodes.map((node) => [node.id, node]));
-    const ensureNamespaceNode = (clusterId: string, namespaceName: string): string => {
-      const key = `${clusterId}:${namespaceName}`;
-      const existing = namespaceByClusterAndName.get(key);
-      if (existing) return this.kubernetesAssetId('namespace', existing.id);
-
-      const syntheticNamespace: KubernetesNamespaceDB = {
-        id: `${clusterId}:${namespaceName}`,
-        cluster_id: clusterId,
-        name: namespaceName,
-        status: 'unknown',
-      };
-      namespaceByClusterAndName.set(key, syntheticNamespace);
-      const namespaceId = this.kubernetesAssetId('namespace', syntheticNamespace.id);
-      nodes.push({
-        id: namespaceId,
-        name: namespaceName,
-        type: 'kubernetes_namespace',
-        status: 'warning',
-        metadata: {
-          asset_id: syntheticNamespace.id,
-          cluster_id: clusterId,
-          synthetic: true,
-        },
-      });
-      edges.push(this.assetEdge(
-        `k8s-cluster-namespace:${clusterId}:${syntheticNamespace.id}`,
-        this.kubernetesAssetId('cluster', clusterId),
-        namespaceId,
-        'contains',
-        'active'
-      ));
-      return namespaceId;
-    };
 
     for (const cluster of clusters) {
       const clusterNodeId = this.kubernetesAssetId('cluster', cluster.id);
@@ -588,172 +527,23 @@ class TopologyService {
       });
     }
 
+    const linkedServerIdsByCluster = new Map<string, Set<string>>();
     for (const node of kubernetesNodes) {
-      const nodeId = this.kubernetesAssetId('node', node.id);
-      const boundServerId = node.server_id || this.findServerForKubernetesNode(node, servers);
-      nodes.push({
-        id: nodeId,
-        server_id: boundServerId || undefined,
-        name: node.name,
-        ip: node.internal_ip || node.external_ip || undefined,
-        type: 'kubernetes_node',
-        status: this.normalizeAssetStatus(node.status),
-        metadata: {
-          asset_id: node.id,
-          cluster_id: node.cluster_id,
-          role: node.role,
-          internal_ip: node.internal_ip,
-          external_ip: node.external_ip,
-          bound_server_id: boundServerId,
-        },
-      });
+      if (!node.server_id) continue;
+      if (!linkedServerIdsByCluster.has(node.cluster_id)) {
+        linkedServerIdsByCluster.set(node.cluster_id, new Set());
+      }
+      const linkedServerIds = linkedServerIdsByCluster.get(node.cluster_id)!;
+      if (linkedServerIds.has(node.server_id)) continue;
+      linkedServerIds.add(node.server_id);
       edges.push(this.assetEdge(
-        `k8s-cluster-node:${node.cluster_id}:${node.id}`,
+        `k8s-cluster-server:${node.cluster_id}:${node.server_id}`,
         this.kubernetesAssetId('cluster', node.cluster_id),
-        nodeId,
-        'contains',
-        'active'
+        node.server_id,
+        'backs',
+        'active',
+        { source: 'kubernetes_node_binding' }
       ));
-
-      if (boundServerId) {
-        edges.push(this.assetEdge(
-          `k8s-node-server:${node.id}:${boundServerId}`,
-          nodeId,
-          boundServerId,
-          'runs_on',
-          'active'
-        ));
-      }
-    }
-
-    for (const namespace of namespaces) {
-      const namespaceId = this.kubernetesAssetId('namespace', namespace.id);
-      namespaceByClusterAndName.set(`${namespace.cluster_id}:${namespace.name}`, namespace);
-      nodes.push({
-        id: namespaceId,
-        name: namespace.name,
-        type: 'kubernetes_namespace',
-        status: this.normalizeAssetStatus(namespace.status),
-        metadata: {
-          asset_id: namespace.id,
-          cluster_id: namespace.cluster_id,
-        },
-      });
-      edges.push(this.assetEdge(
-        `k8s-cluster-namespace:${namespace.cluster_id}:${namespace.id}`,
-        this.kubernetesAssetId('cluster', namespace.cluster_id),
-        namespaceId,
-        'contains',
-        'active'
-      ));
-    }
-
-    for (const workload of workloads) {
-      const workloadId = this.kubernetesAssetId('workload', workload.id);
-      const namespaceId = ensureNamespaceNode(workload.cluster_id, workload.namespace);
-      nodes.push({
-        id: workloadId,
-        name: `${workload.kind}/${workload.name}`,
-        type: 'kubernetes_workload',
-        status: this.normalizeAssetStatus(workload.status),
-        metadata: {
-          asset_id: workload.id,
-          cluster_id: workload.cluster_id,
-          namespace: workload.namespace,
-          kind: workload.kind,
-          replicas: workload.replicas,
-          ready_replicas: workload.ready_replicas,
-        },
-      });
-      edges.push(this.assetEdge(
-        `k8s-namespace-workload:${workload.namespace_id || workload.namespace}:${workload.id}`,
-        namespaceId,
-        workloadId,
-        'contains',
-        'active'
-      ));
-    }
-
-    for (const pod of pods) {
-      const podId = this.kubernetesAssetId('pod', pod.id);
-      const workload = this.findWorkloadForPod(pod, workloads);
-      const namespaceId = ensureNamespaceNode(pod.cluster_id, pod.namespace);
-      const hostServerId = pod.node_id
-        ? this.findServerForKubernetesNode(nodeById.get(pod.node_id), servers)
-        : this.findServerByHostIp(pod.host_ip, servers);
-      nodes.push({
-        id: podId,
-        server_id: hostServerId || undefined,
-        name: pod.name,
-        ip: pod.pod_ip || undefined,
-        type: 'kubernetes_pod',
-        status: this.normalizeAssetStatus(pod.phase, pod.ready),
-        metadata: {
-          asset_id: pod.id,
-          cluster_id: pod.cluster_id,
-          namespace: pod.namespace,
-          phase: pod.phase,
-          restart_count: pod.restart_count,
-          ready: pod.ready,
-          host_ip: pod.host_ip,
-        },
-      });
-
-      edges.push(this.assetEdge(
-        `k8s-parent-pod:${workload?.id || pod.namespace_id || pod.namespace}:${pod.id}`,
-        workload ? this.kubernetesAssetId('workload', workload.id) : namespaceId,
-        podId,
-        workload ? 'owns' : 'contains',
-        'active'
-      ));
-
-      if (pod.node_id) {
-        edges.push(this.assetEdge(
-          `k8s-node-pod:${pod.node_id}:${pod.id}`,
-          this.kubernetesAssetId('node', pod.node_id),
-          podId,
-          'schedules',
-          'active'
-        ));
-      }
-    }
-
-    for (const service of services) {
-      const serviceId = this.kubernetesAssetId('service', service.id);
-      const workload = this.findWorkloadForService(service, workloads);
-      const namespaceId = ensureNamespaceNode(service.cluster_id, service.namespace);
-
-      nodes.push({
-        id: serviceId,
-        name: service.name,
-        ip: service.external_ip || service.cluster_ip || undefined,
-        type: 'kubernetes_service',
-        status: 'online',
-        metadata: {
-          asset_id: service.id,
-          cluster_id: service.cluster_id,
-          namespace: service.namespace,
-          service_type: service.type,
-          selector: this.parseJsonObject(service.selector),
-        },
-      });
-      edges.push(this.assetEdge(
-        `k8s-namespace-service:${service.namespace_id || service.namespace}:${service.id}`,
-        namespaceId,
-        serviceId,
-        'contains',
-        'active'
-      ));
-
-      if (workload) {
-        edges.push(this.assetEdge(
-          `k8s-service-workload:${service.id}:${workload.id}`,
-          serviceId,
-          this.kubernetesAssetId('workload', workload.id),
-          'exposes',
-          'active'
-        ));
-      }
     }
 
     return { nodes, edges };

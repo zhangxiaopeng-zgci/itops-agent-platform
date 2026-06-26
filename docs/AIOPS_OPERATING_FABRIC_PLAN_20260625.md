@@ -35,7 +35,7 @@
 已有能力：
 
 - Kubernetes 资产同步时会用节点名、internal IP、external IP 尝试自动绑定主机。
-- 拓扑服务会在全局拓扑中展示 Kubernetes Cluster -> Node -> Server -> Pod/Service/Workload 的关系。
+- 拓扑服务会在全局拓扑中展示现实资源边界：主机、网络设备、Kubernetes Cluster，以及 Cluster -> 背后主机的绑定关系。Kubernetes Node/Namespace/Workload/Pod/Service 属于集群内部对象，保留在 Kubernetes 集群详情或 Kite 中查看，不进入主拓扑。
 
 下一步增强：
 
@@ -55,7 +55,7 @@
 
 - 每个 Kubernetes 节点展示绑定主机、绑定来源、最后同步时间。
 - 首页展示绑定率和未绑定节点数。
-- 拓扑图中把自动推断边标为 inferred，把人工确认边标为 verified/manual。
+- 拓扑图只展示外层资源关系，集群内部对象不进入全局拓扑；Cluster -> Server 关系来自 Kubernetes 节点背后主机绑定。
 
 ### 4. 独立 Hermes Session
 

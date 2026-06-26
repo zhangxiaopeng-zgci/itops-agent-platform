@@ -333,7 +333,7 @@ export default function Topology() {
       )}
 
       <div className="grid gap-6">
-        <div className="grid gap-3 md:grid-cols-5">
+        <div className="grid gap-3 md:grid-cols-4">
           {assetSummary.map((item) => (
             <div key={item.key} className="rounded-lg border border-border bg-surface p-4">
               <div className="text-xs text-text-secondary">{item.label}</div>
@@ -486,12 +486,6 @@ function buildAssetSummary(topologyData: TopologyData | undefined, t: (key: Mess
       label: t('topology.summary.clusters'),
       value: count((node) => node.assetType === 'kubernetes_cluster'),
       helper: t('topology.summary.clustersHelper'),
-    },
-    {
-      key: 'kubernetes',
-      label: t('topology.summary.kubernetes'),
-      value: count((node) => String(node.assetType || '').startsWith('kubernetes_') && node.assetType !== 'kubernetes_cluster'),
-      helper: t('topology.summary.kubernetesHelper'),
     },
     {
       key: 'edges',
