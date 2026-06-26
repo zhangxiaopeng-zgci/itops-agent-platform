@@ -20,6 +20,7 @@
     "docker:clean": "docker system prune -f",
     "smoke:api": "node scripts/smoke-api.mjs",
     "test:e2e": "playwright test",
+    "test:e2e:closed-loop": "playwright test e2e/closed-loop-case.spec.ts",
     "test:e2e:headed": "playwright test --headed"
   },
   "engines": {
