@@ -178,12 +178,43 @@ function readString(value: unknown): string | null {
   return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
 }
 
-function extractPayloadId(event: OperationCaseEvent, keys: string[]): string | null {
+function extractPayloadRef(event: OperationCaseEvent, type: 'approval' | 'task' | 'proposal'): string | null {
+  const directKeys = type === 'approval'
+    ? ['approvalId', 'approval_id', 'id']
+    : type === 'task'
+      ? ['taskId', 'task_id', 'id']
+      : ['proposalId', 'proposal_id', 'id'];
+  const direct = extractDirectPayloadId(event, directKeys);
+  if (direct) return direct;
+
+  const extractedRefs = event.payload?.extractedRefs;
+  if (extractedRefs && typeof extractedRefs === 'object' && !Array.isArray(extractedRefs)) {
+    const key = type === 'approval' ? 'approvalIds' : type === 'task' ? 'taskIds' : 'proposalIds';
+    const ref = readFirstString((extractedRefs as Record<string, unknown>)[key]);
+    if (ref) return ref;
+  }
+
+  if (event.event_type.includes(type) || (type === 'task' && event.event_type.includes('workflow'))) {
+    return readString(event.source_id);
+  }
+  return null;
+}
+
+function extractDirectPayloadId(event: OperationCaseEvent, keys: string[]): string | null {
   for (const key of keys) {
     const value = readString(event.payload?.[key]);
     if (value) return value;
   }
-  return readString(event.source_id);
+  return null;
+}
+
+function readFirstString(value: unknown): string | null {
+  if (!Array.isArray(value)) return null;
+  for (const item of value) {
+    const text = readString(item);
+    if (text) return text;
+  }
+  return null;
 }
 
 function statusTone(status: CaseStatus) {
@@ -788,9 +819,9 @@ function TimelineEvent({
   onNavigate: (path: string) => void;
 }) {
   const Icon = eventIcon(event.event_type);
-  const approvalId = event.event_type.includes('approval') ? extractPayloadId(event, ['approvalId', 'id']) : null;
-  const taskId = event.event_type.includes('task') || event.event_type.includes('workflow') ? extractPayloadId(event, ['taskId', 'id']) : null;
-  const proposalId = event.event_type.includes('evolution') ? extractPayloadId(event, ['proposalId', 'id']) : null;
+  const approvalId = extractPayloadRef(event, 'approval');
+  const taskId = extractPayloadRef(event, 'task');
+  const proposalId = event.event_type.includes('evolution') ? extractPayloadRef(event, 'proposal') : null;
   return (
     <div className="flex gap-3">
       <div className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-border bg-surface">
