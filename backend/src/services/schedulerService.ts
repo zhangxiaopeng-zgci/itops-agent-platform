@@ -85,6 +85,11 @@ class SchedulerService {
    * 初始化服务器性能指标定期采集任务（每 5 分钟）
    */
   private initMetricsCollection() {
+    if (process.env.SERVER_METRICS_SCHEDULER_ENABLED === 'false') {
+      logger.warn('⚠️ Server metrics collection scheduler disabled by SERVER_METRICS_SCHEDULER_ENABLED=false');
+      return;
+    }
+
     const metricsJob = scheduleJob('*/5 * * * *', async () => {
       logger.info('📊 Starting scheduled server metrics collection...');
       

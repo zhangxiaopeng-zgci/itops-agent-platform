@@ -396,22 +396,15 @@ class KubernetesClusterService {
     const clusters = db.prepare(`
       SELECT
         c.*,
-        COUNT(DISTINCT n.id) as node_count,
-        COUNT(DISTINCT ns.id) as namespace_count,
-        COUNT(DISTINCT w.id) as workload_count,
-        COUNT(DISTINCT p.id) as pod_count,
-        COUNT(DISTINCT svc.id) as service_count,
-        COUNT(DISTINCT ev.id) as event_count,
-        COUNT(DISTINCT n.server_id) as node_bound_count,
-        COUNT(DISTINCT n.server_id) as bound_server_count
+        (SELECT COUNT(*) FROM kubernetes_nodes n WHERE n.cluster_id = c.id) as node_count,
+        (SELECT COUNT(*) FROM kubernetes_namespaces ns WHERE ns.cluster_id = c.id) as namespace_count,
+        (SELECT COUNT(*) FROM kubernetes_workloads w WHERE w.cluster_id = c.id) as workload_count,
+        (SELECT COUNT(*) FROM kubernetes_pods p WHERE p.cluster_id = c.id) as pod_count,
+        (SELECT COUNT(*) FROM kubernetes_services svc WHERE svc.cluster_id = c.id) as service_count,
+        (SELECT COUNT(*) FROM kubernetes_events ev WHERE ev.cluster_id = c.id) as event_count,
+        (SELECT COUNT(DISTINCT n.server_id) FROM kubernetes_nodes n WHERE n.cluster_id = c.id AND n.server_id IS NOT NULL) as node_bound_count,
+        (SELECT COUNT(DISTINCT n.server_id) FROM kubernetes_nodes n WHERE n.cluster_id = c.id AND n.server_id IS NOT NULL) as bound_server_count
       FROM kubernetes_clusters c
-      LEFT JOIN kubernetes_nodes n ON n.cluster_id = c.id
-      LEFT JOIN kubernetes_namespaces ns ON ns.cluster_id = c.id
-      LEFT JOIN kubernetes_workloads w ON w.cluster_id = c.id
-      LEFT JOIN kubernetes_pods p ON p.cluster_id = c.id
-      LEFT JOIN kubernetes_services svc ON svc.cluster_id = c.id
-      LEFT JOIN kubernetes_events ev ON ev.cluster_id = c.id
-      GROUP BY c.id
       ORDER BY c.created_at DESC
     `).all() as KubernetesClusterSummary[];
 
@@ -422,23 +415,16 @@ class KubernetesClusterService {
     const cluster = db.prepare(`
       SELECT
         c.*,
-        COUNT(DISTINCT n.id) as node_count,
-        COUNT(DISTINCT ns.id) as namespace_count,
-        COUNT(DISTINCT w.id) as workload_count,
-        COUNT(DISTINCT p.id) as pod_count,
-        COUNT(DISTINCT svc.id) as service_count,
-        COUNT(DISTINCT ev.id) as event_count,
-        COUNT(DISTINCT n.server_id) as node_bound_count,
-        COUNT(DISTINCT n.server_id) as bound_server_count
+        (SELECT COUNT(*) FROM kubernetes_nodes n WHERE n.cluster_id = c.id) as node_count,
+        (SELECT COUNT(*) FROM kubernetes_namespaces ns WHERE ns.cluster_id = c.id) as namespace_count,
+        (SELECT COUNT(*) FROM kubernetes_workloads w WHERE w.cluster_id = c.id) as workload_count,
+        (SELECT COUNT(*) FROM kubernetes_pods p WHERE p.cluster_id = c.id) as pod_count,
+        (SELECT COUNT(*) FROM kubernetes_services svc WHERE svc.cluster_id = c.id) as service_count,
+        (SELECT COUNT(*) FROM kubernetes_events ev WHERE ev.cluster_id = c.id) as event_count,
+        (SELECT COUNT(DISTINCT n.server_id) FROM kubernetes_nodes n WHERE n.cluster_id = c.id AND n.server_id IS NOT NULL) as node_bound_count,
+        (SELECT COUNT(DISTINCT n.server_id) FROM kubernetes_nodes n WHERE n.cluster_id = c.id AND n.server_id IS NOT NULL) as bound_server_count
       FROM kubernetes_clusters c
-      LEFT JOIN kubernetes_nodes n ON n.cluster_id = c.id
-      LEFT JOIN kubernetes_namespaces ns ON ns.cluster_id = c.id
-      LEFT JOIN kubernetes_workloads w ON w.cluster_id = c.id
-      LEFT JOIN kubernetes_pods p ON p.cluster_id = c.id
-      LEFT JOIN kubernetes_services svc ON svc.cluster_id = c.id
-      LEFT JOIN kubernetes_events ev ON ev.cluster_id = c.id
       WHERE c.id = ?
-      GROUP BY c.id
     `).get(id) as KubernetesClusterSummary | undefined;
 
     return cluster ? this.hydrateBackingHostCount(cluster) : undefined;
