@@ -125,6 +125,32 @@ test.describe('AIOps Agent pilot acceptance smoke', () => {
       const caseDetailBody = await caseDetailResponse.json();
       expect(caseDetailBody.data.events.some((event: { event_type: string }) => event.event_type === 'hermes_session_launched')).toBeTruthy();
     }
+
+    const serversResponse = await api.get('/api/servers');
+    expect(serversResponse.ok()).toBeTruthy();
+    const serversBody = await serversResponse.json();
+    const servers = Array.isArray(serversBody.data) ? serversBody.data : (serversBody.data?.servers || []);
+    const server = servers[0];
+    if (server) {
+      const autoCaseLaunchResponse = await api.post('/api/hermes-sessions/launch', {
+        data: {
+          mode: 'diagnose',
+          channelId: diagnoseOption.channel.id,
+          contextType: 'server',
+          assetId: server.id,
+          assetType: 'server',
+          assetName: server.name,
+          serverId: server.id,
+          serverIds: [server.id],
+          prompt: `诊断主机 ${server.name}`
+        }
+      });
+      expect(autoCaseLaunchResponse.ok()).toBeTruthy();
+      const autoCaseLaunchBody = await autoCaseLaunchResponse.json();
+      expect(autoCaseLaunchBody.data.createdCaseId).toBeTruthy();
+      expect(autoCaseLaunchBody.data.launchUrl).toContain('caseId=');
+      expect(autoCaseLaunchBody.data.caseEventId).toBeTruthy();
+    }
     await api.dispose();
 
     await loginInBrowser(page);

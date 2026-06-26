@@ -196,6 +196,10 @@ export default function HermesConsole() {
     }
     if (launchContextType === 'server' && selectedServer) {
       return {
+        contextType: 'server',
+        assetId: selectedServer.id,
+        assetType: 'server',
+        assetName: selectedServer.name,
         serverId: selectedServer.id,
         serverIds: [selectedServer.id],
         prompt: t('hermesConsole.launch.prompt.server', {
@@ -206,6 +210,10 @@ export default function HermesConsole() {
     }
     if (launchContextType === 'kubernetes' && selectedKubernetesCluster) {
       return {
+        contextType: 'kubernetes',
+        assetId: selectedKubernetesCluster.id,
+        assetType: 'kubernetes_cluster',
+        assetName: selectedKubernetesCluster.name,
         knowledgeCategory: 'kubernetes',
         prompt: t('hermesConsole.launch.prompt.kubernetes', {
           name: selectedKubernetesCluster.name,
@@ -218,7 +226,11 @@ export default function HermesConsole() {
     }
     if (launchContextType === 'alert' && selectedAlert) {
       return {
+        contextType: 'alert',
         alertId: selectedAlert.id,
+        assetType: 'alert',
+        assetName: selectedAlert.title,
+        severity: selectedAlert.severity,
         prompt: t('hermesConsole.launch.prompt.alert', {
           title: selectedAlert.title,
           severity: selectedAlert.severity,

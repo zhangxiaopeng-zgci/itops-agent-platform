@@ -4,7 +4,7 @@ import db from '../models/database';
 import { requireRole } from '../middleware/auth';
 import { getHermesSession, listHermesSessions } from '../services/hermesSessionService';
 import { listHermesChannels } from '../services/hermesChannelService';
-import { recordOperationCaseEvent } from '../services/operationCaseService';
+import { createOperationCase, recordOperationCaseEvent } from '../services/operationCaseService';
 
 const router = Router();
 
@@ -32,6 +32,27 @@ const DEFAULT_PROMPTS: Record<string, string> = {
   remediate: '请基于当前上下文生成修复编排方案，说明风险、审批要求、回滚方案和验证步骤；如需执行，请先提交审批。',
   review: '请复盘当前 correlation 链路，提取处理结果、证据缺口、流程问题和可形成的 Skill/MCP/Workflow/Policy 进化建议。',
 };
+
+function cleanString(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function buildCaseTitle(input: {
+  mode: string;
+  contextType: string;
+  assetName: string;
+  alertId: string;
+  serverId: string;
+  knowledgeCategory: string;
+}): string {
+  if (input.contextType === 'server' && input.assetName) return `Hermes 主机诊断：${input.assetName}`;
+  if (input.contextType === 'kubernetes' && input.assetName) return `Hermes Kubernetes 诊断：${input.assetName}`;
+  if (input.contextType === 'alert' && input.assetName) return `Hermes 告警诊断：${input.assetName}`;
+  if (input.alertId) return `Hermes 告警诊断：${input.alertId}`;
+  if (input.serverId) return `Hermes 主机诊断：${input.serverId}`;
+  if (input.knowledgeCategory) return `Hermes ${input.knowledgeCategory} 会话`;
+  return `Hermes ${input.mode} 会话`;
+}
 
 function getHermesAgentForChannel(channelId: string, mode: string) {
   const byChannel = db.prepare(`
@@ -130,23 +151,61 @@ router.post('/launch', requireRole('admin', 'operator', 'viewer'), (req: Authent
       return res.status(403).json({ success: false, error: 'Current role cannot launch this Hermes session' });
     }
 
-    const correlationId = typeof req.body?.correlationId === 'string' && req.body.correlationId.trim()
-      ? req.body.correlationId.trim()
-      : `hermes-session-${randomUUID()}`;
     const prompt = typeof req.body?.prompt === 'string' && req.body.prompt.trim()
       ? req.body.prompt.trim()
       : option.defaultPrompt;
+    let correlationId = cleanString(req.body?.correlationId) || `hermes-session-${randomUUID()}`;
+    let caseId = cleanString(req.body?.caseId);
+    const contextType = cleanString(req.body?.contextType);
+    const assetId = cleanString(req.body?.assetId);
+    const assetType = cleanString(req.body?.assetType);
+    const assetName = cleanString(req.body?.assetName);
+    const serverId = cleanString(req.body?.serverId);
+    const serverIds = Array.isArray(req.body?.serverIds) && req.body.serverIds.length > 0 ? req.body.serverIds.map(String).filter(Boolean) : [];
+    const alertId = cleanString(req.body?.alertId);
+    const workflowId = cleanString(req.body?.workflowId);
+    const knowledgeCategory = cleanString(req.body?.knowledgeCategory);
+
+    let createdCaseId: string | null = null;
+    const shouldCreateCase = !caseId && Boolean(alertId || serverId || assetId || contextType === 'kubernetes');
+    if (shouldCreateCase) {
+      const operationCase = createOperationCase({
+        title: buildCaseTitle({ mode, contextType, assetName, alertId, serverId, knowledgeCategory }),
+        caseType: contextType === 'alert' || alertId ? 'incident' : 'diagnosis',
+        status: 'diagnosing',
+        severity: contextType === 'alert' ? cleanString(req.body?.severity) || null : null,
+        source: 'hermes_session_launcher',
+        assetId: assetId || serverId || null,
+        assetType: assetType || (serverId ? 'server' : contextType || null),
+        assetName: assetName || null,
+        alertId: alertId || null,
+        correlationId,
+        serverIds: serverIds.length > 0 ? serverIds : (serverId ? [serverId] : []),
+        context: {
+          mode,
+          channelId,
+          channelName: option.channel.name,
+          agentId: option.agent?.id || null,
+          contextType: contextType || null,
+          workflowId: workflowId || null,
+          knowledgeCategory: knowledgeCategory || null,
+        },
+        summary: {
+          launchedFrom: 'hermes_console',
+          prompt,
+        },
+        createdBy: req.user?.id || null,
+      });
+      caseId = operationCase.id;
+      correlationId = operationCase.correlation_id;
+      createdCaseId = operationCase.id;
+    }
+
     const params = new URLSearchParams({
       mode,
       correlationId,
       prompt,
     });
-    const caseId = typeof req.body?.caseId === 'string' && req.body.caseId.trim() ? req.body.caseId.trim() : '';
-    const serverId = typeof req.body?.serverId === 'string' && req.body.serverId.trim() ? req.body.serverId.trim() : '';
-    const serverIds = Array.isArray(req.body?.serverIds) && req.body.serverIds.length > 0 ? req.body.serverIds.map(String).filter(Boolean) : [];
-    const alertId = typeof req.body?.alertId === 'string' && req.body.alertId.trim() ? req.body.alertId.trim() : '';
-    const workflowId = typeof req.body?.workflowId === 'string' && req.body.workflowId.trim() ? req.body.workflowId.trim() : '';
-    const knowledgeCategory = typeof req.body?.knowledgeCategory === 'string' && req.body.knowledgeCategory.trim() ? req.body.knowledgeCategory.trim() : '';
 
     if (caseId) params.set('caseId', caseId);
     if (serverId) params.set('serverId', serverId);
@@ -194,6 +253,7 @@ router.post('/launch', requireRole('admin', 'operator', 'viewer'), (req: Authent
         prompt,
         policy: option.policy,
         capabilitySummary: option.capabilitySummary,
+        createdCaseId,
         caseEventId: caseEvent?.id || null,
       },
     });
