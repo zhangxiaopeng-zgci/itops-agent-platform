@@ -9,6 +9,27 @@ import { requireRole } from '../middleware/auth';
 
 const router = Router();
 
+function syncServerGroups(serverId: string, groupIds: string[] | undefined) {
+  if (!groupIds) return;
+
+  const uniqueGroupIds = Array.from(new Set(groupIds.filter(Boolean)));
+  if (uniqueGroupIds.length > 0) {
+    const placeholders = uniqueGroupIds.map(() => '?').join(', ');
+    const existingGroups = db.prepare(`SELECT id FROM server_groups WHERE id IN (${placeholders})`).all(...uniqueGroupIds) as Array<{ id: string }>;
+    if (existingGroups.length !== uniqueGroupIds.length) {
+      throw new Error('One or more server groups do not exist');
+    }
+  }
+
+  db.transaction(() => {
+    db.prepare('DELETE FROM server_group_mapping WHERE server_id = ?').run(serverId);
+    const insert = db.prepare('INSERT OR IGNORE INTO server_group_mapping (server_id, group_id) VALUES (?, ?)');
+    for (const groupId of uniqueGroupIds) {
+      insert.run(serverId, groupId);
+    }
+  })();
+}
+
 // Get all servers
 router.get('/', (_req: Request, res: Response) => {
   try {
@@ -49,6 +70,7 @@ router.get('/:id', validateParams(serverSchemas.serverId), (req: Request, res: R
 router.post('/', validateBody(serverSchemas.createServer), requireRole('admin', 'operator'), (req: Request, res: Response) => {
   try {
     const { name, hostname, port, username, password, private_key, use_ssh_key, description, os_type, ssh_key_id } = req.body;
+    const { group_ids } = req.body as { group_ids?: string[] };
     const tags = (req.body as Record<string, unknown>).tags;
     const tagsJson = tags ? JSON.stringify(tags) : null;
 
@@ -60,10 +82,12 @@ router.post('/', validateBody(serverSchemas.createServer), requireRole('admin', 
       `INSERT INTO servers (id, name, hostname, port, username, password, private_key, use_ssh_key, description, tags, os_type, ssh_key_id)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(id, name, hostname, port || 22, username, encryptedPassword, encryptedPrivateKey, use_ssh_key ? 1 : 0, description || null, tagsJson, os_type || 'linux', ssh_key_id || null);
+    syncServerGroups(id, group_ids);
 
     res.json({ success: true, data: { id } });
-  } catch {
-    res.status(500).json({ success: false, error: 'Failed to create server' });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Failed to create server';
+    res.status(500).json({ success: false, error: message });
   }
 });
 
@@ -76,6 +100,7 @@ router.put('/:id', validateParams(serverSchemas.serverId), validateBody(serverSc
     }
 
     const { name, hostname, port, username, password, private_key, use_ssh_key, description, enabled, os_type, ssh_key_id } = req.body as Record<string, unknown>;
+    const { group_ids } = req.body as { group_ids?: string[] };
     const hasSshKeyId = Object.prototype.hasOwnProperty.call(req.body, 'ssh_key_id');
     const tags = (req.body as Record<string, unknown>).tags;
     const tagsJson = tags ? JSON.stringify(tags) : undefined;
@@ -116,10 +141,12 @@ router.put('/:id', validateParams(serverSchemas.serverId), validateBody(serverSc
       use_ssh_key !== undefined ? (use_ssh_key ? 1 : 0) : undefined,
       description, tagsJson, enabled, os_type, hasSshKeyId ? 1 : 0, ssh_key_id ?? null, req.params.id
     );
+    syncServerGroups(req.params.id, group_ids);
 
     res.json({ success: true });
-  } catch {
-    res.status(500).json({ success: false, error: 'Failed to update server' });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Failed to update server';
+    res.status(500).json({ success: false, error: message });
   }
 });
 

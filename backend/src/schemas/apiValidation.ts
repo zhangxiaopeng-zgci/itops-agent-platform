@@ -26,6 +26,7 @@ export const serverSchemas = {
     os_type: z.enum(['linux', 'windows', 'unknown']).default('linux'),
     tags: z.array(z.string()).optional(),
     ssh_key_id: z.string().uuid().nullable().optional(),
+    group_ids: z.array(z.string().uuid()).optional(),
   }),
   updateServer: z.object({
     name: z.string().min(1).max(100).optional(),
@@ -40,6 +41,7 @@ export const serverSchemas = {
     os_type: z.enum(['linux', 'windows', 'unknown']).optional(),
     tags: z.array(z.string()).optional(),
     ssh_key_id: z.string().uuid().nullable().optional(),
+    group_ids: z.array(z.string().uuid()).optional(),
   }),
   serverId: z.object({
     id: z.string().uuid('无效的服务器ID'),

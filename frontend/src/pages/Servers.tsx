@@ -123,7 +123,8 @@ export default function Servers() {
     tags: '',
     os_type: 'linux' as 'linux' | 'windows',
     vnc_port: 5900,
-    vnc_password: ''
+    vnc_password: '',
+    group_ids: [] as string[],
   });
   const [command, setCommand] = useState('');
   const [commandResult, setCommandResult] = useState<CommandResult | null>(null);
@@ -180,6 +181,7 @@ export default function Servers() {
   const [showSshKeyDropdown, setShowSshKeyDropdown] = useState(false);
   const [groupFormData, setGroupFormData] = useState({ name: '', description: '', parent_id: '' });
   const [editingGroup, setEditingGroup] = useState<ServerGroup | null>(null);
+  const [serverToAddToGroup, setServerToAddToGroup] = useState('');
   const [importData, setImportData] = useState('');
   const [importResult, setImportResult] = useState<any>(null);
   const [showGroups, setShowGroups] = useState(false);
@@ -249,6 +251,23 @@ export default function Servers() {
     },
   });
 
+  const flatGroups = useMemo(() => {
+    const result: ServerGroup[] = [];
+    const walk = (items: ServerGroup[] = []) => {
+      for (const item of items) {
+        result.push(item);
+        if (item.children?.length) walk(item.children);
+      }
+    };
+    walk(groupsData || []);
+    return result;
+  }, [groupsData]);
+
+  const selectedGroup = useMemo(() => {
+    if (!selectedGroupId) return null;
+    return flatGroups.find((group) => group.id === selectedGroupId) || null;
+  }, [flatGroups, selectedGroupId]);
+
   // 获取所有唯一的标签
   const allTags = Array.from(new Set(
     (Array.isArray(servers) ? servers : [])
@@ -312,6 +331,11 @@ export default function Servers() {
     ? safeServers.filter((server: Server) => (Array.isArray(server.tags) ? server.tags : []).includes(selectedTag))
     : safeServers;
 
+  const serversAvailableForSelectedGroup = useMemo(() => {
+    if (!selectedGroupId) return [];
+    return safeServers.filter((server: Server) => !(server.groups || []).some((group) => group.id === selectedGroupId));
+  }, [safeServers, selectedGroupId]);
+
   const { data: commandHistory, refetch: refetchCommandHistory } = useQuery({
     queryKey: ['commandHistory', selectedServer?.id],
     queryFn: async () => {
@@ -338,6 +362,7 @@ export default function Servers() {
       ...data,
       tags: data.tags ? data.tags.split(',').map((t: string) => t.trim()).filter(Boolean) : (isEdit ? undefined : []),
       ssh_key_id: usingSavedCredential ? data.ssh_key_id : null,
+      group_ids: data.group_ids || [],
     };
 
     if (usingSavedCredential) {
@@ -369,6 +394,7 @@ export default function Servers() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['servers'] });
+      queryClient.invalidateQueries({ queryKey: ['server-groups'] });
       resetForm();
       setIsModalOpen(false);
       toast.success(t('servers.toast.created'));
@@ -386,6 +412,7 @@ export default function Servers() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['servers'] });
+      queryClient.invalidateQueries({ queryKey: ['server-groups'] });
       resetForm();
       setIsModalOpen(false);
       setSelectedServer(null);
@@ -517,6 +544,22 @@ export default function Servers() {
     },
   });
 
+  const addServerToGroupMutation = useMutation({
+    mutationFn: async ({ serverId, groupId }: { serverId: string; groupId: string }) => {
+      const res = await api.post('/api/server-groups/mapping', { server_id: serverId, group_id: groupId });
+      return res.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['servers'] });
+      queryClient.invalidateQueries({ queryKey: ['server-groups'] });
+      setServerToAddToGroup('');
+      toast.success(t('servers.groups.serverAdded'));
+    },
+    onError: (err: any) => {
+      toast.error(err.response?.data?.message || err.response?.data?.error || t('servers.groups.serverAddFailed'));
+    },
+  });
+
   const resetForm = () => {
     setFormData({
       name: '',
@@ -531,7 +574,8 @@ export default function Servers() {
       tags: '',
       os_type: 'linux' as 'linux' | 'windows',
       vnc_port: 5900,
-      vnc_password: ''
+      vnc_password: '',
+      group_ids: [],
     });
     setSelectedSshKeyId('');
     setSshKeySearchQuery('');
@@ -575,7 +619,8 @@ export default function Servers() {
       tags: server.tags ? server.tags.join(', ') : '',
       os_type: (server as any).os_type || 'linux',
       vnc_port: (server as any).vnc_port || 5900,
-      vnc_password: ''
+      vnc_password: '',
+      group_ids: (server.groups || []).map((group) => group.id),
     });
     setIsModalOpen(true);
   };
@@ -781,6 +826,11 @@ export default function Servers() {
     }
   };
 
+  const handleAddServerToSelectedGroup = () => {
+    if (!selectedGroupId || !serverToAddToGroup) return;
+    addServerToGroupMutation.mutate({ serverId: serverToAddToGroup, groupId: selectedGroupId });
+  };
+
   const handleImport = async () => {
     try {
       const servers = importData.split('\n').filter(Boolean).map((line) => {
@@ -827,7 +877,10 @@ export default function Servers() {
                 ? 'bg-primary/10 text-primary'
                 : 'hover:bg-background text-text-secondary'
             )}
-            onClick={() => setSelectedGroupId(selectedGroupId === group.id ? null : group.id)}
+            onClick={() => {
+              setSelectedGroupId(selectedGroupId === group.id ? null : group.id);
+              setServerToAddToGroup('');
+            }}
           >
             {group.children && group.children.length > 0 ? (
               <ChevronDown className="w-3 h-3 flex-shrink-0" />
@@ -915,6 +968,38 @@ export default function Servers() {
                   <GroupTree groups={groupsData} />
                 ) : (
                   <p className="text-xs text-text-secondary py-4 text-center">{t('servers.groups.empty')}</p>
+                )}
+                {selectedGroup && (
+                  <div className="mt-4 pt-4 border-t border-border space-y-2">
+                    <div>
+                      <p className="text-xs font-medium text-text-primary">{t('servers.groups.addServerTitle')}</p>
+                      <p className="text-[11px] text-text-tertiary mt-1">{selectedGroup.name}</p>
+                    </div>
+                    <select
+                      value={serverToAddToGroup}
+                      onChange={(event) => setServerToAddToGroup(event.target.value)}
+                      className="w-full px-2 py-2 rounded-lg bg-background border border-border text-xs text-text-primary focus:outline-none focus:border-primary"
+                    >
+                      <option value="">{t('servers.groups.selectServer')}</option>
+                      {serversAvailableForSelectedGroup.map((server) => (
+                        <option key={server.id} value={server.id}>
+                          {server.name} · {server.hostname}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      onClick={handleAddServerToSelectedGroup}
+                      disabled={!serverToAddToGroup || addServerToGroupMutation.isPending}
+                      className="w-full inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-primary text-white text-xs font-medium hover:bg-primary/90 disabled:opacity-50"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      {t('servers.groups.addServer')}
+                    </button>
+                    {serversAvailableForSelectedGroup.length === 0 && (
+                      <p className="text-[11px] text-text-tertiary">{t('servers.groups.noAvailableServers')}</p>
+                    )}
+                  </div>
                 )}
               </div>
             )}
@@ -1974,6 +2059,39 @@ export default function Servers() {
                     )}
                   </div>
                 )}
+
+                <div>
+                  <label className="block text-sm font-medium text-text-secondary mb-2">{t('servers.form.groups')}</label>
+                  {flatGroups.length > 0 ? (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 rounded-lg border border-border bg-background/40 p-3 max-h-40 overflow-y-auto">
+                      {flatGroups.map((group) => {
+                        const checked = formData.group_ids.includes(group.id);
+                        return (
+                          <label key={group.id} className="flex items-center gap-2 text-sm text-text-primary">
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={(event) => {
+                                const next = event.target.checked
+                                  ? Array.from(new Set([...formData.group_ids, group.id]))
+                                  : formData.group_ids.filter((id) => id !== group.id);
+                                setFormData({ ...formData, group_ids: next });
+                              }}
+                              className="rounded border-border"
+                            />
+                            <FolderTree className="w-3.5 h-3.5 text-text-tertiary flex-shrink-0" />
+                            <span className="truncate">{group.name}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="rounded-lg border border-border bg-background/40 px-3 py-3 text-sm text-text-secondary">
+                      {t('servers.groups.empty')}
+                    </div>
+                  )}
+                  <p className="mt-1 text-xs text-text-tertiary">{t('servers.form.groupsHelp')}</p>
+                </div>
 
                 <div>
                   <label className="block text-sm font-medium text-text-secondary mb-2">{t('servers.form.description')}</label>
