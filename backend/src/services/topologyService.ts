@@ -92,6 +92,11 @@ interface KubernetesNodeDB {
   status: string;
 }
 
+interface ClusterServerGroupMappingDB {
+  server_id: string;
+  group_name: string;
+}
+
 interface KubernetesNamespaceDB {
   id: string;
   cluster_id: string;
@@ -495,7 +500,7 @@ class TopologyService {
     }));
   }
 
-  private getCloudNativeTopology(_servers: ServerDB[]): TopologyGraph {
+  private getCloudNativeTopology(servers: ServerDB[]): TopologyGraph {
     const nodes: TopologyNode[] = [];
     const edges: TopologyEdge[] = [];
 
@@ -528,22 +533,49 @@ class TopologyService {
     }
 
     const linkedServerIdsByCluster = new Map<string, Set<string>>();
-    for (const node of kubernetesNodes) {
-      if (!node.server_id) continue;
-      if (!linkedServerIdsByCluster.has(node.cluster_id)) {
-        linkedServerIdsByCluster.set(node.cluster_id, new Set());
+    const addClusterServerEdge = (
+      clusterId: string,
+      serverId: string,
+      source: string,
+      metadata: Record<string, unknown> = {}
+    ) => {
+      if (!linkedServerIdsByCluster.has(clusterId)) {
+        linkedServerIdsByCluster.set(clusterId, new Set());
       }
-      const linkedServerIds = linkedServerIdsByCluster.get(node.cluster_id)!;
-      if (linkedServerIds.has(node.server_id)) continue;
-      linkedServerIds.add(node.server_id);
+      const linkedServerIds = linkedServerIdsByCluster.get(clusterId)!;
+      if (linkedServerIds.has(serverId)) return;
+      linkedServerIds.add(serverId);
       edges.push(this.assetEdge(
-        `k8s-cluster-server:${node.cluster_id}:${node.server_id}`,
-        this.kubernetesAssetId('cluster', node.cluster_id),
-        node.server_id,
-        'backs',
+        `k8s-cluster-server:${clusterId}:${serverId}`,
+        this.kubernetesAssetId('cluster', clusterId),
+        serverId,
+        'backed_by',
         'active',
-        { source: 'kubernetes_node_binding' }
+        { source, ...metadata }
       ));
+    };
+
+    for (const node of kubernetesNodes) {
+      const serverId = node.server_id || this.findServerForKubernetesNode(node, servers);
+      if (!serverId) continue;
+      addClusterServerEdge(
+        node.cluster_id,
+        serverId,
+        node.server_id ? 'kubernetes_node_binding' : 'kubernetes_node_match',
+        { node_id: node.id, node_name: node.name }
+      );
+    }
+
+    for (const cluster of clusters) {
+      const groupServers = this.findServerIdsForKubernetesClusterGroups(cluster);
+      for (const groupServer of groupServers) {
+        addClusterServerEdge(
+          cluster.id,
+          groupServer.server_id,
+          'server_group_cluster_match',
+          { group_name: groupServer.group_name }
+        );
+      }
     }
 
     return { nodes, edges };
@@ -591,6 +623,36 @@ class TopologyService {
     });
 
     return matched?.id || null;
+  }
+
+  private findServerIdsForKubernetesClusterGroups(cluster: KubernetesClusterDB): ClusterServerGroupMappingDB[] {
+    const clusterName = this.normalizeClusterAssociationName(cluster.name);
+    if (!clusterName) return [];
+
+    const mappings = db.prepare(`
+      SELECT sgm.server_id, sg.name AS group_name
+      FROM server_group_mapping sgm
+      JOIN server_groups sg ON sg.id = sgm.group_id
+      JOIN servers s ON s.id = sgm.server_id
+      WHERE s.enabled != 0
+      ORDER BY sg.name, s.name
+    `).all() as ClusterServerGroupMappingDB[];
+
+    return mappings.filter((mapping) => {
+      const groupName = this.normalizeClusterAssociationName(mapping.group_name);
+      if (!groupName) return false;
+      return clusterName === groupName || clusterName.includes(groupName) || groupName.includes(clusterName);
+    });
+  }
+
+  private normalizeClusterAssociationName(value: string | null | undefined): string {
+    return String(value || '')
+      .trim()
+      .toLowerCase()
+      .replace(/kubernetes/g, 'k8s')
+      .replace(/\bcluster\b/g, '')
+      .replace(/集群/g, '')
+      .replace(/[\s_-]+/g, '');
   }
 
   private findServerByHostIp(hostIp: string | null, servers: ServerDB[]): string | null {

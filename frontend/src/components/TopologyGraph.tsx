@@ -74,6 +74,9 @@ export default function TopologyGraph({ nodes, edges, width = 1200, height = 600
     kubernetes_pod: t('topology.asset.kubernetesPod'),
     kubernetes_service: t('topology.asset.kubernetesService'),
   };
+  const edgeLabels: Record<string, string> = {
+    backed_by: t('topology.edge.backedBy'),
+  };
 
   const nodeMap = useMemo(() => {
     const map = new Map<string, TopologyNode>();
@@ -270,7 +273,7 @@ export default function TopologyGraph({ nodes, edges, width = 1200, height = 600
                   className="text-xs"
                   fill={isRootCausePath ? '#f97316' : '#64748b'}
                 >
-                  {edge.protocol}
+                  {edgeLabels[edge.protocol] || edge.protocol}
                 </text>
               )}
             </g>
