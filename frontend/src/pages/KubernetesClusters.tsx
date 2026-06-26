@@ -8,6 +8,8 @@ import {
   Cloud,
   Eye,
   ExternalLink,
+  KeyRound,
+  Layers3,
   Link2,
   Loader2,
   Plus,
@@ -189,6 +191,7 @@ const emptyCredentialForm = {
 };
 
 const inputClass = 'w-full px-3 py-2 rounded-lg bg-background border border-border text-text-primary placeholder-text-secondary focus:outline-none focus:border-primary';
+type KubernetesSection = 'overview' | 'clusters' | 'credentials';
 
 function toArray<T>(value: unknown, keys: string[] = []): T[] {
   if (Array.isArray(value)) return value as T[];
@@ -218,6 +221,7 @@ export default function KubernetesClusters() {
   const [deleteCredentialTarget, setDeleteCredentialTarget] = useState<CredentialOption | null>(null);
   const [bindingTarget, setBindingTarget] = useState<KubernetesNode | null>(null);
   const [bindingServerId, setBindingServerId] = useState('');
+  const [activeSection, setActiveSection] = useState<KubernetesSection>('overview');
   const [formData, setFormData] = useState(emptyForm);
   const [credentialForm, setCredentialForm] = useState(emptyCredentialForm);
   const isAdmin = user?.role === 'admin';
@@ -572,6 +576,27 @@ export default function KubernetesClusters() {
           </div>
         </div>
 
+        <div className="flex flex-wrap gap-2 rounded-lg border border-border bg-surface p-2">
+          <SectionTab
+            active={activeSection === 'overview'}
+            icon={<Layers3 className="w-4 h-4" />}
+            label={t('kubernetes.section.overview')}
+            onClick={() => setActiveSection('overview')}
+          />
+          <SectionTab
+            active={activeSection === 'clusters'}
+            icon={<Cloud className="w-4 h-4" />}
+            label={t('kubernetes.section.clusters')}
+            onClick={() => setActiveSection('clusters')}
+          />
+          <SectionTab
+            active={activeSection === 'credentials'}
+            icon={<KeyRound className="w-4 h-4" />}
+            label={t('kubernetes.section.credentials')}
+            onClick={() => setActiveSection('credentials')}
+          />
+        </div>
+
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <MetricCard icon={Cloud} label={t('kubernetes.metric.clusters')} value={clusters.length} />
           <MetricCard icon={Server} label={t('kubernetes.metric.nodes')} value={totals.nodes} />
@@ -600,6 +625,63 @@ export default function KubernetesClusters() {
           </div>
         </section>
 
+        {activeSection === 'overview' && (
+          <div className="bg-surface border border-border rounded-lg">
+            <div className="p-4 border-b border-border">
+              <h2 className="text-lg font-semibold text-text-primary">{t('kubernetes.overview.title')}</h2>
+              <p className="text-sm text-text-secondary mt-1">{t('kubernetes.overview.subtitle')}</p>
+            </div>
+            {clusters.length === 0 ? (
+              <div className="p-8 text-center">
+                <Boxes className="w-10 h-10 text-text-secondary mx-auto mb-3" />
+                <p className="font-semibold text-text-primary">{t('kubernetes.empty.title')}</p>
+                <p className="text-sm text-text-secondary mt-1">{t('kubernetes.empty.desc')}</p>
+              </div>
+            ) : (
+              <div className="divide-y divide-border">
+                {clusters.map((cluster) => (
+                  <div key={cluster.id} className="p-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h3 className="text-sm font-semibold text-text-primary truncate">{cluster.name}</h3>
+                        <span className="rounded-full border border-border bg-background px-2 py-0.5 text-xs text-text-secondary">
+                          {cluster.environment || t('common.unknown')}
+                        </span>
+                        <span className="rounded-full border border-border bg-background px-2 py-0.5 text-xs text-text-secondary">
+                          {cluster.auth_type}
+                        </span>
+                      </div>
+                      <p className="mt-1 text-xs text-text-secondary break-all">{cluster.api_server_url || t('kubernetes.noApiServer')}</p>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2 text-center sm:min-w-[360px]">
+                      <MiniMetric label={t('kubernetes.metric.nodes')} value={cluster.node_count} />
+                      <MiniMetric label={t('kubernetes.metric.boundServers')} value={cluster.bound_server_count} />
+                      <MiniMetric label={t('kubernetes.field.lastSync')} value={cluster.last_sync_at ? t('kubernetes.synced') : t('kubernetes.neverSynced')} />
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        onClick={() => setDetailCluster(cluster)}
+                        className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-border text-xs text-text-primary hover:bg-background"
+                      >
+                        <Eye className="w-3.5 h-3.5" />
+                        {t('common.details')}
+                      </button>
+                      <button
+                        onClick={() => openHermesDiagnosis(cluster)}
+                        className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-primary/30 text-xs text-primary hover:bg-primary/10"
+                      >
+                        <BrainCircuit className="w-3.5 h-3.5" />
+                        {t('kubernetes.action.diagnose')}
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {activeSection === 'credentials' && (
         <div className="bg-surface border border-border rounded-lg p-4">
           <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
             <div>
@@ -658,7 +740,9 @@ export default function KubernetesClusters() {
             ))}
           </div>
         </div>
+        )}
 
+        {activeSection === 'clusters' && (
         <div className="bg-surface border border-border rounded-lg">
           <div className="p-4 border-b border-border flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div>
@@ -801,6 +885,7 @@ export default function KubernetesClusters() {
             </div>
           )}
         </div>
+        )}
       </div>
 
       {isModalOpen && (
@@ -1232,6 +1317,22 @@ export default function KubernetesClusters() {
   );
 }
 
+function SectionTab({ active, icon, label, onClick }: { active: boolean; icon: ReactNode; label: string; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className={`inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm transition-colors ${
+        active
+          ? 'bg-primary text-white'
+          : 'text-text-secondary hover:bg-background hover:text-text-primary'
+      }`}
+    >
+      {icon}
+      {label}
+    </button>
+  );
+}
+
 function MetricCard({ icon: Icon, label, value }: { icon: typeof Cloud; label: string; value: number }) {
   return (
     <div className="bg-surface border border-border rounded-lg p-4">
@@ -1240,6 +1341,15 @@ function MetricCard({ icon: Icon, label, value }: { icon: typeof Cloud; label: s
         <span className="text-2xl font-semibold text-text-primary">{value}</span>
       </div>
       <p className="text-sm text-text-secondary mt-3">{label}</p>
+    </div>
+  );
+}
+
+function MiniMetric({ label, value }: { label: string; value: string | number }) {
+  return (
+    <div className="rounded-lg border border-border bg-background/60 px-3 py-2">
+      <p className="text-[11px] text-text-secondary truncate">{label}</p>
+      <p className="mt-1 text-sm font-semibold text-text-primary truncate">{value}</p>
     </div>
   );
 }
