@@ -84,10 +84,10 @@ export default function KubernetesConsole() {
   const syncMutation = useMutation({
     mutationFn: async (clusterId?: string | null) => {
       const res = await api.post('/api/kite-bridge/sync-bootstrap', { clusterId });
-      return res.data.data as { clusterId: string; clusterName: string; syncedAt: string };
+      return res.data.data as { clusterId: string; clusterName: string; syncedAt: string; clusters?: Array<{ id: string; name: string }> };
     },
     onSuccess: (result) => {
-      toast.success(t('kubernetesConsole.bridge.syncSuccess', { name: result.clusterName }));
+      toast.success(t('kubernetesConsole.bridge.syncSuccess', { name: result.clusterName, count: result.clusters?.length || 1 }));
       queryClient.invalidateQueries({ queryKey: ['kite-bridge-status'] });
     },
     onError: (error: unknown) => {
@@ -201,7 +201,7 @@ export default function KubernetesConsole() {
               className="inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-semibold text-white hover:bg-primary/90 disabled:opacity-50"
             >
               <RefreshCw className={`w-4 h-4 ${syncMutation.isPending ? 'animate-spin' : ''}`} />
-              {syncMutation.isPending ? t('kubernetesConsole.bridge.syncing') : t('kubernetesConsole.bridge.sync')}
+              {syncMutation.isPending ? t('kubernetesConsole.bridge.syncing') : t('kubernetesConsole.bridge.syncAll')}
             </button>
             <button
               onClick={() => sessionMutation.mutate()}

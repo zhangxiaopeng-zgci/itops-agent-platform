@@ -21,9 +21,9 @@ router.get('/status', requireRole('admin', 'operator', 'viewer'), async (_req: R
   }
 });
 
-router.post('/sync-bootstrap', requireRole('admin', 'operator'), validateBody(syncSchema), (req: Request, res: Response) => {
+router.post('/sync-bootstrap', requireRole('admin', 'operator'), validateBody(syncSchema), async (req: Request, res: Response) => {
   try {
-    const result = kiteBridgeService.syncBootstrap(req.body.clusterId || null);
+    const result = await kiteBridgeService.syncBootstrap(req.body.clusterId || null);
     res.json({ success: true, data: result });
   } catch (error) {
     logger.error('Failed to sync Kite bootstrap kubeconfig', error as Error);

@@ -41,6 +41,7 @@ services:
       KITE_DATA_DIR: /app/kite-data
       KITE_BOOTSTRAP_DIR: /app/kite-bootstrap
       KITE_BOOTSTRAP_KUBECONFIG: /app/kite-bootstrap/kubeconfig
+      KITE_BOOTSTRAP_CONFIG: /app/kite-bootstrap/config.yaml
       KITE_BACKUP_DIR: /app/backups/kite
     volumes:
       - /opt/itops-agent-platform/data:/app/data
