@@ -20,10 +20,18 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+function hasStoredAuth(): boolean {
+  try {
+    return Boolean(localStorage.getItem('token') && localStorage.getItem('user'));
+  } catch {
+    return false;
+  }
+}
+
 // 验证token是否有效
 const verifyToken = async (_token: string): Promise<boolean> => {
   try {
-    const response = await api.get('/api/auth/me');
+    const response = await api.get('/api/auth/me', { timeout: 5000 });
     return response.status === 200;
   } catch {
     return false;
@@ -33,15 +41,15 @@ const verifyToken = async (_token: string): Promise<boolean> => {
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(hasStoredAuth);
 
   useEffect(() => {
     const initializeAuth = async () => {
-      const savedToken = localStorage.getItem('token');
-      const savedUser = localStorage.getItem('user');
-      
-      if (savedToken && savedUser) {
-        try {
+      try {
+        const savedToken = localStorage.getItem('token');
+        const savedUser = localStorage.getItem('user');
+
+        if (savedToken && savedUser) {
           // 验证token是否仍然有效
           const isValid = await verifyToken(savedToken);
           if (isValid) {
@@ -52,12 +60,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             localStorage.removeItem('token');
             localStorage.removeItem('user');
           }
-        } catch {
-          localStorage.removeItem('token');
-          localStorage.removeItem('user');
         }
+      } catch {
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+        localStorage.removeItem('refreshToken');
+      } finally {
+        setIsLoading(false);
       }
-      setIsLoading(false);
     };
 
     initializeAuth();

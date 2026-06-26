@@ -5,6 +5,11 @@ import db from '../models/database';
 import { decrypt } from './encryptionService';
 import { logger } from '../utils/logger';
 
+const KUBERNETES_API_REQUEST_TIMEOUT_MS = 8000;
+const KUBERNETES_API_SYNC_TIMEOUT_MS = 20000;
+const KUBERNETES_API_MAX_RESPONSE_BYTES = 5 * 1024 * 1024;
+const KUBERNETES_API_LIST_LIMIT = 500;
+
 export type KubernetesAuthType = 'kubeconfig' | 'token' | 'certificate';
 
 export interface KubernetesCluster {
@@ -392,6 +397,8 @@ function parseKubeconfig(rawKubeconfig: string): KubernetesApiAuth {
 }
 
 class KubernetesClusterService {
+  private readonly activeApiSyncs = new Set<string>();
+
   getAllClusters(): KubernetesClusterSummary[] {
     const clusters = db.prepare(`
       SELECT
@@ -890,89 +897,109 @@ class KubernetesClusterService {
   }
 
   async syncClusterFromApi(id: string): Promise<KubernetesSyncResult | undefined> {
-    const cluster = this.getClusterById(id);
-    if (!cluster) return undefined;
-    const auth = this.getKubernetesApiAuth(cluster);
-    const apiServerUrl = normalizeText(auth.apiServerUrl) || cluster.api_server_url;
-    if (!apiServerUrl) {
-      throw new Error('Kubernetes API server URL is not configured');
+    if (this.activeApiSyncs.has(id)) {
+      throw new Error('Kubernetes live sync is already running for this cluster');
     }
 
-    const apiBase = normalizeBaseUrl(apiServerUrl);
-    const [nodes, namespaces, deployments, statefulSets, daemonSets, pods, services, events] = await Promise.all([
-      this.kubernetesGet<KubernetesApiList<KubernetesApiNode>>(apiBase, '/api/v1/nodes', auth.token),
-      this.kubernetesGet<KubernetesApiList<KubernetesApiNamespace>>(apiBase, '/api/v1/namespaces', auth.token),
-      this.kubernetesGet<KubernetesApiList<KubernetesApiWorkload>>(apiBase, '/apis/apps/v1/deployments', auth.token),
-      this.kubernetesGet<KubernetesApiList<KubernetesApiWorkload>>(apiBase, '/apis/apps/v1/statefulsets', auth.token),
-      this.kubernetesGet<KubernetesApiList<KubernetesApiWorkload>>(apiBase, '/apis/apps/v1/daemonsets', auth.token),
-      this.kubernetesGet<KubernetesApiList<KubernetesApiPod>>(apiBase, '/api/v1/pods', auth.token),
-      this.kubernetesGet<KubernetesApiList<KubernetesApiService>>(apiBase, '/api/v1/services', auth.token),
-      this.kubernetesGet<KubernetesApiList<KubernetesApiEvent>>(apiBase, '/api/v1/events', auth.token),
-    ]);
+    const cluster = this.getClusterById(id);
+    if (!cluster) return undefined;
 
-    const snapshot: KubernetesAssetSnapshot = {
-      nodes: (nodes.items || []).map((node) => ({
-        name: requireName(node.metadata, 'unknown-node'),
-        internal_ip: getNodeAddress(node, 'InternalIP'),
-        external_ip: getNodeAddress(node, 'ExternalIP'),
-        role: getNodeRole(node),
-        status: getNodeStatus(node),
-        kubelet_version: node.status?.nodeInfo?.kubeletVersion,
-        os_image: node.status?.nodeInfo?.osImage,
-        container_runtime: node.status?.nodeInfo?.containerRuntimeVersion,
-        cpu_capacity: node.status?.capacity?.cpu,
-        memory_capacity: node.status?.capacity?.memory,
-        pod_capacity: node.status?.capacity?.pods ? Number(node.status.capacity.pods) : null,
-        labels: node.metadata?.labels,
-        annotations: node.metadata?.annotations,
-      })),
-      namespaces: (namespaces.items || []).map((namespace) => ({
-        name: requireName(namespace.metadata, 'default'),
-        status: namespace.status?.phase || 'unknown',
-        labels: namespace.metadata?.labels,
-        annotations: namespace.metadata?.annotations,
-      })),
-      workloads: [
-        ...(deployments.items || []).map((workload) => this.mapApiWorkload(workload, 'Deployment')),
-        ...(statefulSets.items || []).map((workload) => this.mapApiWorkload(workload, 'StatefulSet')),
-        ...(daemonSets.items || []).map((workload) => this.mapApiWorkload(workload, 'DaemonSet')),
-      ],
-      pods: (pods.items || []).map((pod) => ({
-        namespace: pod.metadata?.namespace || 'default',
-        name: requireName(pod.metadata, 'unknown-pod'),
-        phase: pod.status?.phase || 'unknown',
-        pod_ip: pod.status?.podIP,
-        host_ip: pod.status?.hostIP,
-        node_name: pod.spec?.nodeName,
-        restart_count: sumRestarts(pod),
-        ready: podReady(pod),
-        labels: pod.metadata?.labels,
-        annotations: pod.metadata?.annotations,
-      })),
-      services: (services.items || []).map((service) => ({
-        namespace: service.metadata?.namespace || 'default',
-        name: requireName(service.metadata, 'unknown-service'),
-        type: service.spec?.type,
-        cluster_ip: service.spec?.clusterIP,
-        external_ip: service.spec?.externalIPs?.join(','),
-        ports: service.spec?.ports,
-        selector: service.spec?.selector,
-        labels: service.metadata?.labels,
-      })),
-      events: (events.items || []).map((event) => ({
-        namespace: event.metadata?.namespace,
-        involved_kind: event.involvedObject?.kind,
-        involved_name: event.involvedObject?.name,
-        type: event.type,
-        reason: event.reason,
-        message: event.message,
-        count: event.count,
-        first_seen_at: event.firstTimestamp || event.metadata?.creationTimestamp,
-        last_seen_at: event.lastTimestamp || event.eventTime || event.metadata?.creationTimestamp,
-      })),
-    };
+    this.activeApiSyncs.add(id);
+    const abortController = new AbortController();
+    const timeout = setTimeout(() => abortController.abort(), KUBERNETES_API_SYNC_TIMEOUT_MS);
+    timeout.unref?.();
 
-    return this.syncClusterAssets(id, snapshot, { autoCreateHosts: true });
+    try {
+      const auth = this.getKubernetesApiAuth(cluster);
+      const apiServerUrl = normalizeText(auth.apiServerUrl) || cluster.api_server_url;
+      if (!apiServerUrl) {
+        throw new Error('Kubernetes API server URL is not configured');
+      }
+
+      const apiBase = normalizeBaseUrl(apiServerUrl);
+      const [nodes, namespaces, deployments, statefulSets, daemonSets, pods, services, events] = await Promise.all([
+        this.kubernetesGet<KubernetesApiList<KubernetesApiNode>>(apiBase, '/api/v1/nodes', auth.token, { signal: abortController.signal }),
+        this.kubernetesGet<KubernetesApiList<KubernetesApiNamespace>>(apiBase, '/api/v1/namespaces', auth.token, { signal: abortController.signal }),
+        this.kubernetesGet<KubernetesApiList<KubernetesApiWorkload>>(apiBase, '/apis/apps/v1/deployments', auth.token, { signal: abortController.signal }),
+        this.kubernetesGet<KubernetesApiList<KubernetesApiWorkload>>(apiBase, '/apis/apps/v1/statefulsets', auth.token, { signal: abortController.signal }),
+        this.kubernetesGet<KubernetesApiList<KubernetesApiWorkload>>(apiBase, '/apis/apps/v1/daemonsets', auth.token, { signal: abortController.signal }),
+        this.kubernetesGet<KubernetesApiList<KubernetesApiPod>>(apiBase, `/api/v1/pods?limit=${KUBERNETES_API_LIST_LIMIT}`, auth.token, { signal: abortController.signal }),
+        this.kubernetesGet<KubernetesApiList<KubernetesApiService>>(apiBase, '/api/v1/services', auth.token, { signal: abortController.signal }),
+        this.kubernetesGet<KubernetesApiList<KubernetesApiEvent>>(apiBase, `/api/v1/events?limit=${KUBERNETES_API_LIST_LIMIT}`, auth.token, { signal: abortController.signal }),
+      ]);
+
+      const snapshot: KubernetesAssetSnapshot = {
+        nodes: (nodes.items || []).map((node) => ({
+          name: requireName(node.metadata, 'unknown-node'),
+          internal_ip: getNodeAddress(node, 'InternalIP'),
+          external_ip: getNodeAddress(node, 'ExternalIP'),
+          role: getNodeRole(node),
+          status: getNodeStatus(node),
+          kubelet_version: node.status?.nodeInfo?.kubeletVersion,
+          os_image: node.status?.nodeInfo?.osImage,
+          container_runtime: node.status?.nodeInfo?.containerRuntimeVersion,
+          cpu_capacity: node.status?.capacity?.cpu,
+          memory_capacity: node.status?.capacity?.memory,
+          pod_capacity: node.status?.capacity?.pods ? Number(node.status.capacity.pods) : null,
+          labels: node.metadata?.labels,
+          annotations: node.metadata?.annotations,
+        })),
+        namespaces: (namespaces.items || []).map((namespace) => ({
+          name: requireName(namespace.metadata, 'default'),
+          status: namespace.status?.phase || 'unknown',
+          labels: namespace.metadata?.labels,
+          annotations: namespace.metadata?.annotations,
+        })),
+        workloads: [
+          ...(deployments.items || []).map((workload) => this.mapApiWorkload(workload, 'Deployment')),
+          ...(statefulSets.items || []).map((workload) => this.mapApiWorkload(workload, 'StatefulSet')),
+          ...(daemonSets.items || []).map((workload) => this.mapApiWorkload(workload, 'DaemonSet')),
+        ],
+        pods: (pods.items || []).map((pod) => ({
+          namespace: pod.metadata?.namespace || 'default',
+          name: requireName(pod.metadata, 'unknown-pod'),
+          phase: pod.status?.phase || 'unknown',
+          pod_ip: pod.status?.podIP,
+          host_ip: pod.status?.hostIP,
+          node_name: pod.spec?.nodeName,
+          restart_count: sumRestarts(pod),
+          ready: podReady(pod),
+          labels: pod.metadata?.labels,
+          annotations: pod.metadata?.annotations,
+        })),
+        services: (services.items || []).map((service) => ({
+          namespace: service.metadata?.namespace || 'default',
+          name: requireName(service.metadata, 'unknown-service'),
+          type: service.spec?.type,
+          cluster_ip: service.spec?.clusterIP,
+          external_ip: service.spec?.externalIPs?.join(','),
+          ports: service.spec?.ports,
+          selector: service.spec?.selector,
+          labels: service.metadata?.labels,
+        })),
+        events: (events.items || []).map((event) => ({
+          namespace: event.metadata?.namespace,
+          involved_kind: event.involvedObject?.kind,
+          involved_name: event.involvedObject?.name,
+          type: event.type,
+          reason: event.reason,
+          message: event.message,
+          count: event.count,
+          first_seen_at: event.firstTimestamp || event.metadata?.creationTimestamp,
+          last_seen_at: event.lastTimestamp || event.eventTime || event.metadata?.creationTimestamp,
+        })),
+      };
+
+      return this.syncClusterAssets(id, snapshot, { autoCreateHosts: true });
+    } catch (error) {
+      if (abortController.signal.aborted) {
+        throw new Error(`Kubernetes live sync timed out after ${KUBERNETES_API_SYNC_TIMEOUT_MS / 1000}s`);
+      }
+      throw error;
+    } finally {
+      clearTimeout(timeout);
+      this.activeApiSyncs.delete(id);
+    }
   }
 
   private resolveServerId(explicitServerId: string | null | undefined, candidates: Array<string | null | undefined>): string | null {
@@ -1283,16 +1310,24 @@ class KubernetesClusterService {
     return { token: decrypt(encryptedToken) };
   }
 
-  private kubernetesGet<T>(baseUrl: string, path: string, token: string): Promise<T> {
+  private kubernetesGet<T>(
+    baseUrl: string,
+    path: string,
+    token: string,
+    options: { signal?: AbortSignal; timeoutMs?: number; maxBytes?: number } = {}
+  ): Promise<T> {
     return new Promise((resolve, reject) => {
       const url = new URL(path, baseUrl);
       const client = url.protocol === 'https:' ? https : http;
+      const timeoutMs = options.timeoutMs || KUBERNETES_API_REQUEST_TIMEOUT_MS;
+      const maxBytes = options.maxBytes || KUBERNETES_API_MAX_RESPONSE_BYTES;
       const req = client.request(
         url,
         {
           method: 'GET',
-          timeout: 15000,
+          timeout: timeoutMs,
           rejectUnauthorized: false,
+          signal: options.signal,
           headers: {
             accept: 'application/json',
             authorization: `Bearer ${token}`,
@@ -1300,8 +1335,19 @@ class KubernetesClusterService {
         },
         (res) => {
           const chunks: Buffer[] = [];
-          res.on('data', (chunk: Buffer) => chunks.push(chunk));
+          let responseBytes = 0;
+          let rejectedForSize = false;
+          res.on('data', (chunk: Buffer) => {
+            responseBytes += chunk.length;
+            if (responseBytes > maxBytes) {
+              rejectedForSize = true;
+              req.destroy(new Error(`Kubernetes API ${path} response exceeded ${Math.round(maxBytes / 1024 / 1024)}MB limit`));
+              return;
+            }
+            chunks.push(chunk);
+          });
           res.on('end', () => {
+            if (rejectedForSize) return;
             const text = Buffer.concat(chunks).toString('utf8');
             if (!res.statusCode || res.statusCode < 200 || res.statusCode >= 300) {
               return reject(new Error(`Kubernetes API ${path} returned ${res.statusCode}: ${text.slice(0, 300)}`));
