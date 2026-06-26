@@ -206,4 +206,66 @@ describe('operationCaseService', () => {
     db.prepare('DELETE FROM operation_case_events WHERE case_id = ?').run(operationCase.id);
     db.prepare('DELETE FROM operation_cases WHERE id = ?').run(operationCase.id);
   });
+
+  it('links Hermes output refs back to a case by correlation id', () => {
+    const correlationId = `case-hermes-output-ref-${Date.now()}`;
+    const operationCase = createOperationCase({
+      title: 'Hermes output refs test',
+      correlationId,
+      context: { source: 'vitest-output-refs' },
+      createdBy: 'test-operator'
+    });
+    const hermesAgent = db.prepare('SELECT id FROM agents WHERE name = ?').get('Hermes 诊断修复 Agent') as { id: string } | undefined;
+    expect(hermesAgent).toBeTruthy();
+
+    db.prepare(`
+      INSERT OR REPLACE INTO agent_executions (
+        id, agent_id, agent_name, input_text, output_text, status, execution_time_ms, metadata, created_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+    `).run(
+      'agent-execution-output-ref-test',
+      hermesAgent!.id,
+      'Hermes 诊断修复 Agent',
+      'Diagnose and submit approval if needed.',
+      `approvalId: approval-output-ref-test\n taskId: task-output-ref-test\n correlationId: ${correlationId}`,
+      'success',
+      123,
+      JSON.stringify({ correlationId })
+    );
+
+    const hermesSession = createHermesSession({
+      agentExecutionId: 'agent-execution-output-ref-test',
+      agentId: hermesAgent!.id,
+      agentName: 'Hermes 诊断修复 Agent',
+      mode: 'diagnose',
+      input: 'Diagnose and submit approval if needed.',
+      output: `approvalId: approval-output-ref-test\n taskId: task-output-ref-test\n correlationId: ${correlationId}`,
+      selectedContext: { source: 'vitest-output-refs' },
+      trace: [],
+      runtimeMetadata: {},
+      correlationId,
+      status: 'success',
+      createdBy: 'test-operator'
+    });
+
+    expect(hermesSession.extracted_refs.approvalIds).toContain('approval-output-ref-test');
+    expect(hermesSession.extracted_refs.taskIds).toContain('task-output-ref-test');
+    expect(hermesSession.extracted_refs.correlationIds).toContain(correlationId);
+
+    const events = listOperationCaseEvents(operationCase.id);
+    expect(events.map((event) => event.event_type)).toEqual(expect.arrayContaining([
+      'hermes_diagnosis_completed',
+      'hermes_downstream_refs_detected'
+    ]));
+    const downstreamEvent = events.find((event) => event.event_type === 'hermes_downstream_refs_detected');
+    expect(downstreamEvent?.payload).toEqual(expect.objectContaining({
+      suggestedNextAction: 'review_pending_or_completed_approval'
+    }));
+
+    db.prepare('DELETE FROM hermes_sessions WHERE id = ?').run(hermesSession.id);
+    db.prepare('DELETE FROM agent_executions WHERE id = ?').run('agent-execution-output-ref-test');
+    db.prepare('DELETE FROM operation_case_events WHERE case_id = ?').run(operationCase.id);
+    db.prepare('DELETE FROM operation_cases WHERE id = ?').run(operationCase.id);
+  });
 });

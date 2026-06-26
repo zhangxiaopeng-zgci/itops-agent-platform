@@ -362,6 +362,7 @@ const CASE_EVENT_LABEL_KEYS: Record<string, MessageKey> = {
   hermes_retrospective_completed: 'operationCases.event.hermesReview',
   hermes_session_completed: 'operationCases.event.hermesSession',
   hermes_session_failed: 'operationCases.event.hermesFailed',
+  hermes_downstream_refs_detected: 'operationCases.event.hermesRefsDetected',
   evolution_proposal_created: 'operationCases.event.proposalCreated',
   evolution_proposal_status_changed: 'operationCases.event.proposalStatus',
 };

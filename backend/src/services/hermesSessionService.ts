@@ -71,7 +71,7 @@ export interface HermesSessionRecord {
 export function createHermesSession(input: CreateHermesSessionInput): HermesSessionRecord {
   const trace = sanitizeValue(input.trace || []) as AgentTraceEvent[];
   const selectedContext = sanitizeValue(input.selectedContext ?? null);
-  const extractedRefs = extractHermesRefs(trace, input.correlationId || undefined);
+  const extractedRefs = extractHermesRefs(trace, input.correlationId || undefined, input.output);
   const intentSummary = buildHermesIntentSummary({
     input: input.input,
     output: input.output,
@@ -116,8 +116,9 @@ export function createHermesSession(input: CreateHermesSessionInput): HermesSess
   );
 
   const session = getHermesSession(id)!;
+  const operationCaseId = extractOperationCaseId(selectedContext) || extractOperationCaseId(input.runtimeMetadata);
   recordOperationCaseEvent({
-    caseId: extractOperationCaseId(selectedContext) || extractOperationCaseId(input.runtimeMetadata),
+    caseId: operationCaseId,
     correlationId: session.correlation_id,
     eventType: inferHermesCaseEventType(session),
     sourceType: 'hermes_session',
@@ -135,6 +136,24 @@ export function createHermesSession(input: CreateHermesSessionInput): HermesSess
     },
     createdBy: input.createdBy || null
   });
+
+  if (session.extracted_refs.approvalIds.length > 0 || session.extracted_refs.taskIds.length > 0) {
+    recordOperationCaseEvent({
+      caseId: operationCaseId,
+      correlationId: session.correlation_id,
+      eventType: 'hermes_downstream_refs_detected',
+      sourceType: 'hermes_session',
+      sourceId: session.id,
+      payload: {
+        agentExecutionId: session.agent_execution_id,
+        mode: session.mode,
+        status: session.status,
+        extractedRefs: session.extracted_refs,
+        suggestedNextAction: session.evidence_summary.suggestedNextAction
+      },
+      createdBy: input.createdBy || null
+    });
+  }
 
   return session;
 }
@@ -350,7 +369,7 @@ function extractOperationCaseId(value: unknown): string | undefined {
     || extractOperationCaseId(record.runtimeContext);
 }
 
-export function extractHermesRefs(trace: AgentTraceEvent[], correlationId?: string): HermesSessionRefs {
+export function extractHermesRefs(trace: AgentTraceEvent[], correlationId?: string, output?: string | null): HermesSessionRefs {
   const approvalIds = new Set<string>();
   const taskIds = new Set<string>();
   const correlationIds = new Set<string>();
@@ -361,6 +380,8 @@ export function extractHermesRefs(trace: AgentTraceEvent[], correlationId?: stri
     const parsed = parseTraceContent(event.content);
     collectRefs(parsed, approvalIds, taskIds, correlationIds);
   });
+
+  collectRefsFromText(output, approvalIds, taskIds, correlationIds);
 
   return {
     approvalIds: Array.from(approvalIds),
@@ -407,6 +428,35 @@ function parseTraceContent(content?: string): unknown {
     return JSON.parse(content);
   } catch {
     return null;
+  }
+}
+
+function collectRefsFromText(
+  text: string | null | undefined,
+  approvalIds: Set<string>,
+  taskIds: Set<string>,
+  correlationIds: Set<string>
+): void {
+  if (!text) {
+    return;
+  }
+
+  try {
+    collectRefs(JSON.parse(text), approvalIds, taskIds, correlationIds);
+  } catch {
+    // Hermes output is often prose or Markdown; regex extraction handles that path.
+  }
+
+  collectLabeledIds(text, /\bapproval(?:Id|_id)?\b\s*[:=：]\s*[`"']?([a-zA-Z0-9._:-]{6,128})/gi, approvalIds);
+  collectLabeledIds(text, /\btask(?:Id|_id)?\b\s*[:=：]\s*[`"']?([a-zA-Z0-9._:-]{6,128})/gi, taskIds);
+  collectLabeledIds(text, /\bcorrelation(?:Id|_id)?\b\s*[:=：]\s*[`"']?([a-zA-Z0-9._:-]{8,128})/gi, correlationIds);
+}
+
+function collectLabeledIds(text: string, pattern: RegExp, target: Set<string>): void {
+  for (const match of text.matchAll(pattern)) {
+    if (match[1]) {
+      target.add(match[1].replace(/[),.;\]]+$/g, ''));
+    }
   }
 }
 
