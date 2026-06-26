@@ -12,6 +12,7 @@ import {
   Layers3,
   Link2,
   Loader2,
+  Pencil,
   Plus,
   RefreshCw,
   Search,
@@ -215,6 +216,7 @@ export default function KubernetesClusters() {
   const [deleteTarget, setDeleteTarget] = useState<KubernetesCluster | null>(null);
   const [detailCluster, setDetailCluster] = useState<KubernetesCluster | null>(null);
   const [syncTarget, setSyncTarget] = useState<KubernetesCluster | null>(null);
+  const [editingCluster, setEditingCluster] = useState<KubernetesCluster | null>(null);
   const [assetSnapshotText, setAssetSnapshotText] = useState('');
   const [isCredentialModalOpen, setIsCredentialModalOpen] = useState(false);
   const [credentialDetail, setCredentialDetail] = useState<CredentialDetail | null>(null);
@@ -227,7 +229,14 @@ export default function KubernetesClusters() {
   const isAdmin = user?.role === 'admin';
   const canOperateBindings = isAdmin || user?.role === 'operator';
 
-  useEscapeKey({ onEscape: () => setIsModalOpen(false), enabled: isModalOpen });
+  useEscapeKey({
+    onEscape: () => {
+      setIsModalOpen(false);
+      setEditingCluster(null);
+      setFormData(emptyForm);
+    },
+    enabled: isModalOpen,
+  });
   useEscapeKey({ onEscape: () => setDeleteTarget(null), enabled: !!deleteTarget });
   useEscapeKey({ onEscape: () => setDetailCluster(null), enabled: !!detailCluster });
   useEscapeKey({ onEscape: () => setSyncTarget(null), enabled: !!syncTarget });
@@ -279,6 +288,23 @@ export default function KubernetesClusters() {
     },
     onError: (error: any) => {
       toast.error(error?.response?.data?.error || t('kubernetes.toast.createFailed'));
+    },
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: async () => {
+      if (!editingCluster) throw new Error('No cluster selected');
+      const res = await api.put(`/api/kubernetes-clusters/${editingCluster.id}`, formData);
+      return res.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['kubernetes-clusters'] });
+      queryClient.invalidateQueries({ queryKey: ['kubernetes-cluster-assets'] });
+      closeClusterModal();
+      toast.success(t('kubernetes.toast.updated'));
+    },
+    onError: (error: any) => {
+      toast.error(error?.response?.data?.error || t('kubernetes.toast.updateFailed'));
     },
   });
 
@@ -465,7 +491,11 @@ export default function KubernetesClusters() {
 
   const handleSubmit = (event: FormEvent) => {
     event.preventDefault();
-    createMutation.mutate();
+    if (editingCluster) {
+      updateMutation.mutate();
+    } else {
+      createMutation.mutate();
+    }
   };
 
   const handleCredentialSubmit = (event: FormEvent) => {
@@ -520,6 +550,33 @@ export default function KubernetesClusters() {
     navigate(`/hermes?mode=diagnose&prompt=${encodeURIComponent(prompt)}&knowledgeCategory=${encodeURIComponent('kubernetes')}`);
   };
 
+  const openCreateClusterModal = () => {
+    setEditingCluster(null);
+    setFormData(emptyForm);
+    setIsModalOpen(true);
+  };
+
+  const openEditClusterModal = (cluster: KubernetesCluster) => {
+    setEditingCluster(cluster);
+    setFormData({
+      name: cluster.name || '',
+      api_server_url: cluster.api_server_url || '',
+      environment: cluster.environment || '',
+      distribution: cluster.distribution || '',
+      version: cluster.version || '',
+      auth_type: cluster.auth_type || 'kubeconfig',
+      credential_id: cluster.credential_id || '',
+      description: cluster.description || '',
+    });
+    setIsModalOpen(true);
+  };
+
+  const closeClusterModal = () => {
+    setIsModalOpen(false);
+    setEditingCluster(null);
+    setFormData(emptyForm);
+  };
+
   const openBindingModal = (node: KubernetesNode) => {
     setBindingTarget(node);
     setBindingServerId(node.server_id || '');
@@ -565,7 +622,7 @@ export default function KubernetesClusters() {
                   {t('kubernetes.credential.add')}
                 </button>
                 <button
-                  onClick={() => setIsModalOpen(true)}
+                  onClick={openCreateClusterModal}
                   className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-primary text-white hover:bg-primary/90 transition-colors"
                 >
                   <Plus className="w-4 h-4" />
@@ -666,6 +723,15 @@ export default function KubernetesClusters() {
                         <Eye className="w-3.5 h-3.5" />
                         {t('common.details')}
                       </button>
+                      {isAdmin && (
+                        <button
+                          onClick={() => openEditClusterModal(cluster)}
+                          className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-border text-xs text-text-primary hover:bg-background"
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                          {t('common.edit')}
+                        </button>
+                      )}
                       <button
                         onClick={() => openHermesDiagnosis(cluster)}
                         className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-primary/30 text-xs text-primary hover:bg-primary/10"
@@ -802,6 +868,15 @@ export default function KubernetesClusters() {
                         <Eye className="w-4 h-4" />
                         {t('common.details')}
                       </button>
+                      {isAdmin && (
+                        <button
+                          onClick={() => openEditClusterModal(cluster)}
+                          className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-border text-text-primary hover:bg-background transition-colors"
+                        >
+                          <Pencil className="w-4 h-4" />
+                          {t('common.edit')}
+                        </button>
+                      )}
                       <button
                         onClick={() => openHermesDiagnosis(cluster)}
                         className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-primary/30 text-primary hover:bg-primary/10 transition-colors"
@@ -892,8 +967,8 @@ export default function KubernetesClusters() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
           <div className="w-full max-w-2xl bg-surface border border-border rounded-lg shadow-xl">
             <div className="p-5 border-b border-border flex items-center justify-between">
-              <h2 className="text-lg font-semibold text-text-primary">{t('kubernetes.modal.title')}</h2>
-              <button onClick={() => setIsModalOpen(false)} className="p-2 rounded-lg hover:bg-background">
+              <h2 className="text-lg font-semibold text-text-primary">{editingCluster ? t('kubernetes.modal.editTitle') : t('kubernetes.modal.title')}</h2>
+              <button onClick={closeClusterModal} className="p-2 rounded-lg hover:bg-background">
                 <X className="w-4 h-4 text-text-secondary" />
               </button>
             </div>
@@ -936,12 +1011,12 @@ export default function KubernetesClusters() {
                 <textarea className={`${inputClass} min-h-[84px]`} value={formData.description} onChange={(event) => setFormData({ ...formData, description: event.target.value })} />
               </Field>
               <div className="flex justify-end gap-3 pt-2">
-                <button type="button" onClick={() => setIsModalOpen(false)} className="px-4 py-2 rounded-lg border border-border text-text-primary hover:bg-background">
+                <button type="button" onClick={closeClusterModal} className="px-4 py-2 rounded-lg border border-border text-text-primary hover:bg-background">
                   {t('common.cancel')}
                 </button>
-                <button type="submit" disabled={createMutation.isPending} className="px-4 py-2 rounded-lg bg-primary text-white hover:bg-primary/90 disabled:opacity-60 inline-flex items-center gap-2">
-                  {createMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
-                  {t('common.create')}
+                <button type="submit" disabled={createMutation.isPending || updateMutation.isPending} className="px-4 py-2 rounded-lg bg-primary text-white hover:bg-primary/90 disabled:opacity-60 inline-flex items-center gap-2">
+                  {(createMutation.isPending || updateMutation.isPending) && <Loader2 className="w-4 h-4 animate-spin" />}
+                  {editingCluster ? t('common.save') : t('common.create')}
                 </button>
               </div>
             </form>
