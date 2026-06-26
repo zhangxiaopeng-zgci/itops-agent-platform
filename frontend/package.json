@@ -13,6 +13,9 @@
     "lint": "eslint src --ext ts,tsx",
     "i18n:audit": "node scripts/i18n-audit.mjs"
   },
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "dependencies": {
     "@tanstack/react-query": "^5.14.2",
     "@xyflow/react": "^12.0.0",

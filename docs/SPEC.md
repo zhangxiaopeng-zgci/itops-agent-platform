@@ -36,7 +36,7 @@
 
 | 技术 | 版本 |
 |------|------|
-| Node.js | 18+ |
+| Node.js | 20+ |
 | Express | 4.18+ |
 | TypeScript | 5.3+ |
 | better-sqlite3 | 9.2+ |

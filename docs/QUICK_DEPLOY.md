@@ -396,7 +396,7 @@ sudo ufw reload
 | 项目版本 | v3.0.5 |
 | Docker | 20.10+ |
 | Docker Compose | v2.0+ |
-| Node.js (容器) | 18+ |
+| Node.js (容器) | 20+ |
 | Nginx (容器) | Alpine |
 
 ---

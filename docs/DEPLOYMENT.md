@@ -6,7 +6,7 @@ ITOps Agent Platform 是一个基于 AI 的智能运维平台，采用前后端�
 
 | 模块 | 技术栈 | 端口 | 说明 |
 |------|--------|------|------|
-| 后端 | Node.js 18+ + Express + TypeScript + SQLite | 3001 | REST API + WebSocket |
+| 后端 | Node.js 20+ + Express + TypeScript + SQLite | 3001 | REST API + WebSocket |
 | 前端 | React 18 + TypeScript + Vite + TailwindCSS | 80 (Nginx) | SPA 单页应用 |
 | 反向代理 | Nginx (Alpine) | 8080 → 80 | 前端静态文件 + /api 代理 |
 
