@@ -561,7 +561,7 @@ export default function KubernetesClusters() {
 
   const openKiteForCluster = (cluster: KubernetesCluster) => {
     const params = new URLSearchParams({ cluster: cluster.name });
-    window.open(`/kite-launcher?${params.toString()}`, '_blank', 'noopener,noreferrer');
+    navigate(`/kubernetes-console?${params.toString()}`);
   };
 
   const openCreateClusterModal = () => {

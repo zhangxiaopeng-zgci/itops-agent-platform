@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useSearchParams } from 'react-router-dom';
 import {
   Boxes,
   CheckCircle2,
-  ExternalLink,
   Monitor,
   RefreshCw,
   ShieldCheck,
@@ -58,10 +58,10 @@ function getKiteUrl(): string {
   return '/kite/';
 }
 
-function buildKiteLauncherUrl(clusterName?: string | null) {
-  const params = new URLSearchParams();
-  if (clusterName) params.set('cluster', clusterName);
-  return `/kite-launcher${params.toString() ? `?${params.toString()}` : ''}`;
+function writeKiteClusterSelection(clusterName?: string | null) {
+  if (!clusterName || typeof window === 'undefined') return;
+  window.sessionStorage.setItem('current-cluster', clusterName);
+  window.localStorage.setItem('current-cluster', clusterName);
 }
 
 export default function KubernetesConsole() {
@@ -69,10 +69,13 @@ export default function KubernetesConsole() {
   const toast = useToast();
   const queryClient = useQueryClient();
   const { user } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const requestedClusterName = searchParams.get('cluster') || '';
   const kiteUrl = useMemo(() => getKiteUrl(), []);
   const canSyncKite = user?.role === 'admin' || user?.role === 'operator';
   const canCreateKiteSession = canSyncKite;
   const [kiteFrameNonce, setKiteFrameNonce] = useState(0);
+  const [embeddedClusterName, setEmbeddedClusterName] = useState(requestedClusterName);
   const autoSessionAttemptedRef = useRef(false);
 
   const { data: bridgeStatus, isLoading } = useQuery({
@@ -121,6 +124,13 @@ export default function KubernetesConsole() {
   const selectedClusterId = bridgeStatus?.bridge.syncedClusterId || eligibleClusters[0]?.id || null;
 
   useEffect(() => {
+    if (!requestedClusterName) return;
+    writeKiteClusterSelection(requestedClusterName);
+    setEmbeddedClusterName(requestedClusterName);
+    setKiteFrameNonce(Date.now());
+  }, [requestedClusterName]);
+
+  useEffect(() => {
     if (
       autoSessionAttemptedRef.current
       || !canCreateKiteSession
@@ -140,32 +150,32 @@ export default function KubernetesConsole() {
     sessionMutation,
   ]);
 
-  const openKite = async (clusterName?: string | null) => {
-    const target = window.open('about:blank', '_blank');
-    const fallbackUrl = buildKiteLauncherUrl(clusterName || bridgeStatus?.bridge.syncedClusterName || undefined);
-    if (target) {
-      target.document.write(`<title>Kite</title><body style="font-family: sans-serif; padding: 24px;">${t('kubernetesConsole.bridge.creatingSession')}</body>`);
-      target.document.close();
+  const showEmbeddedKite = async (clusterName?: string | null) => {
+    const nextClusterName = clusterName || bridgeStatus?.bridge.syncedClusterName || embeddedClusterName;
+    if (nextClusterName) {
+      writeKiteClusterSelection(nextClusterName);
+      setEmbeddedClusterName(nextClusterName);
+      setSearchParams({ cluster: nextClusterName });
     }
 
     if (!canCreateKiteSession || !bridgeStatus?.kite.sessionBridgeConfigured) {
-      if (target) target.location.href = fallbackUrl;
-      else window.location.href = fallbackUrl;
+      setKiteFrameNonce(Date.now());
       return;
     }
 
     try {
       await sessionMutation.mutateAsync();
-      if (target) target.location.href = fallbackUrl;
-      else window.location.href = fallbackUrl;
     } catch {
-      if (target) target.location.href = fallbackUrl;
-      else window.location.href = fallbackUrl;
+      setKiteFrameNonce(Date.now());
     }
   };
-  const frameUrl = kiteFrameNonce > 0
-    ? `${kiteUrl}${kiteUrl.includes('?') ? '&' : '?'}aioSession=${kiteFrameNonce}`
-    : kiteUrl;
+
+  const frameUrl = useMemo(() => {
+    const params = new URLSearchParams();
+    if (kiteFrameNonce > 0) params.set('aioSession', String(kiteFrameNonce));
+    if (embeddedClusterName) params.set('aioCluster', embeddedClusterName);
+    return params.size > 0 ? `${kiteUrl}?${params.toString()}` : kiteUrl;
+  }, [embeddedClusterName, kiteFrameNonce, kiteUrl]);
 
   return (
     <div className="h-full overflow-auto p-6">
@@ -182,11 +192,11 @@ export default function KubernetesConsole() {
           </div>
           <button
             type="button"
-            onClick={() => openKite(bridgeStatus?.bridge.syncedClusterName || undefined)}
+            onClick={() => showEmbeddedKite(bridgeStatus?.bridge.syncedClusterName || undefined)}
             disabled={sessionMutation.isPending}
             className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-primary text-white hover:bg-primary/90 transition-colors"
           >
-            <ExternalLink className="w-4 h-4" />
+            <Monitor className="w-4 h-4" />
             {sessionMutation.isPending ? t('kubernetesConsole.bridge.creatingSession') : t('kubernetesConsole.open')}
           </button>
         </div>
@@ -287,11 +297,11 @@ export default function KubernetesConsole() {
                         {t('kubernetesConsole.bridge.syncThis')}
                       </button>
                       <button
-                        onClick={() => openKite(cluster.name)}
+                        onClick={() => showEmbeddedKite(cluster.name)}
                         disabled={sessionMutation.isPending}
                         className="inline-flex items-center gap-2 rounded-lg border border-primary/30 bg-primary/10 px-3 py-1.5 text-xs font-medium text-primary hover:bg-primary/15 disabled:opacity-50"
                       >
-                        <ExternalLink className="w-3 h-3" />
+                        <Monitor className="w-3 h-3" />
                         {t('kubernetesConsole.bridge.openThis')}
                       </button>
                     </div>

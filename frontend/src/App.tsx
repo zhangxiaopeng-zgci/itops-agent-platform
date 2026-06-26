@@ -54,7 +54,6 @@ import AIInsights from './pages/AIInsights';
 import NetworkDevices from './pages/NetworkDevices';
 import KubernetesClusters from './pages/KubernetesClusters';
 import KubernetesConsole from './pages/KubernetesConsole';
-import KiteLauncher from './pages/KiteLauncher';
 import SSHKeys from './pages/SSHKeys';
 import AIModels from './pages/AIModels';
 import OpsReadiness from './pages/OpsReadiness';
@@ -107,7 +106,6 @@ function App() {
               <Route path="network-devices" element={<ProtectedRoute><NetworkDevices /></ProtectedRoute>} />
               <Route path="kubernetes-clusters" element={<ProtectedRoute><KubernetesClusters /></ProtectedRoute>} />
               <Route path="kubernetes-console" element={<ProtectedRoute><KubernetesConsole /></ProtectedRoute>} />
-              <Route path="kite-launcher" element={<ProtectedRoute><KiteLauncher /></ProtectedRoute>} />
               <Route path="agents" element={<ProtectedRoute><Agents /></ProtectedRoute>} />
               <Route path="hermes" element={<ProtectedRoute><HermesAssistant /></ProtectedRoute>} />
               <Route path="hermes-channels" element={<ProtectedRoute><HermesChannels /></ProtectedRoute>} />

@@ -1914,7 +1914,7 @@ export default function HermesAssistant() {
                         <button
                           type="button"
                           onClick={() => navigate(selectedKubernetesCluster
-                            ? `/kite-launcher?cluster=${encodeURIComponent(selectedKubernetesCluster.name)}`
+                            ? `/kubernetes-console?cluster=${encodeURIComponent(selectedKubernetesCluster.name)}`
                             : '/kubernetes-console'
                           )}
                           className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 hover:bg-emerald-500/20 text-xs"
