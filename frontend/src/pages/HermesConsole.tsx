@@ -1,3 +1,4 @@
+import { useMemo, useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -66,6 +67,41 @@ interface HermesLaunchOption {
   defaultPrompt: string;
 }
 
+interface OperationCase {
+  id: string;
+  title: string;
+  status: string;
+  severity?: string | null;
+  correlation_id?: string | null;
+  asset_name?: string | null;
+}
+
+interface ServerItem {
+  id: string;
+  name: string;
+  hostname?: string | null;
+  ip_address?: string | null;
+  enabled: number;
+}
+
+interface AlertItem {
+  id: string;
+  title: string;
+  severity: string;
+  status: string;
+}
+
+interface KubernetesCluster {
+  id: string;
+  name: string;
+  environment?: string | null;
+  api_server_url?: string | null;
+  node_count: number;
+  bound_server_count: number;
+}
+
+type LaunchContextType = 'none' | 'case' | 'server' | 'kubernetes' | 'alert';
+
 function toArray<T>(value: unknown, keys: string[] = []): T[] {
   if (Array.isArray(value)) return value as T[];
   if (value && typeof value === 'object') {
@@ -81,6 +117,11 @@ export default function HermesConsole() {
   const navigate = useNavigate();
   const { t } = useLocale();
   const toast = useToast();
+  const [launchContextType, setLaunchContextType] = useState<LaunchContextType>('none');
+  const [selectedCaseId, setSelectedCaseId] = useState('');
+  const [selectedServerId, setSelectedServerId] = useState('');
+  const [selectedKubernetesClusterId, setSelectedKubernetesClusterId] = useState('');
+  const [selectedAlertId, setSelectedAlertId] = useState('');
 
   const { data: channels = [] } = useQuery({
     queryKey: ['hermes-console', 'channels'],
@@ -100,13 +141,110 @@ export default function HermesConsole() {
     staleTime: 30000,
   });
 
+  const { data: operationCases = [] } = useQuery({
+    queryKey: ['hermes-console', 'operation-cases'],
+    queryFn: async () => {
+      const res = await api.get('/api/operation-cases', { params: { limit: 20 } });
+      return (res.data.data?.cases || []) as OperationCase[];
+    },
+    staleTime: 30000,
+  });
+
+  const { data: servers = [] } = useQuery({
+    queryKey: ['hermes-console', 'servers'],
+    queryFn: async () => {
+      const res = await api.get('/api/servers');
+      return toArray<ServerItem>(res.data.data, ['servers', 'items']);
+    },
+    staleTime: 60000,
+  });
+
+  const { data: kubernetesClusters = [] } = useQuery({
+    queryKey: ['hermes-console', 'kubernetes-clusters'],
+    queryFn: async () => {
+      const res = await api.get('/api/kubernetes-clusters');
+      return (res.data.data || []) as KubernetesCluster[];
+    },
+    staleTime: 60000,
+  });
+
+  const { data: alerts = [] } = useQuery({
+    queryKey: ['hermes-console', 'alerts'],
+    queryFn: async () => {
+      const res = await api.get('/api/alerts', { params: { limit: 20 } });
+      return (res.data.data || []) as AlertItem[];
+    },
+    staleTime: 30000,
+  });
+
+  const selectedCase = useMemo(() => operationCases.find((item) => item.id === selectedCaseId), [operationCases, selectedCaseId]);
+  const selectedServer = useMemo(() => servers.find((item) => item.id === selectedServerId), [servers, selectedServerId]);
+  const selectedKubernetesCluster = useMemo(() => kubernetesClusters.find((item) => item.id === selectedKubernetesClusterId), [kubernetesClusters, selectedKubernetesClusterId]);
+  const selectedAlert = useMemo(() => alerts.find((item) => item.id === selectedAlertId), [alerts, selectedAlertId]);
+
+  const launchContextPayload = useMemo(() => {
+    if (launchContextType === 'case' && selectedCase) {
+      return {
+        caseId: selectedCase.id,
+        correlationId: selectedCase.correlation_id || undefined,
+        prompt: t('hermesConsole.launch.prompt.case', {
+          title: selectedCase.title,
+          status: selectedCase.status,
+          severity: selectedCase.severity || t('common.unknown'),
+        }),
+      };
+    }
+    if (launchContextType === 'server' && selectedServer) {
+      return {
+        serverId: selectedServer.id,
+        serverIds: [selectedServer.id],
+        prompt: t('hermesConsole.launch.prompt.server', {
+          name: selectedServer.name,
+          host: selectedServer.hostname || selectedServer.ip_address || selectedServer.id,
+        }),
+      };
+    }
+    if (launchContextType === 'kubernetes' && selectedKubernetesCluster) {
+      return {
+        knowledgeCategory: 'kubernetes',
+        prompt: t('hermesConsole.launch.prompt.kubernetes', {
+          name: selectedKubernetesCluster.name,
+          environment: selectedKubernetesCluster.environment || t('common.unknown'),
+          apiServer: selectedKubernetesCluster.api_server_url || t('common.unknown'),
+          nodes: selectedKubernetesCluster.node_count,
+          bound: selectedKubernetesCluster.bound_server_count,
+        }),
+      };
+    }
+    if (launchContextType === 'alert' && selectedAlert) {
+      return {
+        alertId: selectedAlert.id,
+        prompt: t('hermesConsole.launch.prompt.alert', {
+          title: selectedAlert.title,
+          severity: selectedAlert.severity,
+          status: selectedAlert.status,
+        }),
+      };
+    }
+    return {};
+  }, [launchContextType, selectedAlert, selectedCase, selectedKubernetesCluster, selectedServer, t]);
+  const launchContextReady = launchContextType === 'none'
+    || (launchContextType === 'case' && Boolean(selectedCase))
+    || (launchContextType === 'server' && Boolean(selectedServer))
+    || (launchContextType === 'kubernetes' && Boolean(selectedKubernetesCluster))
+    || (launchContextType === 'alert' && Boolean(selectedAlert));
+
   const launchMutation = useMutation({
     mutationFn: async (option: HermesLaunchOption) => {
-      const res = await api.post('/api/hermes-sessions/launch', {
+      const payload: Record<string, unknown> = {
         mode: option.mode,
         channelId: option.channel.id,
-        knowledgeCategory: option.mode === 'diagnose' ? 'kubernetes' : undefined,
-      });
+        ...launchContextPayload,
+      };
+      if (!payload.knowledgeCategory && option.mode === 'diagnose' && launchContextType === 'none') {
+        payload.knowledgeCategory = 'kubernetes';
+      }
+      const res = await api.post('/api/hermes-sessions/launch', payload);
       return res.data.data as { launchUrl: string };
     },
     onSuccess: (result) => {
@@ -262,6 +400,109 @@ export default function HermesConsole() {
             </button>
           </div>
 
+          <div className="mt-5 rounded-lg border border-border bg-background/50 p-4">
+            <div className="grid grid-cols-1 gap-3 lg:grid-cols-[220px_1fr]">
+              <label className="block">
+                <span className="mb-1 block text-xs font-medium text-text-secondary">{t('hermesConsole.launch.contextType')}</span>
+                <select
+                  value={launchContextType}
+                  onChange={(event) => {
+                    setLaunchContextType(event.target.value as LaunchContextType);
+                    setSelectedCaseId('');
+                    setSelectedServerId('');
+                    setSelectedKubernetesClusterId('');
+                    setSelectedAlertId('');
+                  }}
+                  className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-primary"
+                >
+                  <option value="none">{t('hermesConsole.launch.context.none')}</option>
+                  <option value="case">{t('hermesConsole.launch.context.case')}</option>
+                  <option value="server">{t('hermesConsole.launch.context.server')}</option>
+                  <option value="kubernetes">{t('hermesConsole.launch.context.kubernetes')}</option>
+                  <option value="alert">{t('hermesConsole.launch.context.alert')}</option>
+                </select>
+              </label>
+
+              {launchContextType === 'case' && (
+                <label className="block">
+                  <span className="mb-1 block text-xs font-medium text-text-secondary">{t('hermesConsole.launch.context.case')}</span>
+                  <select
+                    value={selectedCaseId}
+                    onChange={(event) => setSelectedCaseId(event.target.value)}
+                    className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-primary"
+                  >
+                    <option value="">{t('hermesConsole.launch.context.select')}</option>
+                    {operationCases.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.title} · {item.status}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+
+              {launchContextType === 'server' && (
+                <label className="block">
+                  <span className="mb-1 block text-xs font-medium text-text-secondary">{t('hermesConsole.launch.context.server')}</span>
+                  <select
+                    value={selectedServerId}
+                    onChange={(event) => setSelectedServerId(event.target.value)}
+                    className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-primary"
+                  >
+                    <option value="">{t('hermesConsole.launch.context.select')}</option>
+                    {servers.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.name} · {item.hostname || item.ip_address || item.id}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+
+              {launchContextType === 'kubernetes' && (
+                <label className="block">
+                  <span className="mb-1 block text-xs font-medium text-text-secondary">{t('hermesConsole.launch.context.kubernetes')}</span>
+                  <select
+                    value={selectedKubernetesClusterId}
+                    onChange={(event) => setSelectedKubernetesClusterId(event.target.value)}
+                    className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-primary"
+                  >
+                    <option value="">{t('hermesConsole.launch.context.select')}</option>
+                    {kubernetesClusters.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.name} · {item.bound_server_count}/{item.node_count}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+
+              {launchContextType === 'alert' && (
+                <label className="block">
+                  <span className="mb-1 block text-xs font-medium text-text-secondary">{t('hermesConsole.launch.context.alert')}</span>
+                  <select
+                    value={selectedAlertId}
+                    onChange={(event) => setSelectedAlertId(event.target.value)}
+                    className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-primary"
+                  >
+                    <option value="">{t('hermesConsole.launch.context.select')}</option>
+                    {alerts.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.title} · {item.severity} · {item.status}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+
+              {launchContextType === 'none' && (
+                <div className="rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text-secondary">
+                  {t('hermesConsole.launch.context.noneDesc')}
+                </div>
+              )}
+            </div>
+          </div>
+
           <div className="mt-5 grid grid-cols-1 lg:grid-cols-3 gap-4">
             {launchOptions.map((option) => (
               <div key={option.channel.id} className="rounded-lg border border-border bg-background/50 p-4">
@@ -304,8 +545,8 @@ export default function HermesConsole() {
 
                 <button
                   onClick={() => launchMutation.mutate(option)}
-                  disabled={!option.policy.canLaunch || launchMutation.isPending}
-                  title={!option.policy.canLaunch ? t('hermesConsole.launch.disabled') : undefined}
+                  disabled={!option.policy.canLaunch || !launchContextReady || launchMutation.isPending}
+                  title={!option.policy.canLaunch || !launchContextReady ? t('hermesConsole.launch.disabled') : undefined}
                   className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-medium text-white hover:bg-primary/90 disabled:opacity-60 disabled:cursor-not-allowed"
                 >
                   {launchMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}

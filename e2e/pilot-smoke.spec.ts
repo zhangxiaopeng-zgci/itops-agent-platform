@@ -109,6 +109,9 @@ test.describe('AIOps Agent pilot acceptance smoke', () => {
 
     await page.goto('/hermes-console');
     await expect(page.getByText(/独立 Hermes Session 启动器|Standalone Hermes Session Launcher/)).toBeVisible();
+    await expect(page.getByText(/会话上下文|Session Context/)).toBeVisible();
+    await page.getByLabel(/会话上下文|Session Context/).selectOption('kubernetes');
+    await expect(page.locator('select').nth(1)).toBeVisible();
     await expect(page.getByRole('button', { name: /开启 Session|Start Session/ }).first()).toBeVisible();
 
     await page.goto('/hermes-channels?channelId=hermes-channel-diagnose&focus=bundle');
