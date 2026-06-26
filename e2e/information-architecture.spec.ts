@@ -59,14 +59,16 @@ test.describe('information architecture', () => {
     await expect(page.locator('body')).toContainText(/生产变更门禁|Production Change Gate/);
 
     await page.goto('/assets-center');
-    await expect(page.locator('body')).toContainText(/资产操作焦点|Asset Operation Focus/);
-    await expect(page.locator('body')).toContainText(/当前资产|Current Asset/);
+    await expect(page.locator('body')).toContainText(/资源操作焦点|Resource Operation Focus/);
+    await expect(page.locator('body')).toContainText(/当前资源|Current Resource/);
     await expect(page.locator('body')).toContainText(/诊断资产|Diagnose Asset/);
+    await expect(page.locator('body')).toContainText(/运维工作台使用路径|Ops Workspace Usage Flow/);
 
     await page.goto('/kubernetes-clusters');
     await expect(page.locator('body')).toContainText(/节点背后主机关联|Node Backing Host Binding/);
     await expect(page.locator('body')).toContainText(/绑定率|Binding Rate/);
-    await expect(page.getByRole('button', { name: /重新匹配|Re-match/ }).first()).toBeVisible();
+    await expect(page.locator('body')).toContainText(/未匹配的节点打开详情后可以手动指定|Open details to manually assign unmatched nodes/);
+    await expect(page.getByRole('button', { name: /自动匹配主机|Auto-match Hosts/ }).first()).toBeVisible();
 
     await page.goto('/assets-center');
     const diagnoseAsset = page.getByRole('button', { name: /诊断资产|Diagnose Asset/ }).first();
@@ -86,9 +88,14 @@ test.describe('information architecture', () => {
   test('exposes consolidated primary entries instead of the legacy advanced menu', async ({ page }) => {
     await login(page);
 
-    await expect(page.getByText(/Hermes 控制台|Hermes Console/)).toBeVisible();
-    await expect(page.getByText(/进化治理|Evolution Governance/)).toBeVisible();
-    await expect(page.getByText(/平台运维|Platform Operations/)).toBeVisible();
+    const resourcesEntry = page.getByRole('link', { name: /资源与连接|Resources & Connections/ }).first();
+    const diagnosisEntry = page.getByRole('link', { name: /诊断中心|Diagnosis Center/ }).first();
+    await expect(resourcesEntry).toBeVisible();
+    await expect(diagnosisEntry).toBeVisible();
+    expect((await resourcesEntry.boundingBox())?.y || 0).toBeLessThan((await diagnosisEntry.boundingBox())?.y || 0);
+    await expect(page.getByRole('link', { name: /Hermes 控制台|Hermes Console/ })).toBeVisible();
+    await expect(page.getByRole('link', { name: /进化治理|Evolution Governance/ })).toBeVisible();
+    await expect(page.getByRole('link', { name: /平台运维|Platform Operations/ })).toBeVisible();
     await expect(page.getByText(/高级管理|Advanced/)).toHaveCount(0);
 
     for (const route of ['/hermes-console', '/evolution-governance', '/platform-operations']) {

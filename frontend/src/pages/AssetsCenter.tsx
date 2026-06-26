@@ -388,7 +388,7 @@ export default function AssetsCenter() {
                     <div className="w-10 h-10 rounded-lg bg-primary/10 text-primary flex items-center justify-center flex-shrink-0">
                       <action.icon className="w-5 h-5" />
                     </div>
-                    <div>
+                    <div className="min-w-0">
                       <p className="font-semibold text-text-primary">{t(action.titleKey as MessageKey)}</p>
                       <p className="text-sm text-text-secondary mt-1">{t(action.descriptionKey as MessageKey)}</p>
                     </div>
@@ -427,14 +427,15 @@ export default function AssetsCenter() {
         </div>
 
         <div className="bg-surface border border-border rounded-lg p-5">
-          <h2 className="text-lg font-semibold text-text-primary mb-3">{t('assetsCenter.relation.title')}</h2>
+          <h2 className="text-lg font-semibold text-text-primary mb-1">{t('assetsCenter.relation.title')}</h2>
+          <p className="text-sm text-text-secondary mb-4">{t('assetsCenter.relation.subtitle')}</p>
           <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
             {[
-              'assetsCenter.relation.asset',
+              'assetsCenter.relation.resource',
               'assetsCenter.relation.context',
               'assetsCenter.relation.diagnosis',
+              'assetsCenter.relation.case',
               'assetsCenter.relation.execution',
-              'assetsCenter.relation.evolution',
             ].map((key, index, list) => (
               <div key={key} className="flex items-center gap-3">
                 <div className="flex-1 rounded-lg bg-background/50 border border-border p-3">

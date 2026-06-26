@@ -560,6 +560,11 @@ export default function KubernetesClusters() {
               <p className="text-sm text-text-secondary mt-1">
                 {t('kubernetes.binding.subtitle')}
               </p>
+              <div className="mt-3 flex flex-wrap gap-2 text-xs text-text-secondary">
+                <span className="rounded-full border border-border bg-background/60 px-2.5 py-1">{t('kubernetes.binding.workflow.auto')}</span>
+                <span className="rounded-full border border-border bg-background/60 px-2.5 py-1">{t('kubernetes.binding.workflow.manual')}</span>
+                <span className="rounded-full border border-border bg-background/60 px-2.5 py-1">{t('kubernetes.binding.workflow.topology')}</span>
+              </div>
             </div>
             <div className="flex flex-wrap gap-3">
               <BindingStat label={t('kubernetes.binding.boundRatio')} value={`${bindingStats.ratio}%`} />
@@ -762,6 +767,7 @@ export default function KubernetesClusters() {
                       total: cluster.node_count,
                       unbound: Math.max(cluster.node_count - cluster.bound_server_count, 0),
                     })}
+                    helper={t('kubernetes.binding.clusterHelper')}
                   />
                 </div>
               ))}
@@ -1098,6 +1104,7 @@ export default function KubernetesClusters() {
                             unbound: clusterAssets.nodes.filter((node) => !node.server_id).length,
                           })}
                         </p>
+                        <p className="text-xs text-text-secondary mt-2">{t('kubernetes.binding.detailHint')}</p>
                       </div>
                       <button
                         onClick={() => reconcileBindingsMutation.mutate(detailCluster.id)}
@@ -1212,7 +1219,7 @@ function BindingStat({ label, value }: { label: string; value: string | number }
   );
 }
 
-function ClusterBindingBar({ bound, total, label }: { bound: number; total: number; label: string }) {
+function ClusterBindingBar({ bound, total, label, helper }: { bound: number; total: number; label: string; helper?: string }) {
   const ratio = total > 0 ? Math.round((bound / total) * 100) : 100;
   return (
     <div className="mt-4 rounded-lg border border-border bg-background/40 p-3">
@@ -1223,6 +1230,7 @@ function ClusterBindingBar({ bound, total, label }: { bound: number; total: numb
       <div className="mt-2 h-2 rounded-full bg-border/60">
         <div className="h-2 rounded-full bg-primary" style={{ width: `${Math.max(0, Math.min(100, ratio))}%` }} />
       </div>
+      {helper ? <p className="mt-2 text-xs text-text-tertiary">{helper}</p> : null}
     </div>
   );
 }
@@ -1250,10 +1258,10 @@ function NodeBindingRow({ node, canOperate, onBind }: { node: KubernetesNode; ca
             <div className="text-sm font-medium text-text-primary truncate">{node.name}</div>
             <BindingSourcePill source={node.binding_source || (node.server_id ? 'manual' : 'unbound')} />
           </div>
-          <div className="text-xs text-text-secondary mt-1">
+          <div className="text-xs text-text-secondary mt-1 break-all">
             {[node.role || '-', node.internal_ip || '-', node.external_ip || '-', node.status].join(' · ')}
           </div>
-          <div className="text-xs text-text-tertiary mt-2">{serverLabel}</div>
+          <div className="text-xs text-text-tertiary mt-2 break-all">{serverLabel}</div>
         </div>
         <button
           onClick={onBind}
