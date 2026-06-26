@@ -152,6 +152,7 @@ export interface KubernetesSyncResult {
     services: number;
     events: number;
     boundServers: number;
+    autoCreatedHosts: number;
   };
 }
 
@@ -160,7 +161,12 @@ export interface KubernetesBindingReconcileResult {
   totalNodes: number;
   alreadyBound: number;
   matched: number;
+  autoCreatedHosts: number;
   unresolved: number;
+}
+
+export interface KubernetesSyncOptions {
+  autoCreateHosts?: boolean;
 }
 
 interface KubernetesCredential {
@@ -538,6 +544,7 @@ class KubernetesClusterService {
 
     let alreadyBound = 0;
     let matched = 0;
+    let autoCreatedHosts = 0;
     let unresolved = 0;
     const update = db.prepare(`
       UPDATE kubernetes_nodes
@@ -551,10 +558,11 @@ class KubernetesClusterService {
           alreadyBound += 1;
           continue;
         }
-        const serverId = this.resolveServerId(null, [node.internal_ip, node.external_ip, node.name]);
+        const { serverId, created } = this.resolveOrCreateDiscoveredServerForNode(cluster, node, true);
         if (serverId) {
           update.run(serverId, node.id, id);
           matched += 1;
+          if (created) autoCreatedHosts += 1;
         } else {
           unresolved += 1;
         }
@@ -567,6 +575,7 @@ class KubernetesClusterService {
       totalNodes: nodes.length,
       alreadyBound,
       matched,
+      autoCreatedHosts,
       unresolved,
     };
   }
@@ -640,10 +649,12 @@ class KubernetesClusterService {
     };
   }
 
-  syncClusterAssets(id: string, snapshot: KubernetesAssetSnapshot): KubernetesSyncResult | undefined {
+  syncClusterAssets(id: string, snapshot: KubernetesAssetSnapshot, options: KubernetesSyncOptions = {}): KubernetesSyncResult | undefined {
     const existing = this.getClusterById(id);
     if (!existing) return undefined;
 
+    const autoCreateHosts = options.autoCreateHosts !== false;
+    let autoCreatedHosts = 0;
     const now = new Date().toISOString();
     const nodes = snapshot.nodes || [];
     const namespaces = snapshot.namespaces || [];
@@ -701,7 +712,8 @@ class KubernetesClusterService {
         for (const node of nodes) {
           const nodeId = randomUUID();
           nodeIds.set(node.name, nodeId);
-          const serverId = this.resolveServerId(node.server_id, [node.internal_ip, node.external_ip, node.name]);
+          const { serverId, created } = this.resolveOrCreateDiscoveredServerForNode(existing, node, autoCreateHosts);
+          if (created) autoCreatedHosts += 1;
           insertNode.run(
             nodeId,
             id,
@@ -851,6 +863,7 @@ class KubernetesClusterService {
         services: cluster.service_count,
         events: cluster.event_count,
         boundServers: cluster.bound_server_count,
+        autoCreatedHosts,
       },
     };
   }
@@ -938,7 +951,7 @@ class KubernetesClusterService {
       })),
     };
 
-    return this.syncClusterAssets(id, snapshot);
+    return this.syncClusterAssets(id, snapshot, { autoCreateHosts: true });
   }
 
   private resolveServerId(explicitServerId: string | null | undefined, candidates: Array<string | null | undefined>): string | null {
@@ -964,6 +977,83 @@ class KubernetesClusterService {
     }
 
     return null;
+  }
+
+  private resolveOrCreateDiscoveredServerForNode(
+    cluster: KubernetesCluster,
+    node: Pick<KubernetesSnapshotNode, 'name' | 'internal_ip' | 'external_ip' | 'role' | 'status' | 'os_image' | 'kubelet_version' | 'container_runtime' | 'server_id'>,
+    autoCreateHosts: boolean
+  ): { serverId: string | null; created: boolean } {
+    const discoveredKey = `${cluster.id}:${node.name}`;
+    const normalizedExplicit = normalizeText(node.server_id);
+    if (normalizedExplicit) {
+      const explicit = db.prepare('SELECT id FROM servers WHERE id = ?').get(normalizedExplicit) as { id: string } | undefined;
+      if (explicit) return { serverId: explicit.id, created: false };
+    }
+
+    const existingDiscovered = db.prepare(`
+      SELECT id FROM servers
+      WHERE cloud_provider = 'kubernetes'
+        AND cloud_instance_id = ?
+      LIMIT 1
+    `).get(discoveredKey) as { id: string } | undefined;
+    if (existingDiscovered) return { serverId: existingDiscovered.id, created: false };
+
+    for (const candidate of [node.internal_ip, node.external_ip, node.name]) {
+      const value = normalizeText(candidate);
+      if (!value) continue;
+      const server = db.prepare(`
+        SELECT id FROM servers
+        WHERE (id = ? OR name = ? OR hostname = ? OR ip_address = ? OR private_ip = ?)
+          AND (
+            cloud_provider IS NULL
+            OR cloud_provider != 'kubernetes'
+            OR cloud_instance_id = ?
+          )
+        LIMIT 1
+      `).get(value, value, value, value, value, discoveredKey) as { id: string } | undefined;
+      if (server) return { serverId: server.id, created: false };
+    }
+
+    if (!autoCreateHosts) return { serverId: null, created: false };
+
+    const hostname = normalizeText(node.internal_ip) || normalizeText(node.external_ip) || normalizeText(node.name);
+    if (!hostname) return { serverId: null, created: false };
+
+    const id = randomUUID();
+    const ipAddress = normalizeText(node.internal_ip) || normalizeText(node.external_ip);
+    const privateIp = normalizeText(node.internal_ip);
+    const tags = JSON.stringify([
+      'kubernetes',
+      'auto-discovered',
+      `cluster:${cluster.name}`,
+      node.role ? `role:${node.role}` : null,
+    ].filter(Boolean));
+
+    db.prepare(`
+      INSERT INTO servers (
+        id, name, hostname, port, username, description, tags, enabled,
+        os, os_type, ip_address, private_ip, cloud_provider, cloud_instance_id
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      id,
+      node.name,
+      hostname,
+      22,
+      'root',
+      `Auto-discovered backing host for Kubernetes node ${node.name} in cluster ${cluster.name}. Configure credentials before enabling command execution.`,
+      tags,
+      0,
+      normalizeText(node.os_image),
+      'linux',
+      ipAddress,
+      privateIp,
+      'kubernetes',
+      discoveredKey
+    );
+
+    return { serverId: id, created: true };
   }
 
   private mapApiWorkload(workload: KubernetesApiWorkload, kind: string): KubernetesSnapshotWorkload {

@@ -339,14 +339,19 @@ export default function KubernetesClusters() {
   const syncAssetsMutation = useMutation({
     mutationFn: async ({ clusterId, snapshot }: { clusterId: string; snapshot: unknown }) => {
       const res = await api.post(`/api/kubernetes-clusters/${clusterId}/sync-assets`, snapshot);
-      return res.data.data as { counts: { nodes: number; namespaces: number; workloads: number; pods: number; services: number; events: number; boundServers: number } };
+      return res.data.data as { counts: { nodes: number; namespaces: number; workloads: number; pods: number; services: number; events: number; boundServers: number; autoCreatedHosts: number } };
     },
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ['kubernetes-clusters'] });
       queryClient.invalidateQueries({ queryKey: ['kubernetes-cluster-assets'] });
       setSyncTarget(null);
       setAssetSnapshotText('');
-      toast.success(t('kubernetes.toast.synced', { nodes: result.counts.nodes, pods: result.counts.pods }));
+      toast.success(t('kubernetes.toast.synced', {
+        nodes: result.counts.nodes,
+        pods: result.counts.pods,
+        bound: result.counts.boundServers,
+        created: result.counts.autoCreatedHosts,
+      }));
     },
     onError: (error: any) => {
       toast.error(error?.response?.data?.error || error?.response?.data?.message || t('kubernetes.toast.syncFailed'));
@@ -356,12 +361,17 @@ export default function KubernetesClusters() {
   const syncLiveMutation = useMutation({
     mutationFn: async (clusterId: string) => {
       const res = await api.post(`/api/kubernetes-clusters/${clusterId}/sync-live`);
-      return res.data.data as { counts: { nodes: number; namespaces: number; workloads: number; pods: number; services: number; events: number; boundServers: number } };
+      return res.data.data as { counts: { nodes: number; namespaces: number; workloads: number; pods: number; services: number; events: number; boundServers: number; autoCreatedHosts: number } };
     },
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ['kubernetes-clusters'] });
       queryClient.invalidateQueries({ queryKey: ['kubernetes-cluster-assets'] });
-      toast.success(t('kubernetes.toast.liveSynced', { nodes: result.counts.nodes, pods: result.counts.pods }));
+      toast.success(t('kubernetes.toast.liveSynced', {
+        nodes: result.counts.nodes,
+        pods: result.counts.pods,
+        bound: result.counts.boundServers,
+        created: result.counts.autoCreatedHosts,
+      }));
     },
     onError: (error: any) => {
       toast.error(error?.response?.data?.error || error?.response?.data?.message || t('kubernetes.toast.liveSyncFailed'));
@@ -371,7 +381,7 @@ export default function KubernetesClusters() {
   const reconcileBindingsMutation = useMutation({
     mutationFn: async (clusterId: string) => {
       const res = await api.post(`/api/kubernetes-clusters/${clusterId}/reconcile-bindings`);
-      return res.data.data as { matched: number; unresolved: number; alreadyBound: number; totalNodes: number };
+      return res.data.data as { matched: number; unresolved: number; alreadyBound: number; totalNodes: number; autoCreatedHosts: number };
     },
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ['kubernetes-clusters'] });
@@ -380,6 +390,7 @@ export default function KubernetesClusters() {
       toast.success(t('kubernetes.binding.toast.reconciled', {
         matched: result.matched,
         unresolved: result.unresolved,
+        created: result.autoCreatedHosts,
       }));
     },
     onError: (error: any) => {

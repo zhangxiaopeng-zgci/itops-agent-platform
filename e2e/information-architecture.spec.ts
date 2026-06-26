@@ -67,8 +67,8 @@ test.describe('information architecture', () => {
     await page.goto('/kubernetes-clusters');
     await expect(page.locator('body')).toContainText(/节点背后主机关联|Node Backing Host Binding/);
     await expect(page.locator('body')).toContainText(/绑定率|Binding Rate/);
-    await expect(page.locator('body')).toContainText(/未匹配的节点打开详情后可以手动指定|Open details to manually assign unmatched nodes/);
-    await expect(page.getByRole('button', { name: /自动匹配主机|Auto-match Hosts/ }).first()).toBeVisible();
+    await expect(page.locator('body')).toContainText(/自动登记为待接入主机|registered as disabled backing hosts/);
+    await expect(page.getByRole('button', { name: /自动发现\/配置主机|Discover \/ Configure Hosts/ }).first()).toBeVisible();
 
     await page.goto('/assets-center');
     const diagnoseAsset = page.getByRole('button', { name: /诊断资产|Diagnose Asset/ }).first();
