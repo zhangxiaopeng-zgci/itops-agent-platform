@@ -40,19 +40,6 @@ const createCredentialSchema = z.object({
   message: 'Token credentials require token, kubeconfig credentials require kubeconfig, certificate credentials require client certificate and key',
 });
 
-const updateCredentialSchema = z.object({
-  name: z.string().min(1, 'Credential name is required').optional(),
-  credential_type: credentialTypeSchema.optional(),
-  username: z.string().optional().nullable(),
-  token: z.string().optional().nullable(),
-  kubeconfig: z.string().optional().nullable(),
-  client_certificate: z.string().optional().nullable(),
-  client_key: z.string().optional().nullable(),
-  ca_certificate: z.string().optional().nullable(),
-  server_url: z.string().optional().nullable(),
-  description: z.string().optional().nullable(),
-});
-
 function normalizeText(value: string | null | undefined): string | null {
   if (value === undefined || value === null) return null;
   const trimmed = String(value).trim();
@@ -218,104 +205,6 @@ router.post('/', requireRole('admin'), validateBody(createCredentialSchema), (re
   } catch (error) {
     logger.error('Failed to create Kubernetes credential', error as Error);
     res.status(500).json({ success: false, error: 'Failed to create Kubernetes credential' });
-  }
-});
-
-router.put('/:id', requireRole('admin'), validateParams(credentialIdSchema), validateBody(updateCredentialSchema), (req: Request, res: Response) => {
-  try {
-    const existing = db.prepare(`
-      SELECT id, name, credential_type, username, token_secret, kubeconfig,
-        client_certificate, client_key, ca_certificate, server_url, description
-      FROM kubernetes_credentials
-      WHERE id = ?
-    `).get(req.params.id) as {
-      id: string;
-      name: string;
-      credential_type: string;
-      username?: string | null;
-      token_secret?: string | null;
-      kubeconfig?: string | null;
-      client_certificate?: string | null;
-      client_key?: string | null;
-      ca_certificate?: string | null;
-      server_url?: string | null;
-      description?: string | null;
-    } | undefined;
-
-    if (!existing) {
-      return res.status(404).json({ success: false, error: 'Kubernetes credential not found' });
-    }
-
-    const nextName = req.body.name !== undefined ? req.body.name.trim() : existing.name;
-    const duplicate = db.prepare('SELECT id FROM kubernetes_credentials WHERE name = ? AND id != ?').get(nextName, req.params.id);
-    if (duplicate) {
-      return res.status(409).json({ success: false, error: 'Kubernetes credential name already exists' });
-    }
-
-    const nextType = req.body.credential_type || existing.credential_type;
-    const nextToken = normalizeText(req.body.token) ? encrypt(req.body.token) : existing.token_secret || null;
-    const nextKubeconfig = normalizeText(req.body.kubeconfig) ? encrypt(req.body.kubeconfig) : existing.kubeconfig || null;
-    const nextClientCertificate = normalizeText(req.body.client_certificate) ? encrypt(req.body.client_certificate) : existing.client_certificate || null;
-    const nextClientKey = normalizeText(req.body.client_key) ? encrypt(req.body.client_key) : existing.client_key || null;
-    const nextCaCertificate = normalizeText(req.body.ca_certificate) ? encrypt(req.body.ca_certificate) : existing.ca_certificate || null;
-
-    if (nextType === 'token' && !nextToken) {
-      return res.status(400).json({ success: false, error: 'Token credentials require token' });
-    }
-    if (nextType === 'kubeconfig' && !nextKubeconfig) {
-      return res.status(400).json({ success: false, error: 'Kubeconfig credentials require kubeconfig' });
-    }
-    if (nextType === 'certificate' && (!nextClientCertificate || !nextClientKey)) {
-      return res.status(400).json({ success: false, error: 'Certificate credentials require client certificate and key' });
-    }
-
-    db.prepare(`
-      UPDATE kubernetes_credentials
-      SET name = ?,
-        credential_type = ?,
-        username = ?,
-        token_secret = ?,
-        kubeconfig = ?,
-        client_certificate = ?,
-        client_key = ?,
-        ca_certificate = ?,
-        server_url = ?,
-        description = ?,
-        updated_at = CURRENT_TIMESTAMP
-      WHERE id = ?
-    `).run(
-      nextName,
-      nextType,
-      req.body.username !== undefined ? normalizeText(req.body.username) : existing.username || null,
-      nextToken,
-      nextKubeconfig,
-      nextClientCertificate,
-      nextClientKey,
-      nextCaCertificate,
-      req.body.server_url !== undefined ? normalizeText(req.body.server_url) : existing.server_url || null,
-      req.body.description !== undefined ? normalizeText(req.body.description) : existing.description || null,
-      req.params.id
-    );
-
-    const usage = db.prepare('SELECT COUNT(*) AS count FROM kubernetes_clusters WHERE credential_id = ?').get(req.params.id) as { count: number };
-    res.json({
-      success: true,
-      data: {
-        id: req.params.id,
-        name: nextName,
-        credential_type: nextType,
-        username: req.body.username !== undefined ? normalizeText(req.body.username) : existing.username || null,
-        server_url: req.body.server_url !== undefined ? normalizeText(req.body.server_url) : existing.server_url || null,
-        description: req.body.description !== undefined ? normalizeText(req.body.description) : existing.description || null,
-        has_token: Boolean(nextToken),
-        has_kubeconfig: Boolean(nextKubeconfig),
-        has_certificate: Boolean(nextClientCertificate && nextClientKey),
-        usage_count: usage.count,
-      },
-    });
-  } catch (error) {
-    logger.error('Failed to update Kubernetes credential', error as Error);
-    res.status(500).json({ success: false, error: 'Failed to update Kubernetes credential' });
   }
 });
 
