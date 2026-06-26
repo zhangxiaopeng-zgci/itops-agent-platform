@@ -16,6 +16,13 @@ test.describe('information architecture', () => {
     await login(page);
 
     await expect(page.locator('body')).toContainText(/从这里开始|Start Here/);
+    await expect(page.locator('body')).toContainText(/全局运维态势|Global Ops Posture/);
+    await expect(page.locator('body')).toContainText(/主机|Hosts/);
+    await expect(page.locator('body')).toContainText(/Kubernetes/);
+    await expect(page.locator('body')).toContainText(/网络设备|Network Devices/);
+    await expect(page.locator('body')).toContainText(/闭环处理|Closed Loop/);
+    await expect(page.getByRole('link', { name: /打开全屏大屏|Open Wallboard/ })).toBeVisible();
+    await expect(page.getByRole('link', { name: /查看关系图|Open Topology/ })).toBeVisible();
     await expect(page.locator('body')).toContainText(/标准处理路径|Standard Handling Flow/);
     await expect(page.locator('body')).toContainText(/我遇到告警或故障|I have an alert or incident/);
     await expect(page.locator('body')).toContainText(/我接手一个处理中事项|I am taking over an active Case/);
@@ -56,6 +63,12 @@ test.describe('information architecture', () => {
     await expect(page.locator('body')).toContainText(/当前资产|Current Asset/);
     await expect(page.locator('body')).toContainText(/诊断资产|Diagnose Asset/);
 
+    await page.goto('/kubernetes-clusters');
+    await expect(page.locator('body')).toContainText(/节点背后主机关联|Node Backing Host Binding/);
+    await expect(page.locator('body')).toContainText(/绑定率|Binding Rate/);
+    await expect(page.getByRole('button', { name: /重新匹配|Re-match/ }).first()).toBeVisible();
+
+    await page.goto('/assets-center');
     const diagnoseAsset = page.getByRole('button', { name: /诊断资产|Diagnose Asset/ }).first();
     if (await diagnoseAsset.isEnabled()) {
       await diagnoseAsset.click();

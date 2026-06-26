@@ -155,6 +155,14 @@ export interface KubernetesSyncResult {
   };
 }
 
+export interface KubernetesBindingReconcileResult {
+  cluster: KubernetesClusterSummary;
+  totalNodes: number;
+  alreadyBound: number;
+  matched: number;
+  unresolved: number;
+}
+
 interface KubernetesCredential {
   auth_type: string;
   username?: string | null;
@@ -487,8 +495,18 @@ class KubernetesClusterService {
           n.*,
           s.name AS server_name,
           s.hostname AS server_hostname,
+          s.ip_address AS server_ip_address,
+          s.private_ip AS server_private_ip,
           s.enabled AS server_enabled,
-          s.os_type AS server_os_type
+          s.os_type AS server_os_type,
+          CASE
+            WHEN n.server_id IS NULL THEN 'unbound'
+            WHEN s.id IS NULL THEN 'stale'
+            WHEN lower(n.name) IN (lower(s.id), lower(s.name), lower(s.hostname), lower(s.ip_address), lower(COALESCE(s.private_ip, ''))) THEN 'auto'
+            WHEN lower(COALESCE(n.internal_ip, '')) IN (lower(s.hostname), lower(s.ip_address), lower(COALESCE(s.private_ip, ''))) THEN 'auto'
+            WHEN lower(COALESCE(n.external_ip, '')) IN (lower(s.hostname), lower(s.ip_address), lower(COALESCE(s.private_ip, ''))) THEN 'auto'
+            ELSE 'manual'
+          END AS binding_source
         FROM kubernetes_nodes n
         LEFT JOIN servers s ON s.id = n.server_id
         WHERE n.cluster_id = ?
@@ -500,6 +518,101 @@ class KubernetesClusterService {
       services: db.prepare('SELECT * FROM kubernetes_services WHERE cluster_id = ? ORDER BY namespace, name').all(id),
       events: db.prepare('SELECT * FROM kubernetes_events WHERE cluster_id = ? ORDER BY last_seen_at DESC, created_at DESC LIMIT 100').all(id),
     };
+  }
+
+  reconcileNodeBindings(id: string): KubernetesBindingReconcileResult | undefined {
+    const cluster = this.getClusterById(id);
+    if (!cluster) return undefined;
+
+    const nodes = db.prepare(`
+      SELECT id, server_id, name, internal_ip, external_ip
+      FROM kubernetes_nodes
+      WHERE cluster_id = ?
+    `).all(id) as Array<{
+      id: string;
+      server_id?: string | null;
+      name: string;
+      internal_ip?: string | null;
+      external_ip?: string | null;
+    }>;
+
+    let alreadyBound = 0;
+    let matched = 0;
+    let unresolved = 0;
+    const update = db.prepare(`
+      UPDATE kubernetes_nodes
+      SET server_id = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ? AND cluster_id = ?
+    `);
+
+    db.transaction(() => {
+      for (const node of nodes) {
+        if (node.server_id) {
+          alreadyBound += 1;
+          continue;
+        }
+        const serverId = this.resolveServerId(null, [node.internal_ip, node.external_ip, node.name]);
+        if (serverId) {
+          update.run(serverId, node.id, id);
+          matched += 1;
+        } else {
+          unresolved += 1;
+        }
+      }
+    })();
+
+    logger.info(`Kubernetes node bindings reconciled: cluster=${id}, matched=${matched}, unresolved=${unresolved}`);
+    return {
+      cluster: this.getClusterById(id)!,
+      totalNodes: nodes.length,
+      alreadyBound,
+      matched,
+      unresolved,
+    };
+  }
+
+  updateNodeServerBinding(clusterId: string, nodeId: string, serverId: string | null): Record<string, unknown> | undefined {
+    const cluster = this.getClusterById(clusterId);
+    if (!cluster) return undefined;
+
+    const node = db.prepare('SELECT id FROM kubernetes_nodes WHERE id = ? AND cluster_id = ?').get(nodeId, clusterId) as { id: string } | undefined;
+    if (!node) return undefined;
+
+    const normalizedServerId = normalizeText(serverId);
+    if (normalizedServerId) {
+      const server = db.prepare('SELECT id FROM servers WHERE id = ?').get(normalizedServerId) as { id: string } | undefined;
+      if (!server) {
+        throw new Error('Server not found');
+      }
+    }
+
+    db.prepare(`
+      UPDATE kubernetes_nodes
+      SET server_id = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ? AND cluster_id = ?
+    `).run(normalizedServerId, nodeId, clusterId);
+
+    return db.prepare(`
+      SELECT
+        n.*,
+        s.name AS server_name,
+        s.hostname AS server_hostname,
+        s.ip_address AS server_ip_address,
+        s.private_ip AS server_private_ip,
+        s.enabled AS server_enabled,
+        s.os_type AS server_os_type,
+        CASE
+          WHEN n.server_id IS NULL THEN 'unbound'
+          WHEN s.id IS NULL THEN 'stale'
+          WHEN lower(n.name) IN (lower(s.id), lower(s.name), lower(s.hostname), lower(s.ip_address), lower(COALESCE(s.private_ip, ''))) THEN 'auto'
+          WHEN lower(COALESCE(n.internal_ip, '')) IN (lower(s.hostname), lower(s.ip_address), lower(COALESCE(s.private_ip, ''))) THEN 'auto'
+          WHEN lower(COALESCE(n.external_ip, '')) IN (lower(s.hostname), lower(s.ip_address), lower(COALESCE(s.private_ip, ''))) THEN 'auto'
+          ELSE 'manual'
+        END AS binding_source
+      FROM kubernetes_nodes n
+      LEFT JOIN servers s ON s.id = n.server_id
+      WHERE n.id = ? AND n.cluster_id = ?
+    `).get(nodeId, clusterId) as Record<string, unknown>;
   }
 
   validateConnectionConfig(id: string): { success: boolean; status: string; message: string } {
@@ -840,11 +953,13 @@ class KubernetesClusterService {
       if (!value) continue;
       const server = db.prepare(`
         SELECT id FROM servers
-        WHERE hostname = ?
+        WHERE id = ?
+           OR name = ?
+           OR hostname = ?
            OR ip_address = ?
            OR private_ip = ?
         LIMIT 1
-      `).get(value, value, value) as { id: string } | undefined;
+      `).get(value, value, value, value, value) as { id: string } | undefined;
       if (server) return server.id;
     }
 

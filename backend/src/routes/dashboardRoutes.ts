@@ -4,6 +4,21 @@ import { logger } from '../utils/logger';
 
 const router = Router();
 
+function roundNumber(value: number | null | undefined, digits = 1): number | null {
+  if (value === null || value === undefined || Number.isNaN(Number(value))) return null;
+  return Number(Number(value).toFixed(digits));
+}
+
+function ratio(numerator: number, denominator: number): number {
+  if (!denominator) return 100;
+  return Number(((numerator / denominator) * 100).toFixed(1));
+}
+
+function countRows(query: string, ...params: unknown[]): number {
+  const row = db.prepare(query).get(...params) as { count?: number } | undefined;
+  return row?.count || 0;
+}
+
 router.get('/stats', (_req: Request, res: Response) => {
   try {
     const serverStats = db.prepare('SELECT COUNT(*) as total, SUM(enabled) as enabled FROM servers').get() as { total: number; enabled: number } | undefined;
@@ -62,6 +77,191 @@ router.get('/stats', (_req: Request, res: Response) => {
   } catch (error) {
     logger.error('Dashboard stats error:', error);
     res.status(500).json({ success: false, error: 'Failed to fetch dashboard stats' });
+  }
+});
+
+router.get('/ops-overview', (_req: Request, res: Response) => {
+  try {
+    const hostStats = db.prepare(`
+      SELECT
+        COUNT(*) as total,
+        SUM(CASE WHEN enabled = 1 THEN 1 ELSE 0 END) as enabled,
+        SUM(CASE WHEN enabled = 1 AND last_connected IS NOT NULL AND last_connected >= datetime('now', '-5 minutes') THEN 1 ELSE 0 END) as online,
+        SUM(CASE WHEN enabled = 1 AND (last_connected IS NULL OR last_connected < datetime('now', '-30 minutes')) THEN 1 ELSE 0 END) as stale
+      FROM servers
+    `).get() as { total: number; enabled: number; online: number; stale: number };
+
+    const hostMetricStats = db.prepare(`
+      WITH latest AS (
+        SELECT sm.*
+        FROM server_metrics sm
+        JOIN (
+          SELECT server_id, MAX(collected_at) as collected_at
+          FROM server_metrics
+          GROUP BY server_id
+        ) lm ON lm.server_id = sm.server_id AND lm.collected_at = sm.collected_at
+      )
+      SELECT
+        AVG(cpu_usage) as avg_cpu,
+        AVG(memory_usage) as avg_memory,
+        AVG(disk_usage) as avg_disk,
+        SUM(CASE WHEN collected_at >= datetime('now', '-10 minutes') THEN 1 ELSE 0 END) as fresh_metrics
+      FROM latest
+    `).get() as { avg_cpu: number | null; avg_memory: number | null; avg_disk: number | null; fresh_metrics: number | null };
+
+    const kubernetesStats = db.prepare(`
+      SELECT
+        (SELECT COUNT(*) FROM kubernetes_clusters) as clusters,
+        (SELECT COUNT(*) FROM kubernetes_clusters WHERE enabled = 1) as enabled_clusters,
+        (SELECT COUNT(*) FROM kubernetes_clusters WHERE last_sync_at IS NOT NULL) as synced_clusters,
+        (SELECT COUNT(*) FROM kubernetes_nodes) as nodes,
+        (SELECT COUNT(*) FROM kubernetes_nodes WHERE server_id IS NOT NULL) as bound_nodes,
+        (SELECT COUNT(*) FROM kubernetes_pods) as pods,
+        (SELECT COUNT(*) FROM kubernetes_pods WHERE lower(phase) = 'running' AND ready = 1) as running_pods,
+        (SELECT COUNT(*) FROM kubernetes_pods WHERE lower(phase) != 'running' OR ready = 0) as not_ready_pods,
+        (SELECT COUNT(*) FROM kubernetes_workloads) as workloads,
+        (SELECT COUNT(*) FROM kubernetes_workloads WHERE ready_replicas IS NOT NULL AND replicas IS NOT NULL AND ready_replicas < replicas) as degraded_workloads,
+        (SELECT COUNT(*) FROM kubernetes_events WHERE lower(type) = 'warning' AND (last_seen_at IS NULL OR last_seen_at >= datetime('now', '-24 hours'))) as warning_events
+    `).get() as {
+      clusters: number;
+      enabled_clusters: number;
+      synced_clusters: number;
+      nodes: number;
+      bound_nodes: number;
+      pods: number;
+      running_pods: number;
+      not_ready_pods: number;
+      workloads: number;
+      degraded_workloads: number;
+      warning_events: number;
+    };
+
+    const networkStats = db.prepare(`
+      SELECT
+        COUNT(*) as total,
+        SUM(CASE WHEN lower(status) IN ('online', 'active', 'up', 'connected') THEN 1 ELSE 0 END) as online,
+        SUM(CASE WHEN lower(status) IN ('warning', 'degraded', 'alert') THEN 1 ELSE 0 END) as warning,
+        SUM(CASE WHEN lower(status) IN ('offline', 'down', 'unreachable') THEN 1 ELSE 0 END) as offline,
+        SUM(CASE WHEN status IS NULL OR lower(status) NOT IN ('online', 'active', 'up', 'connected', 'warning', 'degraded', 'alert', 'offline', 'down', 'unreachable') THEN 1 ELSE 0 END) as unknown
+      FROM network_devices
+    `).get() as { total: number; online: number; warning: number; offline: number; unknown: number };
+
+    const topologyStats = db.prepare(`
+      SELECT
+        COUNT(*) as explicit_edges,
+        SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) as active_edges,
+        SUM(CASE WHEN last_verified_at IS NULL OR last_verified_at < datetime('now', '-24 hours') THEN 1 ELSE 0 END) as stale_edges
+      FROM service_topologies
+    `).get() as { explicit_edges: number; active_edges: number; stale_edges: number };
+
+    const unboundKubernetesNodes = Math.max((kubernetesStats.nodes || 0) - (kubernetesStats.bound_nodes || 0), 0);
+    const topologyIssues = (topologyStats.stale_edges || 0) + unboundKubernetesNodes;
+    const topologyAccuracyScore = Math.max(0, 100 - Math.min(100, topologyIssues * 8));
+
+    const openAlerts = countRows(`
+      SELECT COUNT(*) as count FROM alerts
+      WHERE status IN ('new', 'active', 'open', 'confirmed', 'in_progress')
+    `);
+    const criticalAlerts = countRows(`
+      SELECT COUNT(*) as count FROM alerts
+      WHERE severity IN ('critical', 'high') AND status IN ('new', 'active', 'open', 'confirmed', 'in_progress')
+    `);
+    const openCases = countRows(`
+      SELECT COUNT(*) as count FROM operation_cases
+      WHERE status NOT IN ('closed', 'resolved', 'cancelled')
+    `);
+    const pendingApprovals = countRows(`
+      SELECT COUNT(*) as count FROM tool_approvals
+      WHERE status = 'pending'
+    `);
+    const runningTasks = countRows(`
+      SELECT COUNT(*) as count FROM tasks
+      WHERE status = 'running'
+    `);
+    const failedTasks = countRows(`
+      SELECT COUNT(*) as count FROM tasks
+      WHERE status = 'failed'
+    `);
+    const hermesSessions24h = countRows(`
+      SELECT COUNT(*) as count FROM hermes_sessions
+      WHERE created_at >= datetime('now', '-24 hours')
+    `);
+    const openEvolutionProposals = countRows(`
+      SELECT COUNT(*) as count FROM evolution_proposals
+      WHERE status IN ('draft', 'generated', 'eval_pending', 'eval_passed', 'approval_pending', 'approved')
+    `);
+
+    const recommendedNextActions: string[] = [];
+    if (criticalAlerts > 0) recommendedNextActions.push('diagnoseCriticalAlerts');
+    if (pendingApprovals > 0) recommendedNextActions.push('reviewPendingApprovals');
+    if (failedTasks > 0) recommendedNextActions.push('reviewFailedTasks');
+    if (unboundKubernetesNodes > 0) recommendedNextActions.push('bindKubernetesNodes');
+    if ((topologyStats.stale_edges || 0) > 0) recommendedNextActions.push('verifyTopology');
+
+    res.json({
+      success: true,
+      data: {
+        generatedAt: new Date().toISOString(),
+        hosts: {
+          total: hostStats.total || 0,
+          enabled: hostStats.enabled || 0,
+          online: hostStats.online || 0,
+          stale: hostStats.stale || 0,
+          avgCpu: roundNumber(hostMetricStats.avg_cpu),
+          avgMemory: roundNumber(hostMetricStats.avg_memory),
+          avgDisk: roundNumber(hostMetricStats.avg_disk),
+          freshMetrics: hostMetricStats.fresh_metrics || 0,
+        },
+        kubernetes: {
+          clusters: kubernetesStats.clusters || 0,
+          enabledClusters: kubernetesStats.enabled_clusters || 0,
+          syncedClusters: kubernetesStats.synced_clusters || 0,
+          nodes: kubernetesStats.nodes || 0,
+          boundNodes: kubernetesStats.bound_nodes || 0,
+          unboundNodes: unboundKubernetesNodes,
+          boundRatio: ratio(kubernetesStats.bound_nodes || 0, kubernetesStats.nodes || 0),
+          pods: kubernetesStats.pods || 0,
+          runningPods: kubernetesStats.running_pods || 0,
+          notReadyPods: kubernetesStats.not_ready_pods || 0,
+          workloads: kubernetesStats.workloads || 0,
+          degradedWorkloads: kubernetesStats.degraded_workloads || 0,
+          warningEvents: kubernetesStats.warning_events || 0,
+        },
+        network: {
+          total: networkStats.total || 0,
+          online: networkStats.online || 0,
+          warning: networkStats.warning || 0,
+          offline: networkStats.offline || 0,
+          unknown: networkStats.unknown || 0,
+        },
+        topology: {
+          explicitEdges: topologyStats.explicit_edges || 0,
+          activeEdges: topologyStats.active_edges || 0,
+          staleEdges: topologyStats.stale_edges || 0,
+          unboundKubernetesNodes,
+          accuracyScore: topologyAccuracyScore,
+        },
+        closedLoop: {
+          openAlerts,
+          criticalAlerts,
+          openCases,
+          pendingApprovals,
+          runningTasks,
+          failedTasks,
+          hermesSessions24h,
+          openEvolutionProposals,
+        },
+        automation: {
+          autoBindingEnabled: true,
+          pendingHumanActions: pendingApprovals + failedTasks,
+          topologyVerificationNeeded: topologyStats.stale_edges || 0,
+          recommendedNextActions,
+        },
+      },
+    });
+  } catch (error) {
+    logger.error('Ops overview error:', error);
+    res.status(500).json({ success: false, error: 'Failed to fetch ops overview' });
   }
 });
 

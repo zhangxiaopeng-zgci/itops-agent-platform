@@ -16,6 +16,10 @@ interface AuthenticatedRequest extends Request {
 }
 
 const clusterIdSchema = z.object({ id: z.string().uuid('Invalid Kubernetes cluster ID') });
+const clusterNodeParamsSchema = z.object({
+  id: z.string().uuid('Invalid Kubernetes cluster ID'),
+  nodeId: z.string().uuid('Invalid Kubernetes node ID'),
+});
 const authTypeSchema = z.enum(['kubeconfig', 'token', 'certificate']);
 
 const createClusterSchema = z.object({
@@ -32,6 +36,10 @@ const createClusterSchema = z.object({
 
 const updateClusterSchema = createClusterSchema.partial().extend({
   status: z.string().optional(),
+});
+
+const updateNodeBindingSchema = z.object({
+  server_id: z.string().uuid('Invalid server ID').optional().nullable(),
 });
 
 const labelsSchema = z.union([z.record(z.unknown()), z.string()]).optional().nullable();
@@ -212,6 +220,35 @@ router.post('/:id/sync-live', requireRole('admin', 'operator'), validateParams(c
     logger.error('Failed to sync Kubernetes cluster from API', error as Error);
     const message = error instanceof Error ? error.message : 'Failed to sync Kubernetes cluster from API';
     res.status(500).json({ success: false, error: message });
+  }
+});
+
+router.post('/:id/reconcile-bindings', requireRole('admin', 'operator'), validateParams(clusterIdSchema), (req: Request, res: Response) => {
+  try {
+    const result = kubernetesClusterService.reconcileNodeBindings(req.params.id);
+    if (!result) {
+      return res.status(404).json({ success: false, error: 'Kubernetes cluster not found' });
+    }
+    res.json({ success: true, data: result });
+  } catch (error) {
+    logger.error('Failed to reconcile Kubernetes node bindings', error as Error);
+    const message = error instanceof Error ? error.message : 'Failed to reconcile Kubernetes node bindings';
+    res.status(500).json({ success: false, error: message });
+  }
+});
+
+router.patch('/:id/nodes/:nodeId/binding', requireRole('admin', 'operator'), validateParams(clusterNodeParamsSchema), validateBody(updateNodeBindingSchema), (req: Request, res: Response) => {
+  try {
+    const node = kubernetesClusterService.updateNodeServerBinding(req.params.id, req.params.nodeId, req.body.server_id || null);
+    if (!node) {
+      return res.status(404).json({ success: false, error: 'Kubernetes node not found' });
+    }
+    res.json({ success: true, data: node });
+  } catch (error) {
+    logger.error('Failed to update Kubernetes node binding', error as Error);
+    const message = error instanceof Error ? error.message : 'Failed to update Kubernetes node binding';
+    const status = message === 'Server not found' ? 404 : 500;
+    res.status(status).json({ success: false, error: message });
   }
 });
 

@@ -50,11 +50,15 @@ interface KubernetesNode {
   id: string;
   name: string;
   internal_ip?: string | null;
+  external_ip?: string | null;
   role?: string | null;
   status: string;
   server_id?: string | null;
   server_name?: string | null;
   server_hostname?: string | null;
+  server_ip_address?: string | null;
+  server_private_ip?: string | null;
+  binding_source?: 'auto' | 'manual' | 'stale' | 'unbound' | string;
 }
 
 interface KubernetesNamespace {
@@ -140,6 +144,15 @@ interface CredentialDetail extends CredentialOption {
   clusters: CredentialClusterUsage[];
 }
 
+interface ServerOption {
+  id: string;
+  name: string;
+  hostname?: string | null;
+  ip_address?: string | null;
+  private_ip?: string | null;
+  enabled: number;
+}
+
 const emptyForm = {
   name: '',
   api_server_url: '',
@@ -163,6 +176,17 @@ const emptyCredentialForm = {
 
 const inputClass = 'w-full px-3 py-2 rounded-lg bg-background border border-border text-text-primary placeholder-text-secondary focus:outline-none focus:border-primary';
 
+function toArray<T>(value: unknown, keys: string[] = []): T[] {
+  if (Array.isArray(value)) return value as T[];
+  if (value && typeof value === 'object') {
+    const record = value as Record<string, unknown>;
+    for (const key of keys) {
+      if (Array.isArray(record[key])) return record[key] as T[];
+    }
+  }
+  return [];
+}
+
 export default function KubernetesClusters() {
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -178,9 +202,12 @@ export default function KubernetesClusters() {
   const [isCredentialModalOpen, setIsCredentialModalOpen] = useState(false);
   const [credentialDetail, setCredentialDetail] = useState<CredentialDetail | null>(null);
   const [deleteCredentialTarget, setDeleteCredentialTarget] = useState<CredentialOption | null>(null);
+  const [bindingTarget, setBindingTarget] = useState<KubernetesNode | null>(null);
+  const [bindingServerId, setBindingServerId] = useState('');
   const [formData, setFormData] = useState(emptyForm);
   const [credentialForm, setCredentialForm] = useState(emptyCredentialForm);
   const isAdmin = user?.role === 'admin';
+  const canOperateBindings = isAdmin || user?.role === 'operator';
 
   useEscapeKey({ onEscape: () => setIsModalOpen(false), enabled: isModalOpen });
   useEscapeKey({ onEscape: () => setDeleteTarget(null), enabled: !!deleteTarget });
@@ -189,6 +216,7 @@ export default function KubernetesClusters() {
   useEscapeKey({ onEscape: () => setIsCredentialModalOpen(false), enabled: isCredentialModalOpen });
   useEscapeKey({ onEscape: () => setCredentialDetail(null), enabled: !!credentialDetail });
   useEscapeKey({ onEscape: () => setDeleteCredentialTarget(null), enabled: !!deleteCredentialTarget });
+  useEscapeKey({ onEscape: () => setBindingTarget(null), enabled: !!bindingTarget });
 
   const { data: clusters = [], isLoading } = useQuery({
     queryKey: ['kubernetes-clusters'],
@@ -202,6 +230,13 @@ export default function KubernetesClusters() {
     queryFn: async () => {
       const res = await api.get('/api/kubernetes-credentials');
       return res.data.data as CredentialOption[];
+    },
+  });
+  const { data: servers = [] } = useQuery({
+    queryKey: ['servers', 'kubernetes-binding'],
+    queryFn: async () => {
+      const res = await api.get('/api/servers');
+      return toArray<ServerOption>(res.data.data, ['servers', 'items']);
     },
   });
   const { data: clusterAssets, isFetching: isFetchingAssets } = useQuery({
@@ -333,6 +368,43 @@ export default function KubernetesClusters() {
     },
   });
 
+  const reconcileBindingsMutation = useMutation({
+    mutationFn: async (clusterId: string) => {
+      const res = await api.post(`/api/kubernetes-clusters/${clusterId}/reconcile-bindings`);
+      return res.data.data as { matched: number; unresolved: number; alreadyBound: number; totalNodes: number };
+    },
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ['kubernetes-clusters'] });
+      queryClient.invalidateQueries({ queryKey: ['kubernetes-cluster-assets'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard', 'ops-overview'] });
+      toast.success(t('kubernetes.binding.toast.reconciled', {
+        matched: result.matched,
+        unresolved: result.unresolved,
+      }));
+    },
+    onError: (error: any) => {
+      toast.error(error?.response?.data?.error || error?.response?.data?.message || t('kubernetes.binding.toast.reconcileFailed'));
+    },
+  });
+
+  const updateBindingMutation = useMutation({
+    mutationFn: async ({ clusterId, nodeId, serverId }: { clusterId: string; nodeId: string; serverId: string | null }) => {
+      const res = await api.patch(`/api/kubernetes-clusters/${clusterId}/nodes/${nodeId}/binding`, { server_id: serverId });
+      return res.data.data as KubernetesNode;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['kubernetes-clusters'] });
+      queryClient.invalidateQueries({ queryKey: ['kubernetes-cluster-assets'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard', 'ops-overview'] });
+      setBindingTarget(null);
+      setBindingServerId('');
+      toast.success(t('kubernetes.binding.toast.updated'));
+    },
+    onError: (error: any) => {
+      toast.error(error?.response?.data?.error || error?.response?.data?.message || t('kubernetes.binding.toast.updateFailed'));
+    },
+  });
+
   const filteredClusters = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
     if (!query) return clusters;
@@ -354,6 +426,12 @@ export default function KubernetesClusters() {
       { nodes: 0, pods: 0, workloads: 0, boundServers: 0 }
     );
   }, [clusters]);
+
+  const bindingStats = useMemo(() => {
+    const unbound = Math.max(totals.nodes - totals.boundServers, 0);
+    const ratio = totals.nodes > 0 ? Math.round((totals.boundServers / totals.nodes) * 100) : 100;
+    return { unbound, ratio };
+  }, [totals]);
 
   const handleSubmit = (event: FormEvent) => {
     event.preventDefault();
@@ -412,6 +490,20 @@ export default function KubernetesClusters() {
     navigate(`/hermes?mode=diagnose&prompt=${encodeURIComponent(prompt)}&knowledgeCategory=${encodeURIComponent('kubernetes')}`);
   };
 
+  const openBindingModal = (node: KubernetesNode) => {
+    setBindingTarget(node);
+    setBindingServerId(node.server_id || '');
+  };
+
+  const submitBinding = () => {
+    if (!detailCluster || !bindingTarget) return;
+    updateBindingMutation.mutate({
+      clusterId: detailCluster.id,
+      nodeId: bindingTarget.id,
+      serverId: bindingServerId || null,
+    });
+  };
+
   return (
     <div className="h-full overflow-auto p-6">
       <div className="space-y-6">
@@ -460,6 +552,22 @@ export default function KubernetesClusters() {
           <MetricCard icon={Boxes} label={t('kubernetes.metric.workloads')} value={totals.workloads} />
           <MetricCard icon={Link2} label={t('kubernetes.metric.boundServers')} value={totals.boundServers} />
         </div>
+
+        <section className="bg-surface border border-border rounded-lg p-4">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <h2 className="text-lg font-semibold text-text-primary">{t('kubernetes.binding.title')}</h2>
+              <p className="text-sm text-text-secondary mt-1">
+                {t('kubernetes.binding.subtitle')}
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-3">
+              <BindingStat label={t('kubernetes.binding.boundRatio')} value={`${bindingStats.ratio}%`} />
+              <BindingStat label={t('kubernetes.binding.unboundNodes')} value={bindingStats.unbound} />
+              <BindingStat label={t('kubernetes.binding.boundServers')} value={totals.boundServers} />
+            </div>
+          </div>
+        </section>
 
         <div className="bg-surface border border-border rounded-lg p-4">
           <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
@@ -595,7 +703,7 @@ export default function KubernetesClusters() {
                       </button>
                       <button
                         onClick={() => openSyncModal(cluster)}
-                        disabled={!isAdmin && user?.role !== 'operator'}
+                        disabled={!canOperateBindings}
                         className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-border text-text-primary hover:bg-background transition-colors disabled:opacity-60"
                       >
                         <RefreshCw className="w-4 h-4" />
@@ -609,6 +717,14 @@ export default function KubernetesClusters() {
                       >
                         {syncLiveMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
                         {t('kubernetes.action.syncLive')}
+                      </button>
+                      <button
+                        onClick={() => reconcileBindingsMutation.mutate(cluster.id)}
+                        disabled={reconcileBindingsMutation.isPending || !canOperateBindings}
+                        className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-cyan-500/30 text-cyan-500 hover:bg-cyan-500/10 transition-colors disabled:opacity-60"
+                      >
+                        {reconcileBindingsMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Link2 className="w-4 h-4" />}
+                        {t('kubernetes.binding.reconcile')}
                       </button>
                       <button
                         onClick={() => testMutation.mutate(cluster)}
@@ -638,6 +754,15 @@ export default function KubernetesClusters() {
                     <SmallMetric label={t('kubernetes.metric.services')} value={cluster.service_count} />
                     <SmallMetric label={t('kubernetes.metric.events')} value={cluster.event_count} />
                   </div>
+                  <ClusterBindingBar
+                    bound={cluster.bound_server_count}
+                    total={cluster.node_count}
+                    label={t('kubernetes.binding.clusterStatus', {
+                      bound: cluster.bound_server_count,
+                      total: cluster.node_count,
+                      unbound: Math.max(cluster.node_count - cluster.bound_server_count, 0),
+                    })}
+                  />
                 </div>
               ))}
             </div>
@@ -887,6 +1012,53 @@ export default function KubernetesClusters() {
         </div>
       )}
 
+      {bindingTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="w-full max-w-lg bg-surface border border-border rounded-lg shadow-xl">
+            <div className="p-5 border-b border-border flex items-start justify-between gap-4">
+              <div className="min-w-0">
+                <h2 className="text-lg font-semibold text-text-primary">{t('kubernetes.binding.modal.title')}</h2>
+                <p className="text-sm text-text-secondary mt-1 truncate">{bindingTarget.name}</p>
+              </div>
+              <button onClick={() => setBindingTarget(null)} className="p-2 rounded-lg hover:bg-background">
+                <X className="w-4 h-4 text-text-secondary" />
+              </button>
+            </div>
+            <div className="p-5 space-y-4">
+              <div className="rounded-lg border border-border bg-background/50 p-3 text-sm text-text-secondary">
+                {t('kubernetes.binding.modal.hint', {
+                  internalIp: bindingTarget.internal_ip || '-',
+                  externalIp: bindingTarget.external_ip || '-',
+                })}
+              </div>
+              <Field label={t('kubernetes.binding.modal.server')}>
+                <select className={inputClass} value={bindingServerId} onChange={(event) => setBindingServerId(event.target.value)}>
+                  <option value="">{t('kubernetes.binding.modal.unbound')}</option>
+                  {servers.map((server) => (
+                    <option key={server.id} value={server.id}>
+                      {server.name} · {server.hostname || server.ip_address || server.private_ip || server.id}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <div className="flex justify-end gap-3 pt-2">
+                <button onClick={() => setBindingTarget(null)} className="px-4 py-2 rounded-lg border border-border text-text-primary hover:bg-background">
+                  {t('common.cancel')}
+                </button>
+                <button
+                  onClick={submitBinding}
+                  disabled={updateBindingMutation.isPending}
+                  className="px-4 py-2 rounded-lg bg-primary text-white hover:bg-primary/90 disabled:opacity-60 inline-flex items-center gap-2"
+                >
+                  {updateBindingMutation.isPending && <Loader2 className="w-4 h-4 animate-spin" />}
+                  {t('common.save')}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {detailCluster && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
           <div className="w-full max-w-5xl max-h-[90vh] overflow-hidden bg-surface border border-border rounded-lg shadow-xl">
@@ -915,13 +1087,36 @@ export default function KubernetesClusters() {
                     <SmallMetric label={t('kubernetes.metric.events')} value={clusterAssets.events.length} />
                   </div>
 
+                  <section className="rounded-lg border border-border bg-background/40 p-4">
+                    <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                      <div>
+                        <h3 className="text-sm font-semibold text-text-primary">{t('kubernetes.binding.detailTitle')}</h3>
+                        <p className="text-xs text-text-secondary mt-1">
+                          {t('kubernetes.binding.detailDesc', {
+                            bound: clusterAssets.nodes.filter((node) => node.server_id).length,
+                            total: clusterAssets.nodes.length,
+                            unbound: clusterAssets.nodes.filter((node) => !node.server_id).length,
+                          })}
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => reconcileBindingsMutation.mutate(detailCluster.id)}
+                        disabled={reconcileBindingsMutation.isPending || !canOperateBindings}
+                        className="inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg border border-cyan-500/30 text-cyan-500 hover:bg-cyan-500/10 transition-colors disabled:opacity-60"
+                      >
+                        {reconcileBindingsMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                        {t('kubernetes.binding.reconcile')}
+                      </button>
+                    </div>
+                  </section>
+
                   <DetailSection title={t('kubernetes.detail.nodes')} empty={t('kubernetes.detail.emptyNodes')}>
-                    {clusterAssets.nodes.slice(0, 8).map((node) => (
-                      <AssetRow
+                    {clusterAssets.nodes.map((node) => (
+                      <NodeBindingRow
                         key={node.id}
-                        title={node.name}
-                        meta={[node.role || '-', node.internal_ip || '-', node.status].join(' · ')}
-                        extra={node.server_name ? t('kubernetes.detail.boundServer', { name: node.server_name, host: node.server_hostname || '-' }) : t('kubernetes.detail.unboundServer')}
+                        node={node}
+                        canOperate={canOperateBindings}
+                        onBind={() => openBindingModal(node)}
                       />
                     ))}
                   </DetailSection>
@@ -1008,12 +1203,84 @@ function MetricCard({ icon: Icon, label, value }: { icon: typeof Cloud; label: s
   );
 }
 
+function BindingStat({ label, value }: { label: string; value: string | number }) {
+  return (
+    <div className="min-w-[120px] rounded-lg border border-border bg-background/60 px-4 py-3">
+      <p className="text-xs text-text-secondary">{label}</p>
+      <p className="mt-1 text-xl font-semibold text-text-primary">{value}</p>
+    </div>
+  );
+}
+
+function ClusterBindingBar({ bound, total, label }: { bound: number; total: number; label: string }) {
+  const ratio = total > 0 ? Math.round((bound / total) * 100) : 100;
+  return (
+    <div className="mt-4 rounded-lg border border-border bg-background/40 p-3">
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-xs text-text-secondary">{label}</span>
+        <span className="text-xs font-semibold text-text-primary">{ratio}%</span>
+      </div>
+      <div className="mt-2 h-2 rounded-full bg-border/60">
+        <div className="h-2 rounded-full bg-primary" style={{ width: `${Math.max(0, Math.min(100, ratio))}%` }} />
+      </div>
+    </div>
+  );
+}
+
 function SmallMetric({ label, value }: { label: string; value: number }) {
   return (
     <div className="rounded-lg bg-background/60 border border-border p-3">
       <p className="text-xs text-text-secondary">{label}</p>
       <p className="text-lg font-semibold text-text-primary mt-1">{value}</p>
     </div>
+  );
+}
+
+function NodeBindingRow({ node, canOperate, onBind }: { node: KubernetesNode; canOperate: boolean; onBind: () => void }) {
+  const { t } = useLocale();
+  const serverLabel = node.server_name
+    ? t('kubernetes.detail.boundServer', { name: node.server_name, host: node.server_hostname || node.server_ip_address || '-' })
+    : t('kubernetes.detail.unboundServer');
+
+  return (
+    <div className="rounded-lg bg-surface border border-border px-3 py-3 min-w-0">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="text-sm font-medium text-text-primary truncate">{node.name}</div>
+            <BindingSourcePill source={node.binding_source || (node.server_id ? 'manual' : 'unbound')} />
+          </div>
+          <div className="text-xs text-text-secondary mt-1">
+            {[node.role || '-', node.internal_ip || '-', node.external_ip || '-', node.status].join(' · ')}
+          </div>
+          <div className="text-xs text-text-tertiary mt-2">{serverLabel}</div>
+        </div>
+        <button
+          onClick={onBind}
+          disabled={!canOperate}
+          className="inline-flex items-center justify-center gap-2 px-3 py-2 rounded-lg border border-border text-xs text-text-primary hover:bg-background transition-colors disabled:opacity-60"
+        >
+          <Link2 className="w-3.5 h-3.5" />
+          {node.server_id ? t('kubernetes.binding.change') : t('kubernetes.binding.bind')}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function BindingSourcePill({ source }: { source: string }) {
+  const { t } = useLocale();
+  const tone = source === 'auto'
+    ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-500'
+    : source === 'manual'
+      ? 'border-primary/30 bg-primary/10 text-primary'
+      : source === 'stale'
+        ? 'border-amber-500/30 bg-amber-500/10 text-amber-500'
+        : 'border-border bg-background text-text-secondary';
+  return (
+    <span className={`px-2 py-0.5 rounded-full border text-[11px] ${tone}`}>
+      {t(`kubernetes.binding.source.${source}` as any)}
+    </span>
   );
 }
 
