@@ -556,7 +556,7 @@ class TopologyService {
     };
 
     for (const node of kubernetesNodes) {
-      const serverId = node.server_id || this.findServerForKubernetesNode(node, servers);
+      const serverId = this.findServerForKubernetesNode(node, servers);
       if (!serverId) continue;
       addClusterServerEdge(
         node.cluster_id,
@@ -609,20 +609,36 @@ class TopologyService {
 
   private findServerForKubernetesNode(node: KubernetesNodeDB | undefined, servers: ServerDB[]): string | null {
     if (!node) return null;
-    if (node.server_id) return node.server_id;
+    if (node.server_id) {
+      const boundServer = servers.find((server) => server.id === node.server_id);
+      return boundServer && this.isKubernetesNodeAddressMatch(node, boundServer) ? boundServer.id : null;
+    }
 
-    const candidates = [node.name, node.internal_ip, node.external_ip]
+    const candidates = [node.internal_ip, node.external_ip]
       .filter(Boolean)
       .map((value) => String(value).trim().toLowerCase());
 
     const matched = servers.find((server) => {
-      const serverCandidates = [server.id, server.name, server.hostname, server.ip_address, server.private_ip]
+      const serverCandidates = [server.id, server.hostname, server.ip_address, server.private_ip]
         .filter(Boolean)
         .map((value) => String(value).trim().toLowerCase());
       return candidates.some((candidate) => serverCandidates.includes(candidate));
     });
 
     return matched?.id || null;
+  }
+
+  private isKubernetesNodeAddressMatch(node: KubernetesNodeDB, server: ServerDB): boolean {
+    const nodeAddresses = [node.internal_ip, node.external_ip]
+      .filter(Boolean)
+      .map((value) => String(value).trim().toLowerCase());
+    if (nodeAddresses.length === 0) return false;
+
+    const serverAddresses = [server.hostname, server.ip_address, server.private_ip]
+      .filter(Boolean)
+      .map((value) => String(value).trim().toLowerCase());
+
+    return nodeAddresses.some((address) => serverAddresses.includes(address));
   }
 
   private findServerIdsForKubernetesClusterGroups(cluster: KubernetesClusterDB): ClusterServerGroupMappingDB[] {

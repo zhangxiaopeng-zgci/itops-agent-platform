@@ -290,6 +290,14 @@ interface KubernetesBackingHost {
   group_name?: string | null;
 }
 
+interface ServerIdentity {
+  server_id?: string | null;
+  server_name?: string | null;
+  server_hostname?: string | null;
+  server_ip_address?: string | null;
+  server_private_ip?: string | null;
+}
+
 function normalizeEnabled(enabled: number | boolean | undefined): number {
   if (enabled === undefined) return 1;
   return enabled === true || enabled === 1 ? 1 : 0;
@@ -515,9 +523,9 @@ class KubernetesClusterService {
           CASE
             WHEN n.server_id IS NULL THEN 'unbound'
             WHEN s.id IS NULL THEN 'stale'
-            WHEN lower(n.name) IN (lower(s.id), lower(s.name), lower(s.hostname), lower(s.ip_address), lower(COALESCE(s.private_ip, ''))) THEN 'auto'
             WHEN lower(COALESCE(n.internal_ip, '')) IN (lower(s.hostname), lower(s.ip_address), lower(COALESCE(s.private_ip, ''))) THEN 'auto'
             WHEN lower(COALESCE(n.external_ip, '')) IN (lower(s.hostname), lower(s.ip_address), lower(COALESCE(s.private_ip, ''))) THEN 'auto'
+            WHEN lower(n.name) IN (lower(s.id), lower(s.name)) THEN 'mismatch'
             ELSE 'manual'
           END AS binding_source
         FROM kubernetes_nodes n
@@ -620,9 +628,9 @@ class KubernetesClusterService {
         CASE
           WHEN n.server_id IS NULL THEN 'unbound'
           WHEN s.id IS NULL THEN 'stale'
-          WHEN lower(n.name) IN (lower(s.id), lower(s.name), lower(s.hostname), lower(s.ip_address), lower(COALESCE(s.private_ip, ''))) THEN 'auto'
           WHEN lower(COALESCE(n.internal_ip, '')) IN (lower(s.hostname), lower(s.ip_address), lower(COALESCE(s.private_ip, ''))) THEN 'auto'
           WHEN lower(COALESCE(n.external_ip, '')) IN (lower(s.hostname), lower(s.ip_address), lower(COALESCE(s.private_ip, ''))) THEN 'auto'
+          WHEN lower(n.name) IN (lower(s.id), lower(s.name)) THEN 'mismatch'
           ELSE 'manual'
         END AS binding_source
       FROM kubernetes_nodes n
@@ -1032,7 +1040,7 @@ class KubernetesClusterService {
     }>;
 
     for (const row of nodeRows) {
-      if (row.server_id && row.server_name && row.server_hostname) {
+      if (row.server_id && row.server_name && row.server_hostname && this.isNodeServerAddressMatch(row)) {
         addHost({
           server_id: row.server_id,
           server_name: row.server_name,
@@ -1047,7 +1055,7 @@ class KubernetesClusterService {
         continue;
       }
 
-      const matched = this.findServerByCandidates([row.internal_ip, row.external_ip, row.node_name]);
+      const matched = this.findServerByCandidates([row.internal_ip, row.external_ip]);
       if (matched) {
         addHost({
           ...matched,
@@ -1104,15 +1112,34 @@ class KubernetesClusterService {
           enabled AS server_enabled
         FROM servers
         WHERE id = ?
-           OR name = ?
            OR hostname = ?
            OR ip_address = ?
            OR private_ip = ?
         LIMIT 1
-      `).get(value, value, value, value, value) as Omit<KubernetesBackingHost, 'source'> | undefined;
+      `).get(value, value, value, value) as Omit<KubernetesBackingHost, 'source'> | undefined;
       if (server) return server;
     }
     return null;
+  }
+
+  private isNodeServerAddressMatch(node: {
+    internal_ip?: string | null;
+    external_ip?: string | null;
+  } & ServerIdentity): boolean {
+    const nodeAddresses = new Set(
+      [node.internal_ip, node.external_ip]
+        .map((value) => normalizeText(value)?.toLowerCase())
+        .filter(Boolean) as string[]
+    );
+    if (nodeAddresses.size === 0) return false;
+
+    const serverAddresses = [
+      node.server_hostname,
+      node.server_ip_address,
+      node.server_private_ip,
+    ].map((value) => normalizeText(value)?.toLowerCase()).filter(Boolean) as string[];
+
+    return serverAddresses.some((value) => nodeAddresses.has(value));
   }
 
   private normalizeClusterAssociationName(value: string | null | undefined): string {
@@ -1145,19 +1172,19 @@ class KubernetesClusterService {
     `).get(discoveredKey) as { id: string } | undefined;
     if (existingDiscovered) return { serverId: existingDiscovered.id, created: false };
 
-    for (const candidate of [node.internal_ip, node.external_ip, node.name]) {
+    for (const candidate of [node.internal_ip, node.external_ip]) {
       const value = normalizeText(candidate);
       if (!value) continue;
       const server = db.prepare(`
         SELECT id FROM servers
-        WHERE (id = ? OR name = ? OR hostname = ? OR ip_address = ? OR private_ip = ?)
+        WHERE (id = ? OR hostname = ? OR ip_address = ? OR private_ip = ?)
           AND (
             cloud_provider IS NULL
             OR cloud_provider != 'kubernetes'
             OR cloud_instance_id = ?
           )
         LIMIT 1
-      `).get(value, value, value, value, value, discoveredKey) as { id: string } | undefined;
+      `).get(value, value, value, value, discoveredKey) as { id: string } | undefined;
       if (server) return { serverId: server.id, created: false };
     }
 
