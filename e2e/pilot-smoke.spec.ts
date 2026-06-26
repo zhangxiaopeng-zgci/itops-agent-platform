@@ -88,9 +88,28 @@ test.describe('AIOps Agent pilot acceptance smoke', () => {
     const body = await response.json();
     expect(body.data).toHaveLength(3);
     expect(body.data.map((channel: { type: string }) => channel.type).sort()).toEqual(['diagnose', 'remediate', 'review']);
+
+    const launchOptionsResponse = await api.get('/api/hermes-sessions/launch-options');
+    expect(launchOptionsResponse.ok()).toBeTruthy();
+    const launchOptionsBody = await launchOptionsResponse.json();
+    expect(launchOptionsBody.data.options.map((option: { mode: string }) => option.mode).sort()).toEqual(['diagnose', 'remediate', 'review']);
+    const diagnoseOption = launchOptionsBody.data.options.find((option: { mode: string }) => option.mode === 'diagnose');
+    expect(diagnoseOption.policy.canLaunch).toBeTruthy();
+
+    const launchResponse = await api.post('/api/hermes-sessions/launch', {
+      data: { mode: 'diagnose', channelId: diagnoseOption.channel.id }
+    });
+    expect(launchResponse.ok()).toBeTruthy();
+    const launchBody = await launchResponse.json();
+    expect(launchBody.data.launchUrl).toContain('/hermes?mode=diagnose');
+    expect(launchBody.data.correlationId).toContain('hermes-session-');
     await api.dispose();
 
     await loginInBrowser(page);
+
+    await page.goto('/hermes-console');
+    await expect(page.getByText(/独立 Hermes Session 启动器|Standalone Hermes Session Launcher/)).toBeVisible();
+    await expect(page.getByRole('button', { name: /开启 Session|Start Session/ }).first()).toBeVisible();
 
     await page.goto('/hermes-channels?channelId=hermes-channel-diagnose&focus=bundle');
     await expect(page.getByRole('heading', { name: 'Hermes 诊断通道' })).toBeVisible();
