@@ -55,10 +55,13 @@ interface KiteBridgeStatus {
 }
 
 function getKiteUrl(): string {
-  if (typeof window === 'undefined') return 'http://10.1.132.58:3002';
-  const protocol = window.location.protocol || 'http:';
-  const hostname = window.location.hostname || '10.1.132.58';
-  return `${protocol}//${hostname}:3002`;
+  return '/kite/';
+}
+
+function buildKiteLauncherUrl(clusterName?: string | null) {
+  const params = new URLSearchParams();
+  if (clusterName) params.set('cluster', clusterName);
+  return `/kite-launcher${params.toString() ? `?${params.toString()}` : ''}`;
 }
 
 export default function KubernetesConsole() {
@@ -137,9 +140,9 @@ export default function KubernetesConsole() {
     sessionMutation,
   ]);
 
-  const openKite = async () => {
+  const openKite = async (clusterName?: string | null) => {
     const target = window.open('about:blank', '_blank');
-    const fallbackUrl = bridgeStatus?.kite.publicUrl || kiteUrl;
+    const fallbackUrl = buildKiteLauncherUrl(clusterName || bridgeStatus?.bridge.syncedClusterName || undefined);
     if (target) {
       target.document.write(`<title>Kite</title><body style="font-family: sans-serif; padding: 24px;">${t('kubernetesConsole.bridge.creatingSession')}</body>`);
       target.document.close();
@@ -152,9 +155,9 @@ export default function KubernetesConsole() {
     }
 
     try {
-      const result = await sessionMutation.mutateAsync();
-      if (target) target.location.href = result.publicUrl || fallbackUrl;
-      else window.location.href = result.publicUrl || fallbackUrl;
+      await sessionMutation.mutateAsync();
+      if (target) target.location.href = fallbackUrl;
+      else window.location.href = fallbackUrl;
     } catch {
       if (target) target.location.href = fallbackUrl;
       else window.location.href = fallbackUrl;
@@ -179,7 +182,7 @@ export default function KubernetesConsole() {
           </div>
           <button
             type="button"
-            onClick={openKite}
+            onClick={() => openKite(bridgeStatus?.bridge.syncedClusterName || undefined)}
             disabled={sessionMutation.isPending}
             className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-primary text-white hover:bg-primary/90 transition-colors"
           >
@@ -274,14 +277,24 @@ export default function KubernetesConsole() {
                     {cluster.auth_type} · {cluster.has_kubeconfig ? t('kubernetesConsole.bridge.hasKubeconfig') : t('kubernetesConsole.bridge.noKubeconfig')}
                   </p>
                   {canSyncKite && cluster.enabled === 1 && cluster.auth_type === 'kubeconfig' && cluster.has_kubeconfig === 1 && (
-                    <button
-                      onClick={() => syncMutation.mutate(cluster.id)}
-                      disabled={syncMutation.isPending}
-                      className="mt-3 inline-flex items-center gap-2 rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-text-primary hover:bg-background disabled:opacity-50"
-                    >
-                      <RefreshCw className="w-3 h-3" />
-                      {t('kubernetesConsole.bridge.syncThis')}
-                    </button>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <button
+                        onClick={() => syncMutation.mutate(cluster.id)}
+                        disabled={syncMutation.isPending}
+                        className="inline-flex items-center gap-2 rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-text-primary hover:bg-background disabled:opacity-50"
+                      >
+                        <RefreshCw className="w-3 h-3" />
+                        {t('kubernetesConsole.bridge.syncThis')}
+                      </button>
+                      <button
+                        onClick={() => openKite(cluster.name)}
+                        disabled={sessionMutation.isPending}
+                        className="inline-flex items-center gap-2 rounded-lg border border-primary/30 bg-primary/10 px-3 py-1.5 text-xs font-medium text-primary hover:bg-primary/15 disabled:opacity-50"
+                      >
+                        <ExternalLink className="w-3 h-3" />
+                        {t('kubernetesConsole.bridge.openThis')}
+                      </button>
+                    </div>
                   )}
                 </div>
               ))}

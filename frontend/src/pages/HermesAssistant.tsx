@@ -1913,7 +1913,10 @@ export default function HermesAssistant() {
                       <div className="flex flex-wrap gap-2">
                         <button
                           type="button"
-                          onClick={() => navigate('/kubernetes-console')}
+                          onClick={() => navigate(selectedKubernetesCluster
+                            ? `/kite-launcher?cluster=${encodeURIComponent(selectedKubernetesCluster.name)}`
+                            : '/kubernetes-console'
+                          )}
                           className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 hover:bg-emerald-500/20 text-xs"
                         >
                           {t('hermes.kubernetes.openConsole')}

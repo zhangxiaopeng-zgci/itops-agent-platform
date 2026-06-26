@@ -250,7 +250,7 @@ export default function AssetsCenter() {
   }, [recentAssets, selectedAssetId]);
   const selectedAssetType = selectedAsset ? t(selectedAsset.typeKey) : '-';
   const selectedAssetConnectionHref = selectedAsset?.type === 'kubernetes'
-    ? '/kubernetes-console'
+    ? `/kite-launcher?cluster=${encodeURIComponent(selectedAsset.name)}`
     : selectedAsset?.type === 'host'
       ? `/terminal?serverId=${encodeURIComponent(selectedAsset.rawId)}`
       : selectedAsset?.href || '/assets-center';

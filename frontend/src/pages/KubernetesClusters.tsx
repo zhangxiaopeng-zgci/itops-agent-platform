@@ -547,7 +547,21 @@ export default function KubernetesClusters() {
       environment: cluster.environment || t('common.unknown'),
       apiServer: cluster.api_server_url || t('kubernetes.noApiServer'),
     });
-    navigate(`/hermes?mode=diagnose&prompt=${encodeURIComponent(prompt)}&knowledgeCategory=${encodeURIComponent('kubernetes')}`);
+    const params = new URLSearchParams({
+      mode: 'diagnose',
+      prompt,
+      knowledgeCategory: 'kubernetes',
+      k8sClusterId: cluster.id,
+      assetId: cluster.id,
+      assetType: 'kubernetes_cluster',
+      assetName: cluster.name,
+    });
+    navigate(`/hermes?${params.toString()}`);
+  };
+
+  const openKiteForCluster = (cluster: KubernetesCluster) => {
+    const params = new URLSearchParams({ cluster: cluster.name });
+    window.open(`/kite-launcher?${params.toString()}`, '_blank', 'noopener,noreferrer');
   };
 
   const openCreateClusterModal = () => {
@@ -885,7 +899,7 @@ export default function KubernetesClusters() {
                         {t('kubernetes.action.diagnose')}
                       </button>
                       <button
-                        onClick={() => navigate('/kubernetes-console')}
+                        onClick={() => openKiteForCluster(cluster)}
                         className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-emerald-500/30 text-emerald-500 hover:bg-emerald-500/10 transition-colors"
                       >
                         <ExternalLink className="w-4 h-4" />
@@ -1373,7 +1387,7 @@ export default function KubernetesClusters() {
                       <BrainCircuit className="w-4 h-4" />
                       {t('kubernetes.action.diagnose')}
                     </button>
-                    <button onClick={() => navigate('/kubernetes-console')} className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-border text-text-primary hover:bg-background">
+                    <button onClick={() => openKiteForCluster(detailCluster)} className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-border text-text-primary hover:bg-background">
                       <ExternalLink className="w-4 h-4" />
                       {t('kubernetes.action.openKite')}
                     </button>
