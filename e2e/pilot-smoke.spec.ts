@@ -103,6 +103,28 @@ test.describe('AIOps Agent pilot acceptance smoke', () => {
     const launchBody = await launchResponse.json();
     expect(launchBody.data.launchUrl).toContain('/hermes?mode=diagnose');
     expect(launchBody.data.correlationId).toContain('hermes-session-');
+
+    const casesResponse = await api.get('/api/operation-cases?limit=1');
+    expect(casesResponse.ok()).toBeTruthy();
+    const casesBody = await casesResponse.json();
+    const existingCase = casesBody.data.cases?.[0];
+    if (existingCase) {
+      const caseLaunchResponse = await api.post('/api/hermes-sessions/launch', {
+        data: {
+          mode: 'diagnose',
+          channelId: diagnoseOption.channel.id,
+          caseId: existingCase.id,
+          correlationId: existingCase.correlation_id
+        }
+      });
+      expect(caseLaunchResponse.ok()).toBeTruthy();
+      const caseLaunchBody = await caseLaunchResponse.json();
+      expect(caseLaunchBody.data.caseEventId).toBeTruthy();
+      const caseDetailResponse = await api.get(`/api/operation-cases/${existingCase.id}`);
+      expect(caseDetailResponse.ok()).toBeTruthy();
+      const caseDetailBody = await caseDetailResponse.json();
+      expect(caseDetailBody.data.events.some((event: { event_type: string }) => event.event_type === 'hermes_session_launched')).toBeTruthy();
+    }
     await api.dispose();
 
     await loginInBrowser(page);

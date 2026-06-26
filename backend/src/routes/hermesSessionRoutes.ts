@@ -4,6 +4,7 @@ import db from '../models/database';
 import { requireRole } from '../middleware/auth';
 import { getHermesSession, listHermesSessions } from '../services/hermesSessionService';
 import { listHermesChannels } from '../services/hermesChannelService';
+import { recordOperationCaseEvent } from '../services/operationCaseService';
 
 const router = Router();
 
@@ -140,18 +141,52 @@ router.post('/launch', requireRole('admin', 'operator', 'viewer'), (req: Authent
       correlationId,
       prompt,
     });
-    if (typeof req.body?.caseId === 'string' && req.body.caseId.trim()) params.set('caseId', req.body.caseId.trim());
-    if (typeof req.body?.serverId === 'string' && req.body.serverId.trim()) params.set('serverId', req.body.serverId.trim());
-    if (Array.isArray(req.body?.serverIds) && req.body.serverIds.length > 0) params.set('serverIds', req.body.serverIds.map(String).join(','));
-    if (typeof req.body?.alertId === 'string' && req.body.alertId.trim()) params.set('alertId', req.body.alertId.trim());
-    if (typeof req.body?.workflowId === 'string' && req.body.workflowId.trim()) params.set('workflowId', req.body.workflowId.trim());
-    if (typeof req.body?.knowledgeCategory === 'string' && req.body.knowledgeCategory.trim()) params.set('knowledgeCategory', req.body.knowledgeCategory.trim());
+    const caseId = typeof req.body?.caseId === 'string' && req.body.caseId.trim() ? req.body.caseId.trim() : '';
+    const serverId = typeof req.body?.serverId === 'string' && req.body.serverId.trim() ? req.body.serverId.trim() : '';
+    const serverIds = Array.isArray(req.body?.serverIds) && req.body.serverIds.length > 0 ? req.body.serverIds.map(String).filter(Boolean) : [];
+    const alertId = typeof req.body?.alertId === 'string' && req.body.alertId.trim() ? req.body.alertId.trim() : '';
+    const workflowId = typeof req.body?.workflowId === 'string' && req.body.workflowId.trim() ? req.body.workflowId.trim() : '';
+    const knowledgeCategory = typeof req.body?.knowledgeCategory === 'string' && req.body.knowledgeCategory.trim() ? req.body.knowledgeCategory.trim() : '';
+
+    if (caseId) params.set('caseId', caseId);
+    if (serverId) params.set('serverId', serverId);
+    if (serverIds.length > 0) params.set('serverIds', serverIds.join(','));
+    if (alertId) params.set('alertId', alertId);
+    if (workflowId) params.set('workflowId', workflowId);
+    if (knowledgeCategory) params.set('knowledgeCategory', knowledgeCategory);
+
+    const launchUrl = `/hermes?${params.toString()}`;
+    const caseEvent = caseId ? recordOperationCaseEvent({
+      caseId,
+      correlationId,
+      eventType: 'hermes_session_launched',
+      sourceType: 'hermes_session_launcher',
+      sourceId: option.agent?.id || channelId,
+      payload: {
+        mode,
+        channelId,
+        channelName: option.channel.name,
+        agentId: option.agent?.id || null,
+        agentName: option.agent?.name || null,
+        launchUrl,
+        context: {
+          serverId: serverId || null,
+          serverIds,
+          alertId: alertId || null,
+          workflowId: workflowId || null,
+          knowledgeCategory: knowledgeCategory || null,
+        },
+        policy: option.policy,
+        capabilitySummary: option.capabilitySummary,
+      },
+      createdBy: req.user?.id || null,
+    }) : null;
 
     res.json({
       success: true,
       data: {
         schemaVersion: 'hermes.sessionLaunch.v1',
-        launchUrl: `/hermes?${params.toString()}`,
+        launchUrl,
         mode,
         channelId,
         agentId: option.agent?.id || null,
@@ -159,6 +194,7 @@ router.post('/launch', requireRole('admin', 'operator', 'viewer'), (req: Authent
         prompt,
         policy: option.policy,
         capabilitySummary: option.capabilitySummary,
+        caseEventId: caseEvent?.id || null,
       },
     });
   } catch (error) {
