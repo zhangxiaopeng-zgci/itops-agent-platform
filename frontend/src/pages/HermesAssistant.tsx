@@ -18,6 +18,7 @@ import {
   History,
   Loader2,
   MessageSquare,
+  Network,
   RefreshCw,
   Server as ServerIcon,
   ShieldCheck,
@@ -101,6 +102,19 @@ interface ServerItem {
   enabled: number;
   tags?: string[];
   os_type?: string;
+}
+
+interface KubernetesClusterItem {
+  id: string;
+  name: string;
+  environment?: string | null;
+  api_server_url?: string | null;
+  status?: string | null;
+  enabled?: number;
+  distribution?: string | null;
+  version?: string | null;
+  node_count?: number;
+  bound_server_count?: number;
 }
 
 interface AlertItem {
@@ -696,11 +710,13 @@ function summarizeCorrelationEvidence(chains: CorrelationChain[]) {
 
 function buildContextLines(options: {
   servers: ServerItem[];
+  kubernetesCluster?: KubernetesClusterItem;
   alert?: AlertItem;
   workflow?: WorkflowItem;
   knowledgeCategory?: string;
 }, labels: {
   targetServers: string;
+  kubernetesCluster: string;
   relatedAlert: string;
   alertContent: string;
   candidateWorkflow: string;
@@ -711,6 +727,17 @@ function buildContextLines(options: {
 
   if (options.servers.length > 0) {
     lines.push(`${labels.targetServers}: ${options.servers.map((server) => `${server.name}(${server.hostname}:${server.port})`).join(', ')}`);
+  }
+
+  if (options.kubernetesCluster) {
+    const cluster = options.kubernetesCluster;
+    const details = [
+      cluster.environment,
+      cluster.status,
+      typeof cluster.node_count === 'number' ? `nodes=${cluster.node_count}` : undefined,
+      typeof cluster.bound_server_count === 'number' ? `boundHosts=${cluster.bound_server_count}` : undefined,
+    ].filter(Boolean).join(', ');
+    lines.push(`${labels.kubernetesCluster}: ${cluster.name}${details ? ` (${details})` : ''}`);
   }
 
   if (options.alert) {
@@ -755,6 +782,7 @@ export default function HermesAssistant() {
   const [lastResult, setLastResult] = useState<AgentRunResponse | null>(null);
   const [activeTraceIndex, setActiveTraceIndex] = useState<number | null>(null);
   const [selectedServerIds, setSelectedServerIds] = useState<string[]>([]);
+  const [selectedKubernetesClusterId, setSelectedKubernetesClusterId] = useState('');
   const [selectedAlertId, setSelectedAlertId] = useState('');
   const [selectedWorkflowId, setSelectedWorkflowId] = useState('');
   const [selectedKnowledgeCategory, setSelectedKnowledgeCategory] = useState('');
@@ -780,6 +808,15 @@ export default function HermesAssistant() {
       const res = await api.get('/api/servers');
       return res.data.data as ServerItem[];
     },
+  });
+
+  const { data: kubernetesClusters = [] } = useQuery({
+    queryKey: ['hermes-context', 'kubernetes-clusters'],
+    queryFn: async () => {
+      const res = await api.get('/api/kubernetes-clusters');
+      return (res.data.data || []) as KubernetesClusterItem[];
+    },
+    staleTime: 60000,
   });
 
   const { data: alerts } = useQuery({
@@ -848,6 +885,17 @@ export default function HermesAssistant() {
       setSelectedServerIds(Array.from(new Set(serverIds)));
     }
 
+    const knowledgeCategory = searchParams.get('knowledgeCategory');
+    const assetType = searchParams.get('assetType') || '';
+    const assetId = searchParams.get('assetId') || '';
+    const k8sClusterId = searchParams.get('k8sClusterId') || '';
+    if (k8sClusterId || assetType === 'kubernetes_cluster' || assetType === 'kubernetes') {
+      setSelectedKubernetesClusterId(k8sClusterId || assetId);
+      if (!knowledgeCategory) {
+        setSelectedKnowledgeCategory('kubernetes');
+      }
+    }
+
     const alertId = searchParams.get('alertId');
     if (alertId) {
       setSelectedAlertId(alertId);
@@ -858,7 +906,6 @@ export default function HermesAssistant() {
       setSelectedWorkflowId(workflowId);
     }
 
-    const knowledgeCategory = searchParams.get('knowledgeCategory');
     if (knowledgeCategory) {
       setSelectedKnowledgeCategory(knowledgeCategory);
     }
@@ -1012,6 +1059,14 @@ export default function HermesAssistant() {
     () => enabledServers.filter((server) => selectedServerIds.includes(server.id)),
     [enabledServers, selectedServerIds]
   );
+  const enabledKubernetesClusters = useMemo(
+    () => kubernetesClusters.filter((cluster) => cluster.enabled !== 0),
+    [kubernetesClusters]
+  );
+  const selectedKubernetesCluster = useMemo(
+    () => enabledKubernetesClusters.find((cluster) => cluster.id === selectedKubernetesClusterId),
+    [enabledKubernetesClusters, selectedKubernetesClusterId]
+  );
   const selectedAlert = useMemo(
     () => (alerts || []).find((alert) => alert.id === selectedAlertId),
     [alerts, selectedAlertId]
@@ -1022,6 +1077,7 @@ export default function HermesAssistant() {
   );
   const contextLabels = useMemo(() => ({
     targetServers: t('hermes.context.targetServers'),
+    kubernetesCluster: t('hermes.context.kubernetesCluster'),
     relatedAlert: t('hermes.context.relatedAlert'),
     alertContent: t('hermes.context.alertContent'),
     candidateWorkflow: t('hermes.context.candidateWorkflow'),
@@ -1032,6 +1088,7 @@ export default function HermesAssistant() {
   }), [t]);
   const contextLines = buildContextLines({
     servers: selectedServers,
+    kubernetesCluster: selectedKubernetesCluster,
     alert: selectedAlert,
     workflow: selectedWorkflow,
     knowledgeCategory: selectedKnowledgeCategory || undefined,
@@ -1051,6 +1108,7 @@ export default function HermesAssistant() {
 
   const clearContext = () => {
     setSelectedServerIds([]);
+    setSelectedKubernetesClusterId('');
     setSelectedAlertId('');
     setSelectedWorkflowId('');
     setSelectedKnowledgeCategory('');
@@ -1082,6 +1140,17 @@ export default function HermesAssistant() {
       }
       const correlationId = urlCorrelationId || createCorrelationId();
       const finalInput = buildPromptWithContext(input, contextLines, contextLabels);
+      const payloadKubernetesContext = selectedKubernetesCluster ? {
+        id: selectedKubernetesCluster.id,
+        name: selectedKubernetesCluster.name,
+        environment: selectedKubernetesCluster.environment || undefined,
+        apiServer: selectedKubernetesCluster.api_server_url || undefined,
+        status: selectedKubernetesCluster.status || undefined,
+        distribution: selectedKubernetesCluster.distribution || undefined,
+        version: selectedKubernetesCluster.version || undefined,
+        nodeCount: selectedKubernetesCluster.node_count,
+        boundServerCount: selectedKubernetesCluster.bound_server_count,
+      } : undefined;
       const res = await api.post(`/api/agents/${selectedAgent.id}/test`, {
         input: finalInput,
         serverId: selectedServerIds[0],
@@ -1093,6 +1162,12 @@ export default function HermesAssistant() {
           operationCaseId: urlCaseId || undefined,
           serverIds: selectedServerIds,
           serverId: selectedServerIds[0],
+          contextType: selectedKubernetesCluster ? 'kubernetes' : undefined,
+          assetId: selectedKubernetesCluster?.id,
+          assetType: selectedKubernetesCluster ? 'kubernetes_cluster' : undefined,
+          assetName: selectedKubernetesCluster?.name,
+          k8sClusterId: selectedKubernetesCluster?.id,
+          kubernetesCluster: payloadKubernetesContext,
           alertId: selectedAlertId || undefined,
           alert: selectedAlert ? {
             id: selectedAlert.id,
@@ -1493,7 +1568,7 @@ export default function HermesAssistant() {
                     <h3 className="text-sm font-semibold text-text-primary">{t('hermes.context.title')}</h3>
                     <p className="text-xs text-text-tertiary mt-1">{t('hermes.context.subtitle')}</p>
                   </div>
-                  {(selectedServerIds.length > 0 || selectedAlertId || selectedWorkflowId || selectedKnowledgeCategory) && (
+                  {(selectedServerIds.length > 0 || selectedKubernetesClusterId || selectedAlertId || selectedWorkflowId || selectedKnowledgeCategory) && (
                     <button
                       type="button"
                       onClick={clearContext}
@@ -1544,6 +1619,30 @@ export default function HermesAssistant() {
                   </div>
 
                   <div className="grid grid-cols-1 gap-3">
+                    <div>
+                      <div className="flex items-center gap-2 mb-2">
+                        <Network className="w-4 h-4 text-text-tertiary" />
+                        <label className="text-xs font-medium text-text-secondary">{t('hermes.context.kubernetesCluster')}</label>
+                      </div>
+                      <select
+                        value={selectedKubernetesClusterId}
+                        onChange={(event) => {
+                          setSelectedKubernetesClusterId(event.target.value);
+                          if (event.target.value && !selectedKnowledgeCategory) {
+                            setSelectedKnowledgeCategory('kubernetes');
+                          }
+                        }}
+                        className="w-full px-3 py-2 rounded-lg bg-surface border border-border text-sm text-text-primary focus:outline-none focus:border-primary/60"
+                      >
+                        <option value="">{t('hermes.context.noKubernetesCluster')}</option>
+                        {enabledKubernetesClusters.map((cluster) => (
+                          <option key={cluster.id} value={cluster.id}>
+                            {cluster.name} · {cluster.bound_server_count ?? 0}/{cluster.node_count ?? 0}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
                     <div>
                       <div className="flex items-center gap-2 mb-2">
                         <Bell className="w-4 h-4 text-text-tertiary" />
@@ -1638,6 +1737,18 @@ export default function HermesAssistant() {
                     className="px-3 py-1.5 rounded-lg bg-primary/10 border border-primary/20 text-xs text-primary hover:bg-primary/15 transition-colors"
                   >
                     {t('hermes.quick.diagnoseSelected')}
+                  </button>
+                )}
+                {selectedKubernetesCluster && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActivePromptKey(null);
+                      setInput(t('hermes.quick.diagnoseKubernetesInput', { cluster: selectedKubernetesCluster.name }));
+                    }}
+                    className="px-3 py-1.5 rounded-lg bg-cyan-500/10 border border-cyan-500/20 text-xs text-cyan-300 hover:bg-cyan-500/15 transition-colors"
+                  >
+                    {t('hermes.quick.diagnoseKubernetes')}
                   </button>
                 )}
                 {selectedAlert && (
