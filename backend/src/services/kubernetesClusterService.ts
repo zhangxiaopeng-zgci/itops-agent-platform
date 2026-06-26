@@ -33,6 +33,7 @@ export interface KubernetesClusterSummary extends KubernetesCluster {
   pod_count: number;
   service_count: number;
   event_count: number;
+  node_bound_count: number;
   bound_server_count: number;
 }
 
@@ -276,6 +277,19 @@ interface KubernetesApiEvent {
   eventTime?: string;
 }
 
+interface KubernetesBackingHost {
+  server_id: string;
+  server_name: string;
+  server_hostname: string;
+  server_ip_address?: string | null;
+  server_private_ip?: string | null;
+  server_enabled?: number;
+  source: 'kubernetes_node_binding' | 'kubernetes_node_match' | 'server_group_cluster_match';
+  node_id?: string | null;
+  node_name?: string | null;
+  group_name?: string | null;
+}
+
 function normalizeEnabled(enabled: number | boolean | undefined): number {
   if (enabled === undefined) return 1;
   return enabled === true || enabled === 1 ? 1 : 0;
@@ -379,7 +393,7 @@ function parseKubeconfig(rawKubeconfig: string): KubernetesApiAuth {
 
 class KubernetesClusterService {
   getAllClusters(): KubernetesClusterSummary[] {
-    return db.prepare(`
+    const clusters = db.prepare(`
       SELECT
         c.*,
         COUNT(DISTINCT n.id) as node_count,
@@ -388,6 +402,7 @@ class KubernetesClusterService {
         COUNT(DISTINCT p.id) as pod_count,
         COUNT(DISTINCT svc.id) as service_count,
         COUNT(DISTINCT ev.id) as event_count,
+        COUNT(DISTINCT n.server_id) as node_bound_count,
         COUNT(DISTINCT n.server_id) as bound_server_count
       FROM kubernetes_clusters c
       LEFT JOIN kubernetes_nodes n ON n.cluster_id = c.id
@@ -399,10 +414,12 @@ class KubernetesClusterService {
       GROUP BY c.id
       ORDER BY c.created_at DESC
     `).all() as KubernetesClusterSummary[];
+
+    return clusters.map((cluster) => this.hydrateBackingHostCount(cluster));
   }
 
   getClusterById(id: string): KubernetesClusterSummary | undefined {
-    return db.prepare(`
+    const cluster = db.prepare(`
       SELECT
         c.*,
         COUNT(DISTINCT n.id) as node_count,
@@ -411,6 +428,7 @@ class KubernetesClusterService {
         COUNT(DISTINCT p.id) as pod_count,
         COUNT(DISTINCT svc.id) as service_count,
         COUNT(DISTINCT ev.id) as event_count,
+        COUNT(DISTINCT n.server_id) as node_bound_count,
         COUNT(DISTINCT n.server_id) as bound_server_count
       FROM kubernetes_clusters c
       LEFT JOIN kubernetes_nodes n ON n.cluster_id = c.id
@@ -422,6 +440,8 @@ class KubernetesClusterService {
       WHERE c.id = ?
       GROUP BY c.id
     `).get(id) as KubernetesClusterSummary | undefined;
+
+    return cluster ? this.hydrateBackingHostCount(cluster) : undefined;
   }
 
   createCluster(data: CreateKubernetesClusterRequest): KubernetesClusterSummary {
@@ -496,6 +516,7 @@ class KubernetesClusterService {
 
     return {
       cluster,
+      backing_hosts: this.getClusterBackingHosts(cluster),
       nodes: db.prepare(`
         SELECT
           n.*,
@@ -977,6 +998,145 @@ class KubernetesClusterService {
     }
 
     return null;
+  }
+
+  private hydrateBackingHostCount(cluster: KubernetesClusterSummary): KubernetesClusterSummary {
+    return {
+      ...cluster,
+      node_bound_count: Number(cluster.node_bound_count || 0),
+      bound_server_count: this.getClusterBackingHosts(cluster).length,
+    };
+  }
+
+  private getClusterBackingHosts(cluster: Pick<KubernetesCluster, 'id' | 'name'>): KubernetesBackingHost[] {
+    const hosts = new Map<string, KubernetesBackingHost>();
+    const addHost = (host: KubernetesBackingHost) => {
+      if (!host.server_id || hosts.has(host.server_id)) return;
+      hosts.set(host.server_id, host);
+    };
+
+    const nodeRows = db.prepare(`
+      SELECT
+        n.id AS node_id,
+        n.name AS node_name,
+        n.server_id,
+        n.internal_ip,
+        n.external_ip,
+        s.id AS server_id,
+        s.name AS server_name,
+        s.hostname AS server_hostname,
+        s.ip_address AS server_ip_address,
+        s.private_ip AS server_private_ip,
+        s.enabled AS server_enabled
+      FROM kubernetes_nodes n
+      LEFT JOIN servers s ON s.id = n.server_id
+      WHERE n.cluster_id = ?
+      ORDER BY n.name
+    `).all(cluster.id) as Array<{
+      node_id: string;
+      node_name: string;
+      server_id?: string | null;
+      internal_ip?: string | null;
+      external_ip?: string | null;
+      server_name?: string | null;
+      server_hostname?: string | null;
+      server_ip_address?: string | null;
+      server_private_ip?: string | null;
+      server_enabled?: number | null;
+    }>;
+
+    for (const row of nodeRows) {
+      if (row.server_id && row.server_name && row.server_hostname) {
+        addHost({
+          server_id: row.server_id,
+          server_name: row.server_name,
+          server_hostname: row.server_hostname,
+          server_ip_address: row.server_ip_address,
+          server_private_ip: row.server_private_ip,
+          server_enabled: row.server_enabled ?? undefined,
+          source: 'kubernetes_node_binding',
+          node_id: row.node_id,
+          node_name: row.node_name,
+        });
+        continue;
+      }
+
+      const matched = this.findServerByCandidates([row.internal_ip, row.external_ip, row.node_name]);
+      if (matched) {
+        addHost({
+          ...matched,
+          source: 'kubernetes_node_match',
+          node_id: row.node_id,
+          node_name: row.node_name,
+        });
+      }
+    }
+
+    const groupRows = db.prepare(`
+      SELECT
+        s.id AS server_id,
+        s.name AS server_name,
+        s.hostname AS server_hostname,
+        s.ip_address AS server_ip_address,
+        s.private_ip AS server_private_ip,
+        s.enabled AS server_enabled,
+        sg.name AS group_name
+      FROM server_group_mapping sgm
+      JOIN server_groups sg ON sg.id = sgm.group_id
+      JOIN servers s ON s.id = sgm.server_id
+      WHERE s.enabled != 0
+      ORDER BY sg.name, s.name
+    `).all() as Array<Omit<KubernetesBackingHost, 'source'> & { group_name: string }>;
+
+    const clusterName = this.normalizeClusterAssociationName(cluster.name);
+    for (const row of groupRows) {
+      const groupName = this.normalizeClusterAssociationName(row.group_name);
+      if (!clusterName || !groupName) continue;
+      if (clusterName === groupName || clusterName.includes(groupName) || groupName.includes(clusterName)) {
+        addHost({
+          ...row,
+          source: 'server_group_cluster_match',
+          group_name: row.group_name,
+        });
+      }
+    }
+
+    return Array.from(hosts.values());
+  }
+
+  private findServerByCandidates(candidates: Array<string | null | undefined>): Omit<KubernetesBackingHost, 'source'> | null {
+    for (const candidate of candidates) {
+      const value = normalizeText(candidate);
+      if (!value) continue;
+      const server = db.prepare(`
+        SELECT
+          id AS server_id,
+          name AS server_name,
+          hostname AS server_hostname,
+          ip_address AS server_ip_address,
+          private_ip AS server_private_ip,
+          enabled AS server_enabled
+        FROM servers
+        WHERE id = ?
+           OR name = ?
+           OR hostname = ?
+           OR ip_address = ?
+           OR private_ip = ?
+        LIMIT 1
+      `).get(value, value, value, value, value) as Omit<KubernetesBackingHost, 'source'> | undefined;
+      if (server) return server;
+    }
+    return null;
+  }
+
+  private normalizeClusterAssociationName(value: string | null | undefined): string {
+    return String(value || '')
+      .trim()
+      .toLowerCase()
+      .replace(/kubernetes/g, 'k8s')
+      .replace(/\bcluster\b/g, '')
+      .replace(/集群/g, '')
+      .replace(/[\s_-]+/g, '');
   }
 
   private resolveOrCreateDiscoveredServerForNode(

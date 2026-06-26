@@ -43,6 +43,7 @@ interface KubernetesCluster {
   pod_count: number;
   service_count: number;
   event_count: number;
+  node_bound_count: number;
   bound_server_count: number;
 }
 
@@ -105,8 +106,21 @@ interface KubernetesEvent {
   last_seen_at?: string | null;
 }
 
+interface KubernetesBackingHost {
+  server_id: string;
+  server_name: string;
+  server_hostname: string;
+  server_ip_address?: string | null;
+  server_private_ip?: string | null;
+  server_enabled?: number;
+  source: 'kubernetes_node_binding' | 'kubernetes_node_match' | 'server_group_cluster_match' | string;
+  node_name?: string | null;
+  group_name?: string | null;
+}
+
 interface KubernetesClusterAssets {
   cluster: KubernetesCluster;
+  backing_hosts?: KubernetesBackingHost[];
   nodes: KubernetesNode[];
   namespaces: KubernetesNamespace[];
   workloads: KubernetesWorkload[];
@@ -432,15 +446,16 @@ export default function KubernetesClusters() {
         nodes: acc.nodes + cluster.node_count,
         pods: acc.pods + cluster.pod_count,
         workloads: acc.workloads + cluster.workload_count,
+        nodeBound: acc.nodeBound + (cluster.node_bound_count ?? cluster.bound_server_count),
         boundServers: acc.boundServers + cluster.bound_server_count,
       }),
-      { nodes: 0, pods: 0, workloads: 0, boundServers: 0 }
+      { nodes: 0, pods: 0, workloads: 0, nodeBound: 0, boundServers: 0 }
     );
   }, [clusters]);
 
   const bindingStats = useMemo(() => {
-    const unbound = Math.max(totals.nodes - totals.boundServers, 0);
-    const ratio = totals.nodes > 0 ? Math.round((totals.boundServers / totals.nodes) * 100) : 100;
+    const unbound = Math.max(totals.nodes - totals.nodeBound, 0);
+    const ratio = totals.nodes > 0 ? Math.round((totals.nodeBound / totals.nodes) * 100) : 100;
     return { unbound, ratio };
   }, [totals]);
 
@@ -771,12 +786,13 @@ export default function KubernetesClusters() {
                     <SmallMetric label={t('kubernetes.metric.events')} value={cluster.event_count} />
                   </div>
                   <ClusterBindingBar
-                    bound={cluster.bound_server_count}
+                    bound={cluster.node_bound_count ?? cluster.bound_server_count}
                     total={cluster.node_count}
                     label={t('kubernetes.binding.clusterStatus', {
-                      bound: cluster.bound_server_count,
+                      hosts: cluster.bound_server_count,
+                      bound: cluster.node_bound_count ?? cluster.bound_server_count,
                       total: cluster.node_count,
-                      unbound: Math.max(cluster.node_count - cluster.bound_server_count, 0),
+                      unbound: Math.max(cluster.node_count - (cluster.node_bound_count ?? cluster.bound_server_count), 0),
                     })}
                     helper={t('kubernetes.binding.clusterHelper')}
                   />
@@ -1097,11 +1113,11 @@ export default function KubernetesClusters() {
                 <>
                   <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
                     <SmallMetric label={t('kubernetes.metric.nodes')} value={clusterAssets.nodes.length} />
+                    <SmallMetric label={t('kubernetes.metric.boundServers')} value={(clusterAssets.backing_hosts || []).length} />
                     <SmallMetric label={t('kubernetes.metric.namespaces')} value={clusterAssets.namespaces.length} />
                     <SmallMetric label={t('kubernetes.metric.workloads')} value={clusterAssets.workloads.length} />
                     <SmallMetric label={t('kubernetes.metric.pods')} value={clusterAssets.pods.length} />
                     <SmallMetric label={t('kubernetes.metric.services')} value={clusterAssets.services.length} />
-                    <SmallMetric label={t('kubernetes.metric.events')} value={clusterAssets.events.length} />
                   </div>
 
                   <section className="rounded-lg border border-border bg-background/40 p-4">
@@ -1110,6 +1126,7 @@ export default function KubernetesClusters() {
                         <h3 className="text-sm font-semibold text-text-primary">{t('kubernetes.binding.detailTitle')}</h3>
                         <p className="text-xs text-text-secondary mt-1">
                           {t('kubernetes.binding.detailDesc', {
+                            hosts: (clusterAssets.backing_hosts || []).length,
                             bound: clusterAssets.nodes.filter((node) => node.server_id).length,
                             total: clusterAssets.nodes.length,
                             unbound: clusterAssets.nodes.filter((node) => !node.server_id).length,
@@ -1127,6 +1144,12 @@ export default function KubernetesClusters() {
                       </button>
                     </div>
                   </section>
+
+                  <DetailSection title={t('kubernetes.detail.backingHosts')} empty={t('kubernetes.detail.emptyBackingHosts')}>
+                    {(clusterAssets.backing_hosts || []).map((host) => (
+                      <BackingHostRow key={host.server_id} host={host} />
+                    ))}
+                  </DetailSection>
 
                   <DetailSection title={t('kubernetes.detail.nodes')} empty={t('kubernetes.detail.emptyNodes')}>
                     {clusterAssets.nodes.map((node) => (
@@ -1282,6 +1305,33 @@ function NodeBindingRow({ node, canOperate, onBind }: { node: KubernetesNode; ca
           <Link2 className="w-3.5 h-3.5" />
           {node.server_id ? t('kubernetes.binding.change') : t('kubernetes.binding.bind')}
         </button>
+      </div>
+    </div>
+  );
+}
+
+function BackingHostRow({ host }: { host: KubernetesBackingHost }) {
+  const { t } = useLocale();
+  const sourceLabel = host.source === 'server_group_cluster_match'
+    ? t('kubernetes.binding.source.group')
+    : host.source === 'kubernetes_node_match'
+      ? t('kubernetes.binding.source.auto')
+      : t('kubernetes.binding.source.manual');
+  const sourceMeta = host.group_name || host.node_name || '-';
+  const address = host.server_ip_address || host.server_private_ip || host.server_hostname || '-';
+  return (
+    <div className="rounded-lg bg-surface border border-border px-3 py-3 min-w-0">
+      <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+        <div className="min-w-0">
+          <div className="text-sm font-medium text-text-primary truncate">{host.server_name}</div>
+          <div className="text-xs text-text-secondary mt-1 break-all">{address}</div>
+        </div>
+        <div className="text-left md:text-right">
+          <span className="inline-flex rounded-full border border-primary/30 bg-primary/10 px-2 py-0.5 text-[11px] text-primary">
+            {sourceLabel}
+          </span>
+          <div className="mt-1 text-xs text-text-tertiary break-all">{sourceMeta}</div>
+        </div>
       </div>
     </div>
   );
