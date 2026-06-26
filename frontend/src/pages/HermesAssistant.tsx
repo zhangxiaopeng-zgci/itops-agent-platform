@@ -444,6 +444,43 @@ function formatDateTime(value?: string | null, locale = 'zh-CN') {
   return date.toLocaleString(locale === 'zh-CN' ? 'zh-CN' : 'en-US');
 }
 
+function readCaseEventString(value: unknown): string | null {
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
+}
+
+function readFirstString(value: unknown): string | null {
+  if (!Array.isArray(value)) return null;
+  for (const item of value) {
+    const text = readCaseEventString(item);
+    if (text) return text;
+  }
+  return null;
+}
+
+function extractCaseEventRef(event: OperationCaseEvent, type: 'approval' | 'task' | 'proposal'): string | null {
+  const directKeys = type === 'approval'
+    ? ['approvalId', 'approval_id', 'id']
+    : type === 'task'
+      ? ['taskId', 'task_id', 'id']
+      : ['proposalId', 'proposal_id', 'id'];
+  for (const key of directKeys) {
+    const value = readCaseEventString(event.payload?.[key]);
+    if (value) return value;
+  }
+
+  const extractedRefs = event.payload?.extractedRefs;
+  if (extractedRefs && typeof extractedRefs === 'object' && !Array.isArray(extractedRefs)) {
+    const key = type === 'approval' ? 'approvalIds' : type === 'task' ? 'taskIds' : 'proposalIds';
+    const ref = readFirstString((extractedRefs as Record<string, unknown>)[key]);
+    if (ref) return ref;
+  }
+
+  if (event.event_type.includes(type) || (type === 'task' && event.event_type.includes('workflow'))) {
+    return readCaseEventString(event.source_id);
+  }
+  return null;
+}
+
 function formatTraceContent(content?: string) {
   if (!content) return '';
   try {
@@ -1253,6 +1290,7 @@ export default function HermesAssistant() {
             locale={locale}
             t={t}
             onOpenCase={() => navigate(`/operation-cases?caseId=${encodeURIComponent(urlCaseId)}`)}
+            onNavigate={(path) => navigate(path)}
             onRefresh={() => refetchActiveCase()}
             onReview={(correlationId) => {
               setActiveMode('review');
@@ -2318,6 +2356,7 @@ function HermesCaseContextCard({
   locale,
   t,
   onOpenCase,
+  onNavigate,
   onRefresh,
   onReview,
 }: {
@@ -2327,6 +2366,7 @@ function HermesCaseContextCard({
   locale: string;
   t: (key: MessageKey, values?: Record<string, string | number>) => string;
   onOpenCase: () => void;
+  onNavigate: (path: string) => void;
   onRefresh: () => void;
   onReview: (correlationId?: string | null) => void;
 }) {
@@ -2431,6 +2471,9 @@ function HermesCaseContextCard({
           )}
           {recentEvents.map((event) => {
             const labelKey = CASE_EVENT_LABEL_KEYS[event.event_type] || 'operationCases.event.unknown';
+            const approvalId = extractCaseEventRef(event, 'approval');
+            const taskId = extractCaseEventRef(event, 'task');
+            const proposalId = event.event_type.includes('evolution') ? extractCaseEventRef(event, 'proposal') : null;
             return (
               <div key={event.id} className="px-3 py-2 flex items-start gap-3">
                 <div className="mt-1 h-2 w-2 rounded-full bg-primary flex-shrink-0" />
@@ -2441,6 +2484,28 @@ function HermesCaseContextCard({
                     {event.source_type && <span>{event.source_type}</span>}
                     {event.source_id && <span>{shortId(event.source_id)}</span>}
                   </div>
+                  {(approvalId || taskId || proposalId) && (
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {approvalId && (
+                        <CaseEventJumpButton
+                          label={`approval ${shortId(approvalId)}`}
+                          onClick={() => onNavigate(`/tool-approvals?approvalId=${encodeURIComponent(approvalId)}`)}
+                        />
+                      )}
+                      {taskId && (
+                        <CaseEventJumpButton
+                          label={`task ${shortId(taskId)}`}
+                          onClick={() => onNavigate(`/tasks?taskId=${encodeURIComponent(taskId)}`)}
+                        />
+                      )}
+                      {proposalId && (
+                        <CaseEventJumpButton
+                          label={`proposal ${shortId(proposalId)}`}
+                          onClick={() => onNavigate(`/evolution-proposals?proposalId=${encodeURIComponent(proposalId)}`)}
+                        />
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
             );
@@ -2448,6 +2513,19 @@ function HermesCaseContextCard({
         </div>
       </div>
     </section>
+  );
+}
+
+function CaseEventJumpButton({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="inline-flex items-center gap-1 rounded-lg border border-border bg-background px-2 py-1 text-xs font-medium text-text-primary hover:bg-surface-hover"
+    >
+      {label}
+      <ArrowRight className="w-3 h-3" />
+    </button>
   );
 }
 
