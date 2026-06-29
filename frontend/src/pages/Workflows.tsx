@@ -369,7 +369,11 @@ export default function Workflows() {
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['tasks'] });
-      const taskId = typeof data?.id === 'string' ? data.id : undefined;
+      const taskId = typeof data?.taskId === 'string'
+        ? data.taskId
+        : typeof data?.id === 'string'
+          ? data.id
+          : undefined;
       const query = buildHandoffQuery(taskId);
       navigate(query ? `/tasks?${query}` : '/tasks');
     },

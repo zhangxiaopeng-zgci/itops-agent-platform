@@ -291,15 +291,18 @@ export function recordOperationCaseEvent(input: RecordOperationCaseEventInput): 
     return null;
   }
 
-  if (input.nextStatus && operationCase.status !== input.nextStatus) {
-    const closedAt = input.nextStatus === 'closed' || input.nextStatus === 'cancelled' ? 'CURRENT_TIMESTAMP' : 'NULL';
+  const nextStatus = input.nextStatus || inferNextStatus(input.eventType, input.payload);
+  const canAutoAdvance = !['closed', 'cancelled'].includes(operationCase.status) || Boolean(input.nextStatus);
+
+  if (nextStatus && canAutoAdvance && operationCase.status !== nextStatus) {
+    const closedAt = nextStatus === 'closed' || nextStatus === 'cancelled' ? 'CURRENT_TIMESTAMP' : 'NULL';
     db.prepare(`
       UPDATE operation_cases
       SET status = ?,
           updated_at = CURRENT_TIMESTAMP,
           closed_at = ${closedAt}
       WHERE id = ?
-    `).run(input.nextStatus, operationCase.id);
+    `).run(nextStatus, operationCase.id);
   } else {
     db.prepare('UPDATE operation_cases SET updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(operationCase.id);
   }
@@ -313,10 +316,41 @@ export function recordOperationCaseEvent(input: RecordOperationCaseEventInput): 
     payload: {
       ...(input.payload || {}),
       previousStatus: operationCase.status,
-      nextStatus: input.nextStatus || operationCase.status
+      nextStatus: nextStatus || operationCase.status
     },
     createdBy: input.createdBy || null
   });
+}
+
+function inferNextStatus(eventType: string, payload?: Record<string, unknown>): OperationCaseStatus | null {
+  switch (eventType) {
+    case 'hermes_diagnosis_completed':
+      return 'diagnosis_ready';
+    case 'tool_approval_created':
+      return 'approval_pending';
+    case 'tool_approval_approved':
+    case 'workflow_task_created':
+    case 'workflow_task_started':
+      return 'executing';
+    case 'tool_approval_executed':
+      return typeof payload?.taskId === 'string' && payload.taskId ? 'executing' : 'verifying';
+    case 'workflow_task_completed':
+    case 'remediation_verification_failed':
+      return 'verifying';
+    case 'tool_approval_rejected':
+    case 'tool_approval_execution_failed':
+    case 'workflow_task_failed':
+    case 'remediation_verification_passed':
+    case 'hermes_remediation_reviewed':
+      return 'reviewing';
+    case 'hermes_retrospective_completed':
+    case 'evolution_proposal_created':
+      return 'evolving';
+    case 'evolution_proposal_status_changed':
+      return payload?.status === 'published' ? 'closed' : 'evolving';
+    default:
+      return null;
+  }
 }
 
 function parseOperationCase(row: Record<string, unknown>): OperationCaseRecord {

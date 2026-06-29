@@ -8,6 +8,7 @@ import {
   createOperationCase,
   getOperationCase,
   listOperationCaseEvents,
+  recordOperationCaseEvent,
   updateOperationCaseStatus
 } from './operationCaseService';
 import {
@@ -74,6 +75,69 @@ describe('operationCaseService', () => {
     const trace = getCorrelationTrace(correlationId);
     expect(trace.operationCases.map(item => item.id)).toContain(operationCase.id);
     expect(trace.executionEvidenceSummary.caseIds).toContain(operationCase.id);
+
+    db.prepare('DELETE FROM operation_case_events WHERE case_id = ?').run(operationCase.id);
+    db.prepare('DELETE FROM operation_cases WHERE id = ?').run(operationCase.id);
+  });
+
+  it('infers case status from downstream events when nextStatus is omitted', () => {
+    const correlationId = `case-inferred-status-${Date.now()}`;
+    const operationCase = createOperationCase({
+      title: 'Inferred status test',
+      correlationId,
+      createdBy: 'test-operator'
+    });
+
+    recordOperationCaseEvent({
+      correlationId,
+      eventType: 'tool_approval_created',
+      sourceType: 'tool_approval',
+      sourceId: 'approval-inferred-status',
+      payload: { toolName: 'run_workflow' }
+    });
+    expect(getOperationCase(operationCase.id)?.status).toBe('approval_pending');
+
+    recordOperationCaseEvent({
+      correlationId,
+      eventType: 'tool_approval_approved',
+      sourceType: 'tool_approval',
+      sourceId: 'approval-inferred-status'
+    });
+    expect(getOperationCase(operationCase.id)?.status).toBe('executing');
+
+    recordOperationCaseEvent({
+      correlationId,
+      eventType: 'workflow_task_completed',
+      sourceType: 'task',
+      sourceId: 'task-inferred-status'
+    });
+    expect(getOperationCase(operationCase.id)?.status).toBe('verifying');
+
+    recordOperationCaseEvent({
+      correlationId,
+      eventType: 'remediation_verification_passed',
+      sourceType: 'tool',
+      sourceId: 'verify_remediation'
+    });
+    expect(getOperationCase(operationCase.id)?.status).toBe('reviewing');
+
+    recordOperationCaseEvent({
+      correlationId,
+      eventType: 'evolution_proposal_status_changed',
+      sourceType: 'evolution_proposal',
+      sourceId: 'proposal-inferred-status',
+      payload: { status: 'published' }
+    });
+    expect(getOperationCase(operationCase.id)?.status).toBe('closed');
+
+    const eventTypes = listOperationCaseEvents(operationCase.id).map((event) => event.event_type);
+    expect(eventTypes).toEqual(expect.arrayContaining([
+      'tool_approval_created',
+      'tool_approval_approved',
+      'workflow_task_completed',
+      'remediation_verification_passed',
+      'evolution_proposal_status_changed'
+    ]));
 
     db.prepare('DELETE FROM operation_case_events WHERE case_id = ?').run(operationCase.id);
     db.prepare('DELETE FROM operation_cases WHERE id = ?').run(operationCase.id);
