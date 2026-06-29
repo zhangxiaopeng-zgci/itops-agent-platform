@@ -104,6 +104,11 @@ function formatServerName(server: ServerItem): string {
   return server.name || server.hostname || server.id;
 }
 
+function appendQuery(path: string, query: string): string {
+  if (!query) return path;
+  return path.includes('?') ? `${path}&${query}` : `${path}?${query}`;
+}
+
 function HandoffFact({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-lg border border-border bg-background/40 p-3 min-w-0">
@@ -207,6 +212,18 @@ export default function ExecutionCenter() {
   const handoffCaseLabel = operationCase?.title || caseId || '-';
   const handoffCorrelationLabel = operationCase?.correlation_id || correlationId || '-';
   const hasHandoffContext = Boolean(assetId || assetType || serverIds.length > 0 || caseId || correlationId);
+  const handoffQuery = useMemo(() => {
+    const params = new URLSearchParams();
+    if (caseId) params.set('caseId', caseId);
+    if (operationCase?.correlation_id || correlationId) {
+      params.set('correlationId', operationCase?.correlation_id || correlationId || '');
+    }
+    if (assetId) params.set('assetId', assetId);
+    if (assetType) params.set('assetType', assetType);
+    if (assetName) params.set('assetName', assetName);
+    if (serverIds.length > 0) params.set('serverIds', serverIds.join(','));
+    return params.toString();
+  }, [assetId, assetName, assetType, caseId, correlationId, operationCase?.correlation_id, serverIds]);
 
   const runningTasks = tasks.filter((task) => task.status === 'running').length;
   const failedTasks = tasks.filter((task) => task.status === 'failed').length;
@@ -347,7 +364,7 @@ export default function ExecutionCenter() {
             </div>
           </div>
           <button
-            onClick={() => navigate('/remediation-workbench')}
+            onClick={() => navigate(appendQuery('/remediation-workbench', handoffQuery))}
             className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-primary text-white hover:bg-primary/90 transition-colors"
           >
             <Wrench className="w-4 h-4" />
@@ -406,7 +423,7 @@ export default function ExecutionCenter() {
                 />
               </div>
               <button
-                onClick={() => navigate(executionFocus.href)}
+                onClick={() => navigate(appendQuery(executionFocus.href, handoffQuery))}
                 className="inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-semibold text-white hover:bg-primary/90"
               >
                 {t(executionFocus.ctaKey)}
@@ -462,21 +479,21 @@ export default function ExecutionCenter() {
                   </button>
                 )}
                 <button
-                  onClick={() => navigate('/remediation-workbench')}
+                  onClick={() => navigate(appendQuery('/remediation-workbench', handoffQuery))}
                   className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-primary text-white hover:bg-primary/90 transition-colors text-sm"
                 >
                   <Wrench className="w-4 h-4" />
                   {t('executionCenter.handoff.openWorkbench')}
                 </button>
                 <button
-                  onClick={() => navigate('/tool-approvals')}
+                  onClick={() => navigate(appendQuery('/tool-approvals', handoffQuery))}
                   className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-border text-text-primary hover:bg-background transition-colors text-sm"
                 >
                   <ShieldAlert className="w-4 h-4" />
                   {t('executionCenter.handoff.openApprovals')}
                 </button>
                 <button
-                  onClick={() => navigate('/tasks')}
+                  onClick={() => navigate(appendQuery('/tasks', handoffQuery))}
                   className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-border text-text-primary hover:bg-background transition-colors text-sm"
                 >
                   <ListChecks className="w-4 h-4" />
@@ -510,7 +527,7 @@ export default function ExecutionCenter() {
             {actions.map((action) => (
               <button
                 key={action.href}
-                onClick={() => navigate(action.href)}
+                onClick={() => navigate(appendQuery(action.href, handoffQuery))}
                 className="text-left bg-surface border border-border rounded-lg p-4 hover:border-primary/60 hover:bg-primary/5 transition-colors"
               >
                 <div className="flex items-start gap-3">
