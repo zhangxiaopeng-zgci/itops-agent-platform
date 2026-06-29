@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import db, { initializeDatabase } from '../models/database';
-import { runClosedLoopSmoke } from './closedLoopSmokeService';
+import { listClosedLoopSmokeDrills, runClosedLoopSmoke } from './closedLoopSmokeService';
 
 describe('closedLoopSmokeService', () => {
   beforeAll(async () => {
@@ -9,6 +9,8 @@ describe('closedLoopSmokeService', () => {
   });
 
   it('runs a closed-loop smoke without leaving test residue', async () => {
+    db.prepare('DELETE FROM closed_loop_smoke_drills').run();
+
     const result = await runClosedLoopSmoke({ createdBy: 'test-admin' });
 
     expect(result.success).toBe(true);
@@ -32,5 +34,14 @@ describe('closedLoopSmokeService', () => {
     expect(caseCount).toBe(0);
     expect(eventCount).toBe(0);
     expect(taskCount).toBe(0);
+
+    const drills = listClosedLoopSmokeDrills(5);
+    expect(drills).toHaveLength(1);
+    expect(drills[0].status).toBe('passed');
+    expect(drills[0].correlation_id).toBe(result.correlationId);
+    expect(drills[0].verification_passed).toBe(true);
+    expect(drills[0].cleaned_up).toBe(true);
+
+    db.prepare('DELETE FROM closed_loop_smoke_drills WHERE id = ?').run(drills[0].id);
   });
 });

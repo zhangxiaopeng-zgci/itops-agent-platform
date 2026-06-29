@@ -11,7 +11,7 @@ import {
   listKiteBackupDrills,
   listKiteBackups
 } from '../services/kiteBackupService';
-import { runClosedLoopSmoke } from '../services/closedLoopSmokeService';
+import { listClosedLoopSmokeDrills, runClosedLoopSmoke } from '../services/closedLoopSmokeService';
 
 interface AuthenticatedRequest extends Request {
   user?: {
@@ -73,6 +73,18 @@ router.post('/closed-loop-smoke', requireRole('admin'), async (req: Authenticate
     res.status(400).json({
       success: false,
       error: error instanceof Error ? error.message : 'Failed to run closed-loop smoke'
+    });
+  }
+});
+
+router.get('/closed-loop-smoke-drills', requireRole('admin', 'operator', 'viewer'), (req: Request, res: Response) => {
+  try {
+    const drills = listClosedLoopSmokeDrills(req.query.limit ? Number(req.query.limit) : 20);
+    res.json({ success: true, data: drills });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to list closed-loop smoke drills'
     });
   }
 });

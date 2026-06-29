@@ -30,6 +30,7 @@ import v028AddHermesSessionSummariesAndFeedback from './v028_add_hermes_session_
 import v029AddKiteBackupDrills from './v029_add_kite_backup_drills';
 import v030AddKubernetesCredentials from './v030_add_kubernetes_credentials';
 import v031AddOperationCases from './v031_add_operation_cases';
+import v032AddClosedLoopSmokeDrills from './v032_add_closed_loop_smoke_drills';
 
 export const ALL_MIGRATIONS: Migration[] = [
   v001InitialSchema,
@@ -63,6 +64,7 @@ export const ALL_MIGRATIONS: Migration[] = [
   v029AddKiteBackupDrills,
   v030AddKubernetesCredentials,
   v031AddOperationCases,
+  v032AddClosedLoopSmokeDrills,
 ];
 
 export function createMigrationManager(db: any): MigrationManager {

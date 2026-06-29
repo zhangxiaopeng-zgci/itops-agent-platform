@@ -10,6 +10,7 @@ import { listEvolutionProposals } from './evolutionProposalService';
 import { listBackupRestoreDrills } from './backupRestoreDrillService';
 import { listContainerRebuildDrills } from './containerRebuildDrillService';
 import { listKiteBackupDrills, listKiteBackups } from './kiteBackupService';
+import { listClosedLoopSmokeDrills } from './closedLoopSmokeService';
 
 export type OpsReadinessStatus = 'ready' | 'warning' | 'blocked';
 
@@ -64,6 +65,12 @@ export interface OpsReadinessSummary {
     pendingApprovalProposals: number;
     generatedAt: string;
   };
+  operations: {
+    closedLoopSmokeDrills: number;
+    lastClosedLoopSmokeAt: string | null;
+    lastClosedLoopSmokeStatus: string | null;
+    lastClosedLoopSmokeVerificationStatus: string | null;
+  };
   cloudNative: {
     kiteConfigured: boolean;
     kiteHealthy: boolean;
@@ -102,6 +109,8 @@ export async function buildOpsReadinessSummary(): Promise<OpsReadinessSummary> {
   const lastRestoreDrill = restoreDrills[0] || null;
   const containerRebuildDrills = listContainerRebuildDrills(20);
   const lastContainerRebuildDrill = containerRebuildDrills[0] || null;
+  const closedLoopSmokeDrills = listClosedLoopSmokeDrills(20);
+  const lastClosedLoopSmokeDrill = closedLoopSmokeDrills[0] || null;
   const kiteStatus = await getKiteStatus();
   const kiteBackups = listKiteBackups(20);
   const lastKiteBackup = kiteBackups[0] || null;
@@ -201,6 +210,21 @@ export async function buildOpsReadinessSummary(): Promise<OpsReadinessSummary> {
     status: healthyHermesWorkers === 3 ? 'ready' : 'blocked',
     required: true,
     message: `${healthyHermesWorkers}/3 Hermes workers healthy.`
+  }));
+  checks.push(check({
+    key: 'closed_loop_smoke_recorded',
+    category: 'runtime',
+    status: lastClosedLoopSmokeDrill?.status === 'passed' ? 'ready' : 'warning',
+    required: false,
+    message: lastClosedLoopSmokeDrill
+      ? `Latest closed-loop smoke status is ${lastClosedLoopSmokeDrill.status}.`
+      : 'No closed-loop smoke drill record has been created yet.',
+    observed: {
+      drills: closedLoopSmokeDrills.length,
+      lastDrillAt: lastClosedLoopSmokeDrill?.completed_at || null,
+      lastStatus: lastClosedLoopSmokeDrill?.status || null,
+      lastVerificationStatus: lastClosedLoopSmokeDrill?.verification_status || null
+    }
   }));
   checks.push(check({
     key: 'kite_console_reachable',
@@ -340,6 +364,12 @@ export async function buildOpsReadinessSummary(): Promise<OpsReadinessSummary> {
       approvedProposals,
       pendingApprovalProposals,
       generatedAt: new Date().toISOString()
+    },
+    operations: {
+      closedLoopSmokeDrills: closedLoopSmokeDrills.length,
+      lastClosedLoopSmokeAt: lastClosedLoopSmokeDrill?.completed_at || null,
+      lastClosedLoopSmokeStatus: lastClosedLoopSmokeDrill?.status || null,
+      lastClosedLoopSmokeVerificationStatus: lastClosedLoopSmokeDrill?.verification_status || null
     },
     cloudNative: {
       kiteConfigured: kiteStatus.configured,

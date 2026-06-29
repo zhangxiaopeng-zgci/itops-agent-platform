@@ -70,6 +70,12 @@ interface OpsReadinessSummary {
     approvedProposals: number;
     pendingApprovalProposals: number;
   };
+  operations: {
+    closedLoopSmokeDrills: number;
+    lastClosedLoopSmokeAt?: string | null;
+    lastClosedLoopSmokeStatus?: string | null;
+    lastClosedLoopSmokeVerificationStatus?: string | null;
+  };
   cloudNative: {
     kiteConfigured: boolean;
     kiteHealthy: boolean;
@@ -162,6 +168,22 @@ interface ClosedLoopSmokeResult {
   error?: string;
 }
 
+interface ClosedLoopSmokeDrill {
+  id: string;
+  status: 'passed' | 'failed' | 'warning';
+  verification_status: string;
+  correlation_id: string;
+  final_case_status?: string | null;
+  verification_passed: boolean;
+  cleaned_up: boolean;
+  trace_counts: Record<string, number>;
+  event_types: string[];
+  evidence: ClosedLoopSmokeResult;
+  error?: string | null;
+  created_at: string;
+  completed_at?: string | null;
+}
+
 const panelClass = 'rounded-xl border border-border bg-surface/95 shadow-sm';
 const categories: CheckCategory[] = ['deployment', 'runtime', 'data', 'release', 'security'];
 
@@ -205,6 +227,14 @@ export default function OpsReadiness() {
     queryFn: async () => {
       const res = await api.get('/api/ops-readiness/container-drills?limit=5');
       return res.data.data as ContainerRebuildDrill[];
+    },
+    refetchInterval: 30000
+  });
+  const { data: closedLoopSmokeDrills } = useQuery({
+    queryKey: ['closed-loop-smoke-drills'],
+    queryFn: async () => {
+      const res = await api.get('/api/ops-readiness/closed-loop-smoke-drills?limit=5');
+      return res.data.data as ClosedLoopSmokeDrill[];
     },
     refetchInterval: 30000
   });
@@ -308,6 +338,7 @@ export default function OpsReadiness() {
     onSuccess: (result) => {
       setClosedLoopSmokeResult(result);
       toast.success(result.success ? t('opsReadiness.closedLoopSmoke.completed') : t('opsReadiness.closedLoopSmoke.failed'));
+      queryClient.invalidateQueries({ queryKey: ['closed-loop-smoke-drills'] });
       queryClient.invalidateQueries({ queryKey: ['ops-readiness-summary'] });
     },
     onError: (error: unknown) => {
@@ -368,7 +399,9 @@ export default function OpsReadiness() {
           </section>
 
           <ClosedLoopSmokePanel
+            summary={data}
             result={closedLoopSmokeResult}
+            drills={closedLoopSmokeDrills || []}
             canRun={canRunClosedLoopSmoke}
             isRunning={closedLoopSmokeMutation.isPending}
             onRun={() => closedLoopSmokeMutation.mutate()}
@@ -410,19 +443,25 @@ export default function OpsReadiness() {
 }
 
 function ClosedLoopSmokePanel({
+  summary,
   result,
+  drills,
   canRun,
   isRunning,
   onRun
 }: {
+  summary: OpsReadinessSummary;
   result: ClosedLoopSmokeResult | null;
+  drills: ClosedLoopSmokeDrill[];
   canRun: boolean;
   isRunning: boolean;
   onRun: () => void;
 }) {
   const { t } = useLocale();
-  const status: ReadinessStatus = result
-    ? result.success && result.verificationPassed && result.finalCaseStatus === 'reviewing'
+  const latestDrill = drills[0] || null;
+  const displayResult = result || latestDrill?.evidence || null;
+  const status: ReadinessStatus = displayResult
+    ? displayResult.success && displayResult.verificationPassed && displayResult.finalCaseStatus === 'reviewing'
       ? 'ready'
       : 'blocked'
     : 'warning';
@@ -433,7 +472,7 @@ function ClosedLoopSmokePanel({
           <div className="flex items-center gap-2">
             <GitPullRequest className="w-4 h-4 text-primary" />
             <h2 className="text-sm font-semibold text-text-primary">{t('opsReadiness.closedLoopSmoke.title')}</h2>
-            {result && <StatusPill status={status} />}
+            {displayResult && <StatusPill status={status} />}
           </div>
           <p className="text-sm text-text-secondary mt-2">{t('opsReadiness.closedLoopSmoke.desc')}</p>
         </div>
@@ -448,34 +487,52 @@ function ClosedLoopSmokePanel({
           </button>
         )}
       </div>
-      {result ? (
+      {displayResult ? (
         <div className="mt-4 grid grid-cols-2 lg:grid-cols-6 gap-2">
-          <Metric label={t('opsReadiness.closedLoopSmoke.caseStatus')} value={result.finalCaseStatus || '-'} />
-          <Metric label={t('opsReadiness.closedLoopSmoke.verification')} value={result.verificationPassed ? t('common.yes') : t('common.no')} />
-          <Metric label={t('opsReadiness.closedLoopSmoke.cleanedUp')} value={result.cleanedUp ? t('common.yes') : t('common.no')} />
-          <Metric label={t('opsReadiness.closedLoopSmoke.caseTrace')} value={String(result.traceCounts.operationCases)} />
-          <Metric label={t('opsReadiness.closedLoopSmoke.taskTrace')} value={String(result.traceCounts.tasks)} />
-          <Metric label={t('opsReadiness.closedLoopSmoke.approvalTrace')} value={String(result.traceCounts.approvals)} />
+          <Metric label={t('opsReadiness.closedLoopSmoke.records')} value={String(summary.operations.closedLoopSmokeDrills)} />
+          <Metric label={t('opsReadiness.closedLoopSmoke.last')} value={formatTime(summary.operations.lastClosedLoopSmokeAt)} />
+          <Metric label={t('opsReadiness.closedLoopSmoke.caseStatus')} value={displayResult.finalCaseStatus || '-'} />
+          <Metric label={t('opsReadiness.closedLoopSmoke.verification')} value={displayResult.verificationPassed ? t('common.yes') : t('common.no')} />
+          <Metric label={t('opsReadiness.closedLoopSmoke.cleanedUp')} value={displayResult.cleanedUp ? t('common.yes') : t('common.no')} />
+          <Metric label={t('opsReadiness.closedLoopSmoke.taskTrace')} value={String(displayResult.traceCounts.tasks || 0)} />
         </div>
       ) : (
         <div className="mt-4 rounded-lg bg-background border border-border px-3 py-3 text-sm text-text-tertiary">
           {t('opsReadiness.closedLoopSmoke.empty')}
         </div>
       )}
-      {result && (
+      {displayResult && (
         <div className="mt-3 rounded-lg bg-background border border-border px-3 py-2">
           <div className="text-xs text-text-tertiary">{t('opsReadiness.closedLoopSmoke.correlation')}</div>
-          <div className="text-sm text-text-primary font-mono truncate mt-1">{result.correlationId}</div>
+          <div className="text-sm text-text-primary font-mono truncate mt-1">{displayResult.correlationId}</div>
           <div className="mt-2 flex flex-wrap gap-1.5">
-            {result.eventTypes.map((eventType) => (
+            {displayResult.eventTypes.map((eventType) => (
               <span key={eventType} className="rounded-md border border-border bg-surface px-2 py-0.5 text-xs text-text-secondary">
                 {eventType}
               </span>
             ))}
           </div>
-          {result.error && <div className="mt-2 text-xs text-status-failed">{result.error}</div>}
+          {displayResult.error && <div className="mt-2 text-xs text-status-failed">{displayResult.error}</div>}
         </div>
       )}
+      <div className="mt-3 space-y-2">
+        <div className="text-xs font-medium text-text-tertiary">{t('opsReadiness.closedLoopSmoke.recent')}</div>
+        {drills.length === 0 ? (
+          <div className="text-sm text-text-tertiary">{t('opsReadiness.closedLoopSmoke.emptyRecords')}</div>
+        ) : drills.slice(0, 3).map((drill) => (
+          <div key={drill.id} className="rounded-lg bg-background border border-border px-3 py-2">
+            <div className="flex items-center justify-between gap-2">
+              <div className="min-w-0">
+                <div className="text-sm font-medium text-text-primary truncate">{drill.verification_status}</div>
+                <div className="text-xs text-text-tertiary mt-1 truncate">
+                  {drill.correlation_id} · {formatTime(drill.completed_at)}
+                </div>
+              </div>
+              <StatusPill status={drill.status === 'passed' ? 'ready' : drill.status === 'failed' ? 'blocked' : 'warning'} />
+            </div>
+          </div>
+        ))}
+      </div>
     </section>
   );
 }
