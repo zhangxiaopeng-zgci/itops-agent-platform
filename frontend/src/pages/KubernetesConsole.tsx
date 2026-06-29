@@ -9,6 +9,7 @@ import {
   ShieldCheck,
   Workflow,
   XCircle,
+  Loader2,
 } from 'lucide-react';
 import api from '../lib/api';
 import { useAuth } from '../contexts/AuthContext';
@@ -76,6 +77,8 @@ export default function KubernetesConsole() {
   const canCreateKiteSession = canSyncKite;
   const [kiteFrameNonce, setKiteFrameNonce] = useState(0);
   const [embeddedClusterName, setEmbeddedClusterName] = useState(requestedClusterName);
+  const [isKiteSessionReady, setIsKiteSessionReady] = useState(false);
+  const [kiteSessionError, setKiteSessionError] = useState<string | null>(null);
   const autoSessionAttemptedRef = useRef(false);
   const previewRef = useRef<HTMLDivElement>(null);
 
@@ -108,11 +111,15 @@ export default function KubernetesConsole() {
       return res.data.data as { publicUrl?: string | null; username: string; userPresent: boolean };
     },
     onSuccess: () => {
+      setIsKiteSessionReady(true);
+      setKiteSessionError(null);
       queryClient.invalidateQueries({ queryKey: ['kite-bridge-status'] });
       setKiteFrameNonce(Date.now());
       toast.success(t('kubernetesConsole.bridge.sessionCreated'));
     },
     onError: (error: unknown) => {
+      setIsKiteSessionReady(false);
+      setKiteSessionError(error instanceof Error ? error.message : t('kubernetesConsole.bridge.sessionFailed'));
       toast.error(error instanceof Error ? error.message : t('kubernetesConsole.bridge.sessionFailed'));
     },
   });
@@ -123,6 +130,12 @@ export default function KubernetesConsole() {
     && cluster.has_kubeconfig === 1
   )) || [];
   const selectedClusterId = bridgeStatus?.bridge.syncedClusterId || eligibleClusters[0]?.id || null;
+  const requiresBridgeSession = Boolean(
+    canCreateKiteSession
+    && bridgeStatus?.kite.sessionBridgeConfigured
+    && bridgeStatus?.kite.loginRequired
+  );
+  const canRenderKiteFrame = Boolean(bridgeStatus) && (!requiresBridgeSession || isKiteSessionReady);
 
   useEffect(() => {
     if (!requestedClusterName) return;
@@ -164,6 +177,7 @@ export default function KubernetesConsole() {
     }, 80);
 
     if (!canCreateKiteSession || !bridgeStatus?.kite.sessionBridgeConfigured) {
+      setIsKiteSessionReady(false);
       setKiteFrameNonce(Date.now());
       return;
     }
@@ -375,11 +389,37 @@ export default function KubernetesConsole() {
               <span className="text-xs text-text-secondary break-all">{kiteUrl}</span>
             </div>
           </div>
-          <iframe
-            title="Kite Kubernetes Console"
-            src={frameUrl}
-            className="w-full min-h-[680px] bg-background"
-          />
+          {canRenderKiteFrame ? (
+            <iframe
+              key={frameUrl}
+              title="Kite Kubernetes Console"
+              src={frameUrl}
+              className="w-full min-h-[680px] bg-background"
+            />
+          ) : (
+            <div className="flex min-h-[680px] items-center justify-center bg-background p-6">
+              <div className="max-w-md rounded-lg border border-border bg-surface p-5 text-center">
+                <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                  <Loader2 className={`h-5 w-5 ${sessionMutation.isPending ? 'animate-spin' : ''}`} />
+                </div>
+                <h3 className="mt-4 text-sm font-semibold text-text-primary">
+                  {sessionMutation.isPending ? t('kubernetesConsole.preview.sessionLoading') : t('kubernetesConsole.preview.sessionRequired')}
+                </h3>
+                <p className="mt-2 text-sm text-text-secondary">
+                  {kiteSessionError || t('kubernetesConsole.preview.sessionDesc')}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => sessionMutation.mutate()}
+                  disabled={!canCreateKiteSession || !bridgeStatus?.kite.sessionBridgeConfigured || sessionMutation.isPending}
+                  className="mt-4 inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-semibold text-white hover:bg-primary/90 disabled:opacity-50"
+                >
+                  <ShieldCheck className="h-4 w-4" />
+                  {sessionMutation.isPending ? t('kubernetesConsole.bridge.creatingSession') : t('kubernetesConsole.bridge.createSession')}
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>
