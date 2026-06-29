@@ -20,6 +20,7 @@
     "docker:clean": "docker system prune -f",
     "smoke:api": "node scripts/smoke-api.mjs",
     "acceptance:production": "node scripts/run-production-acceptance.mjs",
+    "ops:single-node-check": "node scripts/run-single-node-check.mjs",
     "cleanup:e2e": "node scripts/cleanup-pilot-test-data.mjs",
     "cleanup:e2e:execute": "node scripts/cleanup-pilot-test-data.mjs --execute",
     "test:e2e": "playwright test",

@@ -212,12 +212,66 @@ docker inspect backend --format '{{json .Config.Env}}' | grep -E 'HERMES_API_KEY
 
 ## 日常运维清单
 
+当前阶段先专注单机长期稳定运行，不引入 PostgreSQL、外部高可用和多节点调度。单机版的目标是：
+
+- 容器可自恢复，删除重建后网络 alias、volume 和配置仍然成立。
+- SQLite 主库每天有健康巡检，发现 integrity 问题立即阻断发布。
+- 主库与 Kite 数据都有本机持久化备份和恢复演练证据。
+- Hermes 三 Worker、Kite、backend、frontend 均可通过单机巡检确认。
+- 完整生产验收可一键复跑，报告留存在 `reports/`。
+
+### 单机快速巡检
+
+日常巡检使用轻量脚本，不会创建任务、审批或备份：
+
+```bash
+cd /opt/itops-agent-platform/app
+
+SINGLE_NODE_PASSWORD="<admin-password>" \
+SINGLE_NODE_CHECK_SUDO=true \
+npm run ops:single-node-check
+```
+
+巡检内容：
+
+- `backend`、`frontend`、`kite`、`hermes-diagnose`、`hermes-remediate`、`hermes-evolve` 容器状态。
+- 部署磁盘水位，默认 85% warning，92% blocked。
+- `/app/data/app.db` 的 `PRAGMA integrity_check`。
+- 主库备份和 Kite 备份是否存在、是否新鲜、`gzip -t` 是否通过。
+- `/api/ops-readiness/summary` 是否 ready、score 是否达到 100、是否无 warning/blocker。
+- 最近一次 `production-acceptance` 报告是否 passed。
+
+报告会写入：
+
+```text
+reports/single-node-check-*.json
+```
+
+### 单机完整验收
+
+功能变更、部署重建、数据库恢复后，运行完整验收：
+
+```bash
+cd /opt/itops-agent-platform/app
+
+ACCEPTANCE_PASSWORD="<admin-password>" \
+API_BASE=http://127.0.0.1:3001 \
+E2E_BASE_URL=http://10.1.132.58:3000 \
+E2E_API_BASE=http://10.1.132.58:3001 \
+E2E_KITE_BASE=http://10.1.132.58:3002 \
+E2E_CLEANUP_SUDO=true \
+npm run acceptance:production
+```
+
+完整验收会创建新的主库备份、Kite 备份、恢复演练记录，并运行 Playwright E2E。日常巡检优先使用 `ops:single-node-check`，避免频繁制造验收数据。
+
 每日：
 
 - 查看 `/health/ready`。
 - 查看 `backend` / `frontend` 容器状态。
 - 查看最近一次备份时间和备份是否 verified。
 - 查看 Hermes Channel 健康状态。
+- 运行 `npm run ops:single-node-check`。
 
 每周：
 
