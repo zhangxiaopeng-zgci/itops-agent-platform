@@ -19,7 +19,10 @@
     "docker:status": "docker-compose ps",
     "docker:clean": "docker system prune -f",
     "smoke:api": "node scripts/smoke-api.mjs",
+    "cleanup:e2e": "node scripts/cleanup-pilot-test-data.mjs",
+    "cleanup:e2e:execute": "node scripts/cleanup-pilot-test-data.mjs --execute",
     "test:e2e": "playwright test",
+    "test:e2e:clean": "node scripts/run-e2e-with-cleanup.mjs",
     "test:e2e:closed-loop": "playwright test e2e/closed-loop-case.spec.ts",
     "test:e2e:headed": "playwright test --headed"
   },

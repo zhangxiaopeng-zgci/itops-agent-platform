@@ -8,13 +8,27 @@ const Database = require('../backend/node_modules/better-sqlite3');
 
 const execute = process.argv.includes('--execute');
 const cwd = process.cwd();
-const defaultDbPath = path.basename(cwd) === 'backend'
-  ? path.join(cwd, 'data/app.db')
-  : path.join(cwd, 'backend/data/app.db');
-const dbPath = path.resolve(process.env.DATABASE_PATH || defaultDbPath);
+
+function resolveDatabasePath() {
+  if (process.env.DATABASE_PATH) {
+    return path.resolve(process.env.DATABASE_PATH);
+  }
+
+  const candidates = [
+    path.basename(cwd) === 'backend' ? path.join(cwd, 'data/app.db') : null,
+    path.join(cwd, 'data/app.db'),
+    path.join(cwd, '../data/app.db'),
+    path.join(cwd, 'backend/data/app.db')
+  ].filter(Boolean);
+
+  return candidates.find((candidate) => fs.existsSync(candidate)) || candidates[0];
+}
+
+const dbPath = path.resolve(resolveDatabasePath());
 
 if (!fs.existsSync(dbPath)) {
   console.error(`Database not found: ${dbPath}`);
+  console.error('Set DATABASE_PATH or run from a directory containing data/app.db or backend/data/app.db.');
   process.exit(1);
 }
 
