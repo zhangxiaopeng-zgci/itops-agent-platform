@@ -666,7 +666,7 @@ function OperationsWallboardSummary({ overview, loading }: { overview?: OpsOverv
       }),
       icon: Boxes,
       tone: overview.kubernetes.unboundNodes > 0 ? 'text-amber-600 bg-amber-500/10' : 'text-emerald-600 bg-emerald-500/10',
-      href: '/kubernetes-clusters',
+      href: '/kubernetes-console',
     },
     {
       label: t('dashboard.wallboard.network'),
