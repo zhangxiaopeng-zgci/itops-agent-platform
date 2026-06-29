@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQueries, useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import {
   ArrowRight,
@@ -46,6 +46,17 @@ interface KubernetesCluster {
   status?: string;
   node_count?: number;
   pod_count?: number;
+  bound_server_count?: number;
+}
+
+interface KubernetesBackingHost {
+  server_id: string;
+  server_name?: string | null;
+  server_hostname?: string | null;
+}
+
+interface KubernetesClusterAssets {
+  backing_hosts?: KubernetesBackingHost[];
 }
 
 interface AssetOption {
@@ -124,6 +135,25 @@ export default function AssetsCenter() {
       return toArray<KubernetesCluster>(res.data.data, ['clusters', 'items']);
     },
     staleTime: 60000,
+  });
+
+  const kubernetesAssetQueries = useQueries({
+    queries: kubernetesClusters.map((cluster) => ({
+      queryKey: ['assets-center', 'kubernetes-cluster-assets', cluster.id],
+      queryFn: async () => {
+        const res = await api.get(`/api/kubernetes-clusters/${cluster.id}/assets`);
+        return res.data.data as KubernetesClusterAssets;
+      },
+      staleTime: 60000,
+      enabled: Boolean(cluster.id),
+    })),
+  });
+
+  const kubernetesBackingHosts = new Map<string, KubernetesBackingHost[]>();
+  kubernetesAssetQueries.forEach((query, index) => {
+    const cluster = kubernetesClusters[index];
+    if (!cluster) return;
+    kubernetesBackingHosts.set(cluster.id, query.data?.backing_hosts || []);
   });
 
   const enabledServers = servers.filter((server) => server.enabled === 1);
@@ -237,11 +267,17 @@ export default function AssetsCenter() {
       contextAssetId: `k8s-cluster:${cluster.id}`,
       assetType: 'kubernetes_cluster' as const,
       name: cluster.name,
-      meta: `${cluster.node_count || 0} nodes / ${cluster.pod_count || 0} pods`,
+      meta: t('assetsCenter.type.kubernetesMeta', {
+        nodes: cluster.node_count || 0,
+        pods: cluster.pod_count || 0,
+        hosts: kubernetesBackingHosts.get(cluster.id)?.length ?? cluster.bound_server_count ?? 0,
+      }),
       type: 'kubernetes' as const,
       typeKey: 'assetsCenter.type.kubernetes' as MessageKey,
       href: '/kubernetes-clusters',
-      serverIds: [],
+      serverIds: (kubernetesBackingHosts.get(cluster.id) || [])
+        .map((host) => host.server_id)
+        .filter(Boolean),
       icon: Boxes,
     })),
   ].slice(0, 6);
@@ -345,6 +381,12 @@ export default function AssetsCenter() {
               <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-1 gap-3">
                 <AssetFact label={t('assetsCenter.focus.assetType')} value={selectedAssetType} />
                 <AssetFact label={t('assetsCenter.focus.assetMeta')} value={selectedAsset?.meta || '-'} />
+                {selectedAsset?.type === 'kubernetes' && (
+                  <AssetFact
+                    label={t('assetsCenter.focus.backingHosts')}
+                    value={selectedAsset.serverIds.length > 0 ? String(selectedAsset.serverIds.length) : '0'}
+                  />
+                )}
               </div>
             </div>
 
