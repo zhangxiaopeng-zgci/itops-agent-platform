@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import db, { initializeDatabase } from '../models/database';
-import { listClosedLoopSmokeDrills, runClosedLoopSmoke } from './closedLoopSmokeService';
+import { listClosedLoopSmokeDrills, pruneClosedLoopSmokeDrills, runClosedLoopSmoke } from './closedLoopSmokeService';
 
 describe('closedLoopSmokeService', () => {
   beforeAll(async () => {
@@ -44,4 +44,53 @@ describe('closedLoopSmokeService', () => {
 
     db.prepare('DELETE FROM closed_loop_smoke_drills WHERE id = ?').run(drills[0].id);
   });
+
+  it('prunes old closed-loop smoke drill evidence', () => {
+    db.prepare('DELETE FROM closed_loop_smoke_drills').run();
+
+    insertSmokeDrill('old-drill', 'closed-loop-smoke-old', '2026-01-01 00:00:01');
+    insertSmokeDrill('middle-drill', 'closed-loop-smoke-middle', '2026-01-01 00:00:02');
+    insertSmokeDrill('new-drill', 'closed-loop-smoke-new', '2026-01-01 00:00:03');
+
+    const pruned = pruneClosedLoopSmokeDrills(2);
+    const drills = listClosedLoopSmokeDrills(10);
+
+    expect(pruned).toBe(1);
+    expect(drills.map((drill) => drill.id)).toEqual(['new-drill', 'middle-drill']);
+
+    db.prepare('DELETE FROM closed_loop_smoke_drills').run();
+  });
 });
+
+function insertSmokeDrill(id: string, correlationId: string, createdAt: string) {
+  const evidence = {
+    success: true,
+    correlationId,
+    caseId: `case-${id}`,
+    taskId: `task-${id}`,
+    finalCaseStatus: 'reviewing',
+    verificationPassed: true,
+    eventTypes: ['case_created', 'remediation_verification_passed'],
+    traceCounts: { operationCases: 1, tasks: 1, approvals: 0 },
+    cleanedUp: true
+  };
+
+  db.prepare(`
+    INSERT INTO closed_loop_smoke_drills (
+      id, status, verification_status, correlation_id, case_id, task_id, final_case_status,
+      verification_passed, cleaned_up, trace_counts, event_types, evidence, error, created_by,
+      created_at, completed_at
+    )
+    VALUES (?, 'passed', 'closed_loop_ready', ?, ?, ?, 'reviewing', 1, 1, ?, ?, ?, NULL, 'test-admin', ?, ?)
+  `).run(
+    id,
+    correlationId,
+    evidence.caseId,
+    evidence.taskId,
+    JSON.stringify(evidence.traceCounts),
+    JSON.stringify(evidence.eventTypes),
+    JSON.stringify(evidence),
+    createdAt,
+    createdAt
+  );
+}

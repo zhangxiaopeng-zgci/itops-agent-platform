@@ -4,6 +4,8 @@ import { createOperationCase, getOperationCase, listOperationCaseEvents } from '
 import { getCorrelationTrace } from './correlationTraceService';
 import { invokeTool } from './toolApi/toolRegistry';
 
+const CLOSED_LOOP_SMOKE_DRILL_RETENTION = 100;
+
 export interface ClosedLoopSmokeResult {
   success: boolean;
   correlationId: string;
@@ -148,7 +150,7 @@ export function listClosedLoopSmokeDrills(limit = 20): ClosedLoopSmokeDrillRecor
   const rows = db.prepare(`
     SELECT *
     FROM closed_loop_smoke_drills
-    ORDER BY created_at DESC
+    ORDER BY created_at DESC, rowid DESC
     LIMIT ?
   `).all(clampLimit(limit, 20, 100)) as Array<Record<string, unknown>>;
 
@@ -192,7 +194,25 @@ function recordClosedLoopSmokeDrill(result: ClosedLoopSmokeResult, createdBy: st
     createdBy
   );
 
+  pruneClosedLoopSmokeDrills();
+
   return getClosedLoopSmokeDrill(id)!;
+}
+
+export function pruneClosedLoopSmokeDrills(retain = CLOSED_LOOP_SMOKE_DRILL_RETENTION): number {
+  const parsedRetain = Number.isFinite(retain) ? Math.floor(retain) : CLOSED_LOOP_SMOKE_DRILL_RETENTION;
+  const normalizedRetain = Math.max(1, Math.min(parsedRetain, CLOSED_LOOP_SMOKE_DRILL_RETENTION));
+  const result = db.prepare(`
+    DELETE FROM closed_loop_smoke_drills
+    WHERE id NOT IN (
+      SELECT id
+      FROM closed_loop_smoke_drills
+      ORDER BY created_at DESC, rowid DESC
+      LIMIT ?
+    )
+  `).run(normalizedRetain);
+
+  return Number(result.changes || 0);
 }
 
 function getClosedLoopSmokeDrill(id: string): ClosedLoopSmokeDrillRecord | null {
