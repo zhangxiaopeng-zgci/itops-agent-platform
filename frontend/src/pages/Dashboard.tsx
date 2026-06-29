@@ -277,7 +277,7 @@ export default function Dashboard() {
       descriptionKey: 'dashboard.workbench.capability.desc',
       count: enabledAgents,
       countKey: 'dashboard.workbench.capability.count',
-      href: '/hermes-console',
+      href: '/platform-control',
       icon: Brain,
       tone: 'text-purple-500 bg-purple-500/10',
     },
