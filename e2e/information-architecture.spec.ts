@@ -26,8 +26,8 @@ test.describe('information architecture', () => {
     await expect(page.locator('body')).toContainText(/标准处理路径|Standard Handling Flow/);
     await expect(page.locator('body')).toContainText(/我遇到告警或故障|I have an alert or incident/);
     await expect(page.locator('body')).toContainText(/我接手一个处理中事项|I am taking over an active Case/);
-    await expect(page.locator('body')).toContainText(/审批与执行|Approve & Execute/);
-    await expect(page.locator('body')).toContainText(/复盘进化|Review & Evolve/);
+    await expect(page.locator('body')).toContainText(/我需要审批或执行修复|I need to approve or execute a repair/);
+    await expect(page.locator('body')).toContainText(/待办|Todo|Evolution Todo/);
 
     await page.getByText(/我接手一个处理中事项|I am taking over an active Case/).click();
     await expect(page).toHaveURL(/\/operation-cases/);
@@ -44,8 +44,8 @@ test.describe('information architecture', () => {
 
     await page.goto('/operation-cases');
     await expect(page.locator('body')).toContainText(/Case 闭环主线|Case Closure Flow/);
-    await expect(page.locator('body')).toContainText(/Hermes 分析|Hermes Analysis/);
-    await expect(page.locator('body')).toContainText(/验证恢复|Verify Recovery/);
+    await expect(page.locator('body')).toContainText(/Open Hermes|打开 Hermes|Continue Hermes diagnosis|继续诊断/);
+    await expect(page.locator('body')).toContainText(/Open Execution Center|打开执行中心|Execution Center/);
     const hasCaseSnapshot = await page.getByText(/Case 快照|Case Snapshot/).count();
     if (hasCaseSnapshot > 0) {
       await expect(page.locator('body')).toContainText(/闭环证据|Closure Evidence/);
@@ -68,7 +68,7 @@ test.describe('information architecture', () => {
     await expect(page.locator('body')).toContainText(/节点背后主机关联|Node Backing Host Binding/);
     await expect(page.locator('body')).toContainText(/绑定率|Binding Rate/);
     await expect(page.locator('body')).toContainText(/自动登记为待接入主机|registered as disabled backing hosts/);
-    await expect(page.getByRole('button', { name: /自动发现\/配置主机|Discover \/ Configure Hosts/ }).first()).toBeVisible();
+    await expect(page.getByRole('button', { name: /Hermes 诊断|Hermes Diagnose/ }).first()).toBeVisible();
 
     await page.goto('/assets-center');
     const diagnoseAsset = page.getByRole('button', { name: /诊断资产|Diagnose Asset/ }).first();

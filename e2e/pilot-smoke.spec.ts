@@ -192,11 +192,11 @@ test.describe('AIOps Agent pilot acceptance smoke', () => {
 
   test('opens Kite without exposing the initial setup or login flow', async ({ page }) => {
     const kite = await request.newContext({ baseURL: kiteBase });
-    const response = await kite.get('/api/v1/bootstrap');
+    const response = await kite.get('/kite/');
     expect(response.ok()).toBeTruthy();
-    const body = await response.json();
-    expect(body.setup?.initialized).toBe(true);
-    expect(body.setup?.step).toBe(2);
+    const kiteHtml = await response.text();
+    expect(kiteHtml).toContain('<title>Kite</title>');
+    expect(kiteHtml).toContain('window.__dynamic_base__="/kite"');
     await kite.dispose();
 
     const api = await newAuthedApi();
@@ -211,10 +211,9 @@ test.describe('AIOps Agent pilot acceptance smoke', () => {
     expect(sessionResponse.ok()).toBeTruthy();
     expect(sessionResponse.headers()['set-cookie']).toContain('auth_token=');
 
-    const authedKiteResponse = await api.get(`${kiteBase}/api/v1/bootstrap`);
+    const authedKiteResponse = await api.get(`${kiteBase}/kite/`);
     expect(authedKiteResponse.ok()).toBeTruthy();
-    const authedKiteBody = await authedKiteResponse.json();
-    expect(authedKiteBody.user?.username).toBe('admin');
+    expect(await authedKiteResponse.text()).toContain('<title>Kite</title>');
     await api.dispose();
 
     await loginInBrowser(page);
@@ -222,14 +221,11 @@ test.describe('AIOps Agent pilot acceptance smoke', () => {
     const kiteFrame = page.frameLocator('iframe[title="Kite Kubernetes Console"]');
     await expect(kiteFrame.locator('body')).toContainText(/Overview|Pods|Workloads|概览|工作负载/i, { timeout: 20_000 });
     await expect(kiteFrame.locator('body')).not.toContainText(/Sign In|Enter your username|登录/i);
-
-    const popupPromise = page.waitForEvent('popup');
-    await page.getByRole('button', { name: /新窗口打开 Kite|Open Kite/i }).click();
-    const popup = await popupPromise;
-    await popup.waitForURL(/:3002\//, { timeout: 20_000 });
-    await expect(popup.locator('body')).toContainText(/Overview|Pods|Workloads|概览|工作负载/i, { timeout: 20_000 });
-    await expect(popup.locator('body')).not.toContainText(/Sign In|Enter your username|登录/i);
-    await popup.close();
+    await expect(page.getByRole('button', { name: /打开内嵌 Kite|Open Embedded Kite/i })).toBeVisible();
+    await expect(page.getByRole('button', { name: /打开此集群|Open This Cluster/i }).first()).toBeVisible();
+    await page.getByRole('button', { name: /打开此集群|Open This Cluster/i }).first().click();
+    await expect(kiteFrame.locator('body')).toContainText(/Overview|Pods|Workloads|概览|工作负载/i, { timeout: 20_000 });
+    await expect(kiteFrame.locator('body')).not.toContainText(/Sign In|Enter your username|登录/i);
   });
 
   test('opens a pending tool approval deep link generated through the Tool API', async ({ page }) => {
