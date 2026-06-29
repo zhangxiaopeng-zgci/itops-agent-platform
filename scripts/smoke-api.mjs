@@ -1,10 +1,15 @@
 #!/usr/bin/env node
 
+import http from 'node:http';
+import https from 'node:https';
+
 const apiBase = (process.env.API_BASE || 'http://127.0.0.1:3001').replace(/\/$/, '');
 const username = process.env.SMOKE_USERNAME || 'admin';
 const password = process.env.SMOKE_PASSWORD;
 const requireActiveRelease = process.env.REQUIRE_ACTIVE_RELEASE === 'true';
 const runClosedLoopSmoke = process.env.CLOSED_LOOP_SMOKE === 'true';
+const readyTimeoutMs = parsePositiveInteger(process.env.SMOKE_READY_TIMEOUT_MS, 60000);
+const readyIntervalMs = parsePositiveInteger(process.env.SMOKE_READY_INTERVAL_MS, 1000);
 
 if (!password) {
   throw new Error('SMOKE_PASSWORD is required');
@@ -104,6 +109,57 @@ async function login() {
   return token;
 }
 
+async function waitForApiReady() {
+  const deadline = Date.now() + readyTimeoutMs;
+  let lastError = 'not checked';
+
+  while (Date.now() <= deadline) {
+    try {
+      const status = await requestHealthStatus();
+      if (status >= 200 && status < 300) {
+        return;
+      }
+      lastError = `HTTP ${status}`;
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : String(error);
+    }
+
+    await sleep(readyIntervalMs);
+  }
+
+  throw new Error(`API did not become ready within ${readyTimeoutMs}ms: ${lastError}`);
+}
+
+function requestHealthStatus() {
+  return new Promise((resolve, reject) => {
+    const url = new URL(`${apiBase}/health/live`);
+    const client = url.protocol === 'https:' ? https : http;
+    const req = client.request(url, {
+      method: 'GET',
+      headers: { accept: 'application/json' },
+      timeout: Math.min(readyIntervalMs, 5000)
+    }, (res) => {
+      res.resume();
+      res.on('end', () => resolve(res.statusCode || 0));
+    });
+
+    req.on('timeout', () => {
+      req.destroy(new Error('health check timed out'));
+    });
+    req.on('error', reject);
+    req.end();
+  });
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function parsePositiveInteger(value, fallback) {
+  const parsed = Number.parseInt(String(value || ''), 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
 function getPayloadSize(body) {
   if (Array.isArray(body?.data)) return body.data.length;
   if (Array.isArray(body)) return body.length;
@@ -113,6 +169,7 @@ function getPayloadSize(body) {
 }
 
 const startedAt = new Date().toISOString();
+await waitForApiReady();
 const token = await login();
 const results = [];
 
