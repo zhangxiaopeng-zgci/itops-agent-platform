@@ -259,6 +259,8 @@ function buildHermesPath(operationCase: OperationCase, mode: 'diagnose' | 'remed
 
 function buildExecutionPath(operationCase: OperationCase) {
   const params = new URLSearchParams();
+  params.set('caseId', operationCase.id);
+  if (operationCase.correlation_id) params.set('correlationId', operationCase.correlation_id);
   if (operationCase.asset_id) params.set('assetId', operationCase.asset_id);
   if (operationCase.asset_type) params.set('assetType', operationCase.asset_type);
   if (operationCase.asset_name) params.set('assetName', operationCase.asset_name);

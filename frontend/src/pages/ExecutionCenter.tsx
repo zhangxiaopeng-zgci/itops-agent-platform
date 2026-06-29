@@ -5,6 +5,8 @@ import {
   ArrowRight,
   CheckCircle2,
   Clock,
+  ClipboardList,
+  ExternalLink,
   FileCode,
   GitBranch,
   ListChecks,
@@ -44,6 +46,17 @@ interface ServerItem {
   name?: string;
   hostname?: string;
   enabled: number;
+}
+
+interface OperationCase {
+  id: string;
+  title?: string;
+  status?: string;
+  correlation_id?: string | null;
+}
+
+interface OperationCaseDetailResponse {
+  case: OperationCase;
 }
 
 interface ActionItem {
@@ -117,6 +130,8 @@ export default function ExecutionCenter() {
   const assetId = searchParams.get('assetId');
   const assetType = searchParams.get('assetType');
   const assetName = searchParams.get('assetName');
+  const caseId = searchParams.get('caseId');
+  const correlationId = searchParams.get('correlationId');
   const serverIds = useMemo(() => {
     return (searchParams.get('serverIds') || '')
       .split(',')
@@ -169,6 +184,17 @@ export default function ExecutionCenter() {
     staleTime: 60000,
   });
 
+  const { data: operationCase } = useQuery({
+    queryKey: ['execution-center', 'operation-case', caseId],
+    enabled: Boolean(caseId),
+    queryFn: async () => {
+      const res = await api.get(`/api/operation-cases/${encodeURIComponent(caseId!)}`);
+      const payload = res.data.data as OperationCaseDetailResponse;
+      return payload.case;
+    },
+    staleTime: 30000,
+  });
+
   const handoffServers = useMemo(() => {
     return servers.filter((server) => serverIds.includes(server.id));
   }, [serverIds, servers]);
@@ -178,7 +204,9 @@ export default function ExecutionCenter() {
     const matchedServer = servers.find((server) => server.id === assetId);
     return matchedServer ? formatServerName(matchedServer) : assetId;
   }, [assetId, assetName, servers]);
-  const hasHandoffContext = Boolean(assetId || assetType || serverIds.length > 0);
+  const handoffCaseLabel = operationCase?.title || caseId || '-';
+  const handoffCorrelationLabel = operationCase?.correlation_id || correlationId || '-';
+  const hasHandoffContext = Boolean(assetId || assetType || serverIds.length > 0 || caseId || correlationId);
 
   const runningTasks = tasks.filter((task) => task.status === 'running').length;
   const failedTasks = tasks.filter((task) => task.status === 'failed').length;
@@ -402,7 +430,9 @@ export default function ExecutionCenter() {
                   </div>
                 </div>
 
-                <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div className="mt-4 grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-5 gap-3">
+                  <HandoffFact label={t('executionCenter.handoff.case')} value={handoffCaseLabel} />
+                  <HandoffFact label={t('executionCenter.handoff.correlation')} value={handoffCorrelationLabel} />
                   <HandoffFact label={t('executionCenter.handoff.asset')} value={handoffAssetLabel} />
                   <HandoffFact label={t('executionCenter.handoff.assetType')} value={getAssetTypeLabel(assetType, t)} />
                   <HandoffFact
@@ -413,6 +443,24 @@ export default function ExecutionCenter() {
               </div>
 
               <div className="flex flex-wrap gap-2 xl:justify-end">
+                {caseId && (
+                  <button
+                    onClick={() => navigate(`/operation-cases?caseId=${encodeURIComponent(caseId)}`)}
+                    className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-border text-text-primary hover:bg-background transition-colors text-sm"
+                  >
+                    <ClipboardList className="w-4 h-4" />
+                    {t('executionCenter.handoff.openCase')}
+                  </button>
+                )}
+                {(operationCase?.correlation_id || correlationId) && (
+                  <button
+                    onClick={() => navigate(`/hermes-dashboard?correlationId=${encodeURIComponent(operationCase?.correlation_id || correlationId || '')}`)}
+                    className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-border text-text-primary hover:bg-background transition-colors text-sm"
+                  >
+                    <ExternalLink className="w-4 h-4" />
+                    {t('executionCenter.handoff.openTrace')}
+                  </button>
+                )}
                 <button
                   onClick={() => navigate('/remediation-workbench')}
                   className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-primary text-white hover:bg-primary/90 transition-colors text-sm"
