@@ -6,7 +6,6 @@ import {
   ArrowRight,
   Bot,
   Boxes,
-  Brain,
   CheckCircle2,
   ClipboardList,
   Clock,
@@ -18,7 +17,6 @@ import {
   Radar,
   Route,
   Server,
-  Settings,
   ShieldAlert,
   Sparkles,
   Wrench,
@@ -246,24 +244,6 @@ export default function Dashboard() {
 
   const workbenchCards = [
     {
-      titleKey: 'dashboard.workbench.diagnosis.title',
-      descriptionKey: 'dashboard.workbench.diagnosis.desc',
-      count: highRiskAlerts.length || openAlerts.length,
-      countKey: highRiskAlerts.length > 0 ? 'dashboard.workbench.diagnosis.highRisk' : 'dashboard.workbench.diagnosis.open',
-      href: '/diagnosis-center',
-      icon: Radar,
-      tone: highRiskAlerts.length > 0 ? 'text-red-500 bg-red-500/10' : 'text-blue-500 bg-blue-500/10',
-    },
-    {
-      titleKey: 'dashboard.workbench.execution.title',
-      descriptionKey: 'dashboard.workbench.execution.desc',
-      count: pendingApprovals.length + runningTasks.length + failedTasks.length,
-      countKey: 'dashboard.workbench.execution.todo',
-      href: '/execution-center',
-      icon: Route,
-      tone: pendingApprovals.length > 0 ? 'text-yellow-500 bg-yellow-500/10' : 'text-emerald-500 bg-emerald-500/10',
-    },
-    {
       titleKey: 'dashboard.workbench.assets.title',
       descriptionKey: 'dashboard.workbench.assets.desc',
       count: enabledServers,
@@ -273,22 +253,31 @@ export default function Dashboard() {
       tone: 'text-cyan-500 bg-cyan-500/10',
     },
     {
-      titleKey: 'dashboard.workbench.capability.title',
-      descriptionKey: 'dashboard.workbench.capability.desc',
-      count: enabledAgents,
-      countKey: 'dashboard.workbench.capability.count',
-      href: '/platform-control',
-      icon: Brain,
-      tone: 'text-purple-500 bg-purple-500/10',
+      titleKey: 'dashboard.workbench.diagnosis.title',
+      descriptionKey: 'dashboard.workbench.diagnosis.desc',
+      count: highRiskAlerts.length || openAlerts.length,
+      countKey: highRiskAlerts.length > 0 ? 'dashboard.workbench.diagnosis.highRisk' : 'dashboard.workbench.diagnosis.open',
+      href: '/diagnosis-center',
+      icon: Radar,
+      tone: highRiskAlerts.length > 0 ? 'text-red-500 bg-red-500/10' : 'text-blue-500 bg-blue-500/10',
     },
     {
-      titleKey: 'dashboard.workbench.evolution.title',
-      descriptionKey: 'dashboard.workbench.evolution.desc',
-      count: pendingProposals.length,
-      countKey: 'dashboard.workbench.evolution.count',
-      href: '/evolution-governance',
-      icon: Sparkles,
-      tone: 'text-indigo-500 bg-indigo-500/10',
+      titleKey: 'dashboard.workbench.cases.title',
+      descriptionKey: 'dashboard.workbench.cases.desc',
+      count: opsOverview?.closedLoop.openCases || 0,
+      countKey: 'dashboard.workbench.cases.count',
+      href: '/operation-cases',
+      icon: ClipboardList,
+      tone: (opsOverview?.closedLoop.openCases || 0) > 0 ? 'text-indigo-500 bg-indigo-500/10' : 'text-emerald-500 bg-emerald-500/10',
+    },
+    {
+      titleKey: 'dashboard.workbench.execution.title',
+      descriptionKey: 'dashboard.workbench.execution.desc',
+      count: pendingApprovals.length + runningTasks.length + failedTasks.length,
+      countKey: 'dashboard.workbench.execution.todo',
+      href: '/execution-center',
+      icon: Route,
+      tone: pendingApprovals.length > 0 ? 'text-yellow-500 bg-yellow-500/10' : 'text-emerald-500 bg-emerald-500/10',
     },
   ];
 
@@ -323,8 +312,14 @@ export default function Dashboard() {
 
   const usageSteps = [
     {
-      titleKey: 'dashboard.usage.step.detect.title',
-      descKey: 'dashboard.usage.step.detect.desc',
+      titleKey: 'dashboard.usage.step.resource.title',
+      descKey: 'dashboard.usage.step.resource.desc',
+      href: '/assets-center',
+      icon: Server,
+    },
+    {
+      titleKey: 'dashboard.usage.step.diagnosis.title',
+      descKey: 'dashboard.usage.step.diagnosis.desc',
       href: '/diagnosis-center',
       icon: Radar,
     },
@@ -335,28 +330,10 @@ export default function Dashboard() {
       icon: ClipboardList,
     },
     {
-      titleKey: 'dashboard.usage.step.hermes.title',
-      descKey: 'dashboard.usage.step.hermes.desc',
-      href: '/hermes',
-      icon: Brain,
-    },
-    {
-      titleKey: 'dashboard.usage.step.approval.title',
-      descKey: 'dashboard.usage.step.approval.desc',
+      titleKey: 'dashboard.usage.step.execution.title',
+      descKey: 'dashboard.usage.step.execution.desc',
       href: '/execution-center',
-      icon: ShieldAlert,
-    },
-    {
-      titleKey: 'dashboard.usage.step.verify.title',
-      descKey: 'dashboard.usage.step.verify.desc',
-      href: '/tasks',
-      icon: CheckCircle2,
-    },
-    {
-      titleKey: 'dashboard.usage.step.evolve.title',
-      descKey: 'dashboard.usage.step.evolve.desc',
-      href: '/evolution-governance',
-      icon: Sparkles,
+      icon: Route,
     },
   ];
 
@@ -464,7 +441,7 @@ export default function Dashboard() {
             <h2 className="text-lg font-semibold text-text-primary">{t('dashboard.usage.title')}</h2>
             <p className="text-sm text-text-secondary mt-1">{t('dashboard.usage.subtitle')}</p>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-6 gap-3">
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
             {usageSteps.map((step, index) => (
               <button
                 key={step.href}
@@ -485,8 +462,8 @@ export default function Dashboard() {
         </section>
 
         {isLoading ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
-            {Array.from({ length: 5 }).map((_, index) => (
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+            {Array.from({ length: 4 }).map((_, index) => (
               <div key={index} className="bg-surface rounded-lg p-5 border border-border animate-pulse">
                 <div className="w-10 h-10 rounded-lg bg-border/50 mb-4" />
                 <div className="h-5 w-28 bg-border/50 rounded mb-3" />
@@ -495,7 +472,7 @@ export default function Dashboard() {
             ))}
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
             {workbenchCards.map((card) => (
               <button
                 key={card.href}
