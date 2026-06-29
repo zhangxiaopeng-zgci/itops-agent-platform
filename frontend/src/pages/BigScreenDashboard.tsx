@@ -7,7 +7,7 @@ import {
   Shield, Network, Cpu, MemoryStick, HardDrive,
   CheckCircle, RefreshCcw, Terminal, FileCode,
   Maximize2, Minimize2, AlertCircle, ChevronRight,
-  Clock, TrendingUp, Target,
+  Clock, TrendingUp, Target, Boxes, GitBranch, Activity,
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import api from '../lib/api';
@@ -154,8 +154,103 @@ const StatCard = ({
   </div>
 );
 
+interface DomainStatusCardProps {
+  icon: ComponentType<SVGProps<SVGSVGElement>>;
+  label: string;
+  value: string | number;
+  detail: string;
+  color: string;
+  onClick?: () => void;
+}
+
+const DomainStatusCard = ({
+  icon: Icon,
+  label,
+  value,
+  detail,
+  color,
+  onClick,
+}: DomainStatusCardProps) => (
+  <button
+    type="button"
+    onClick={onClick}
+    className="min-h-[104px] rounded-2xl border border-slate-700/50 bg-slate-800/35 p-4 text-left backdrop-blur-md transition-all hover:border-slate-500/70 hover:bg-slate-800/55"
+  >
+    <div className="flex items-start justify-between gap-3">
+      <div className={`flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br ${color}`}>
+        <Icon className="h-5 w-5 text-white" />
+      </div>
+      <ChevronRight className="h-4 w-4 shrink-0 text-slate-500" />
+    </div>
+    <div className="mt-3 flex items-baseline justify-between gap-2">
+      <span className="truncate text-sm font-medium text-slate-300">{label}</span>
+      <span className="shrink-0 text-xl font-bold text-white">{value}</span>
+    </div>
+    <p className="mt-1 line-clamp-2 text-xs leading-5 text-slate-500">{detail}</p>
+  </button>
+);
+
 const SERVER_COLORS = ['#3b82f6', '#8b5cf6', '#06b6d4', '#22c55e', '#f59e0b', '#ef4444'];
 const SERVER_METRICS_RANDOM_VALUES = Array.from({ length: 6 }, () => 30 + Math.random() * 50);
+
+interface OpsOverview {
+  generatedAt: string;
+  hosts: {
+    total: number;
+    enabled: number;
+    online: number;
+    stale: number;
+    avgCpu: number | null;
+    avgMemory: number | null;
+    avgDisk: number | null;
+    freshMetrics: number;
+  };
+  kubernetes: {
+    clusters: number;
+    enabledClusters: number;
+    syncedClusters: number;
+    nodes: number;
+    boundNodes: number;
+    unboundNodes: number;
+    boundRatio: number;
+    pods: number;
+    runningPods: number;
+    notReadyPods: number;
+    workloads: number;
+    degradedWorkloads: number;
+    warningEvents: number;
+  };
+  network: {
+    total: number;
+    online: number;
+    warning: number;
+    offline: number;
+    unknown: number;
+  };
+  topology: {
+    explicitEdges: number;
+    activeEdges: number;
+    staleEdges: number;
+    unboundKubernetesNodes: number;
+    accuracyScore: number;
+  };
+  closedLoop: {
+    openAlerts: number;
+    criticalAlerts: number;
+    openCases: number;
+    pendingApprovals: number;
+    runningTasks: number;
+    failedTasks: number;
+    hermesSessions24h: number;
+    openEvolutionProposals: number;
+  };
+  automation: {
+    autoBindingEnabled: boolean;
+    pendingHumanActions: number;
+    topologyVerificationNeeded: number;
+    recommendedNextActions: string[];
+  };
+}
 
 interface SlaStats {
   mttr_minutes: number;
@@ -435,6 +530,16 @@ export default function BigScreenDashboard() {
     ...RETRY_CONFIG,
   });
 
+  const { data: opsOverview } = useQuery<OpsOverview>({
+    queryKey: ['big-screen', 'ops-overview', refreshKey],
+    queryFn: async () => {
+      const res = await api.get('/api/dashboard/ops-overview');
+      return res.data.data;
+    },
+    refetchInterval: 30000,
+    ...RETRY_CONFIG,
+  });
+
   const playCriticalAlertSound = useCallback(() => {
     try {
       const audioContext = audioContextRef.current || new AudioContext();
@@ -614,6 +719,77 @@ export default function BigScreenDashboard() {
     const text = t(key);
     return text === key ? status : text;
   };
+
+  const fullStackItems = [
+    {
+      icon: Server,
+      label: t('bigScreen.stack.hosts'),
+      value: `${opsOverview?.hosts.online || 0}/${opsOverview?.hosts.total || 0}`,
+      detail: t('bigScreen.stack.hostsDetail', {
+        online: opsOverview?.hosts.online || 0,
+        stale: opsOverview?.hosts.stale || 0,
+      }),
+      color: 'from-sky-600 to-cyan-700',
+      href: '/servers',
+    },
+    {
+      icon: Boxes,
+      label: t('bigScreen.stack.kubernetes'),
+      value: opsOverview?.kubernetes.clusters || 0,
+      detail: t('bigScreen.stack.kubernetesDetail', {
+        nodes: opsOverview?.kubernetes.nodes || 0,
+        notReady: opsOverview?.kubernetes.notReadyPods || 0,
+      }),
+      color: (opsOverview?.kubernetes.notReadyPods || 0) > 0 ? 'from-amber-600 to-orange-700' : 'from-emerald-600 to-teal-700',
+      href: '/kubernetes-console',
+    },
+    {
+      icon: Network,
+      label: t('bigScreen.stack.network'),
+      value: opsOverview?.network.total || 0,
+      detail: t('bigScreen.stack.networkDetail', {
+        online: opsOverview?.network.online || 0,
+        warning: opsOverview?.network.warning || 0,
+        offline: opsOverview?.network.offline || 0,
+      }),
+      color: (opsOverview?.network.warning || 0) + (opsOverview?.network.offline || 0) > 0 ? 'from-amber-600 to-yellow-700' : 'from-teal-600 to-emerald-700',
+      href: '/network-devices',
+    },
+    {
+      icon: Activity,
+      label: t('bigScreen.stack.closedLoop'),
+      value: opsOverview?.closedLoop.openCases || 0,
+      detail: t('bigScreen.stack.closedLoopDetail', {
+        cases: opsOverview?.closedLoop.openCases || 0,
+        approvals: opsOverview?.closedLoop.pendingApprovals || 0,
+        tasks: (opsOverview?.closedLoop.runningTasks || 0) + (opsOverview?.closedLoop.failedTasks || 0),
+      }),
+      color: (opsOverview?.closedLoop.criticalAlerts || 0) > 0 ? 'from-red-600 to-rose-800' : 'from-indigo-600 to-blue-800',
+      href: '/operation-cases',
+    },
+    {
+      icon: GitBranch,
+      label: t('bigScreen.stack.topology'),
+      value: `${opsOverview?.topology.accuracyScore ?? 0}%`,
+      detail: t('bigScreen.stack.topologyDetail', {
+        stale: opsOverview?.topology.staleEdges || 0,
+        unbound: opsOverview?.topology.unboundKubernetesNodes || 0,
+      }),
+      color: (opsOverview?.topology.accuracyScore ?? 100) < 80 ? 'from-amber-600 to-orange-700' : 'from-violet-600 to-indigo-800',
+      href: '/topology',
+    },
+    {
+      icon: Shield,
+      label: t('bigScreen.stack.automation'),
+      value: opsOverview?.automation.pendingHumanActions || 0,
+      detail: t('bigScreen.stack.automationDetail', {
+        actions: opsOverview?.automation.pendingHumanActions || 0,
+        topology: opsOverview?.automation.topologyVerificationNeeded || 0,
+      }),
+      color: (opsOverview?.automation.pendingHumanActions || 0) > 0 ? 'from-amber-600 to-orange-700' : 'from-green-600 to-emerald-800',
+      href: '/execution-center',
+    },
+  ];
 
   const taskDistData = (taskDistribution?.byStatus || []).map(s => {
     const colors: Record<string, string> = {
@@ -822,6 +998,36 @@ export default function BigScreenDashboard() {
             </button>
           </div>
         </header>
+
+        <section className="mb-4 rounded-2xl border border-slate-700/50 bg-slate-900/35 p-4 backdrop-blur-md">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-semibold text-white">{t('bigScreen.stack.title')}</h2>
+              <p className="mt-1 text-xs text-slate-500">{t('bigScreen.stack.subtitle')}</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => navigate('/diagnosis-center')}
+              className="inline-flex items-center gap-2 rounded-lg border border-slate-700/60 px-3 py-2 text-xs font-medium text-slate-300 transition-all hover:border-cyan-500/40 hover:bg-cyan-500/10 hover:text-cyan-200"
+            >
+              {t('bigScreen.stack.openDiagnosis')}
+              <ChevronRight className="h-3.5 w-3.5" />
+            </button>
+          </div>
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 2xl:grid-cols-6">
+            {fullStackItems.map((item) => (
+              <DomainStatusCard
+                key={item.label}
+                icon={item.icon}
+                label={item.label}
+                value={item.value}
+                detail={item.detail}
+                color={item.color}
+                onClick={() => navigate(item.href)}
+              />
+            ))}
+          </div>
+        </section>
 
         <div className="grid grid-cols-12 gap-4">
           <div className="col-span-3 flex flex-col gap-4">
