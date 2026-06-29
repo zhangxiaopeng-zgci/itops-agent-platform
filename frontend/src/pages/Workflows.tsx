@@ -4,11 +4,11 @@ import {
   GitBranch, Play, Clock, Plus, Edit, Server,
   Search, Filter, Copy, Trash2, XCircle,
   Zap, Shield, Database, Globe, Cpu, AlertTriangle,
-  ArrowRight, Sparkles, CheckCircle
+  ArrowRight, Sparkles, CheckCircle, ClipboardList, ExternalLink
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { enUS, zhCN } from 'date-fns/locale';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import api from '../lib/api';
 import { useLocale } from '../contexts/LocaleContext';
 
@@ -226,6 +226,7 @@ function WorkflowCapabilitySummaryView({ summary }: { summary?: WorkflowCapabili
 export default function Workflows() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { locale, t } = useLocale();
   const dateLocale = locale === 'zh-CN' ? zhCN : enUS;
   const [executingWorkflow, setExecutingWorkflow] = useState<string | null>(null);
@@ -241,6 +242,41 @@ export default function Workflows() {
     preflight: WorkflowExecutionPreflight;
     context?: Record<string, unknown>;
   } | null>(null);
+  const handoffCaseId = searchParams.get('caseId');
+  const handoffCorrelationId = searchParams.get('correlationId');
+  const handoffAssetId = searchParams.get('assetId');
+  const handoffAssetType = searchParams.get('assetType');
+  const handoffAssetName = searchParams.get('assetName');
+  const handoffK8sClusterId = searchParams.get('k8sClusterId');
+  const handoffServerIds = (searchParams.get('serverIds') || '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+  const hasHandoffContext = Boolean(
+    handoffCaseId || handoffCorrelationId || handoffAssetId || handoffAssetType || handoffAssetName || handoffK8sClusterId || handoffServerIds.length > 0
+  );
+  const handoffContext = {
+    ...(handoffCaseId ? { operationCaseId: handoffCaseId, caseId: handoffCaseId } : {}),
+    ...(handoffCorrelationId ? { correlationId: handoffCorrelationId } : {}),
+    ...(handoffAssetId ? { assetId: handoffAssetId } : {}),
+    ...(handoffAssetType ? { assetType: handoffAssetType } : {}),
+    ...(handoffAssetName ? { assetName: handoffAssetName } : {}),
+    ...(handoffK8sClusterId ? { k8sClusterId: handoffK8sClusterId } : {}),
+    ...(handoffServerIds.length > 0 ? { serverIds: handoffServerIds } : {}),
+  };
+
+  const buildHandoffQuery = (taskId?: string) => {
+    const params = new URLSearchParams();
+    if (taskId) params.set('taskId', taskId);
+    if (handoffCaseId) params.set('caseId', handoffCaseId);
+    if (handoffCorrelationId) params.set('correlationId', handoffCorrelationId);
+    if (handoffAssetId) params.set('assetId', handoffAssetId);
+    if (handoffAssetType) params.set('assetType', handoffAssetType);
+    if (handoffAssetName) params.set('assetName', handoffAssetName);
+    if (handoffK8sClusterId) params.set('k8sClusterId', handoffK8sClusterId);
+    if (handoffServerIds.length > 0) params.set('serverIds', handoffServerIds.join(','));
+    return params.toString();
+  };
 
   const getWorkflowStyle = (workflow: Workflow) => {
     if (isHermesEnhancedWorkflow(workflow)) {
@@ -331,9 +367,11 @@ export default function Workflows() {
       });
       return res.data.data;
     },
-    onSuccess: (_data) => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['tasks'] });
-      navigate(`/tasks`);
+      const taskId = typeof data?.id === 'string' ? data.id : undefined;
+      const query = buildHandoffQuery(taskId);
+      navigate(query ? `/tasks?${query}` : '/tasks');
     },
     onError: (error: any) => {
       const preflight = error?.response?.data?.data?.preflight as WorkflowExecutionPreflight | undefined;
@@ -373,18 +411,19 @@ export default function Workflows() {
   });
 
   const runPreflightAndExecute = async (workflow: Workflow, context?: Record<string, unknown>) => {
+    const executionContext = { ...handoffContext, ...(context || {}) };
     try {
       setPreflightLoadingId(workflow.id);
       const res = await api.get(`/api/workflows/${workflow.id}/execution-preflight`);
       const preflight = res.data.data as WorkflowExecutionPreflight;
 
       if (preflight.decision === 'block' || preflight.decision === 'warn') {
-        setPreflightModal({ workflow, preflight, context });
+        setPreflightModal({ workflow, preflight, context: executionContext });
         return;
       }
 
       setExecutingWorkflow(workflow.id);
-      executeMutation.mutate({ workflowId: workflow.id, context }, {
+      executeMutation.mutate({ workflowId: workflow.id, context: executionContext }, {
         onSettled: () => {
           setExecutingWorkflow(null);
           setShowServerSelectModal(false);
@@ -476,6 +515,47 @@ export default function Workflows() {
             {t('workflows.new')}
           </button>
         </div>
+
+        {hasHandoffContext && (
+          <section className="rounded-xl border border-primary/20 bg-primary/5 p-4">
+            <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-text-primary">{t('workflows.handoff.title')}</p>
+                <p className="mt-1 text-xs text-text-secondary">{t('workflows.handoff.subtitle')}</p>
+                <div className="mt-3 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-3">
+                  <WorkflowContextFact label={t('workflows.handoff.case')} value={handoffCaseId || '-'} />
+                  <WorkflowContextFact label={t('workflows.handoff.correlation')} value={handoffCorrelationId || '-'} />
+                  <WorkflowContextFact label={t('workflows.handoff.asset')} value={handoffAssetName || handoffAssetId || '-'} />
+                  <WorkflowContextFact label={t('workflows.handoff.assetType')} value={handoffAssetType || '-'} />
+                  <WorkflowContextFact
+                    label={t('workflows.handoff.relatedServers')}
+                    value={handoffServerIds.length > 0 ? handoffServerIds.join(', ') : '-'}
+                  />
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-2 xl:justify-end">
+                {handoffCaseId && (
+                  <button
+                    onClick={() => navigate(`/operation-cases?caseId=${encodeURIComponent(handoffCaseId)}`)}
+                    className="inline-flex items-center gap-2 rounded-lg border border-border bg-background px-3 py-2 text-sm text-text-primary hover:bg-surface-hover"
+                  >
+                    <ClipboardList className="w-4 h-4" />
+                    {t('workflows.handoff.openCase')}
+                  </button>
+                )}
+                {handoffCorrelationId && (
+                  <button
+                    onClick={() => navigate(`/hermes-dashboard?correlationId=${encodeURIComponent(handoffCorrelationId)}`)}
+                    className="inline-flex items-center gap-2 rounded-lg border border-border bg-background px-3 py-2 text-sm text-text-primary hover:bg-surface-hover"
+                  >
+                    <ExternalLink className="w-4 h-4" />
+                    {t('workflows.handoff.openTrace')}
+                  </button>
+                )}
+              </div>
+            </div>
+          </section>
+        )}
 
         {/* Search and Filter */}
         <div className="bg-surface rounded-xl p-4 border border-border">
@@ -1093,6 +1173,15 @@ function bundleWarningText(warning: string, t: ReturnType<typeof useLocale>['t']
     recent_fallback_runs: t('hermesChannels.bundle.warning.recent_fallback_runs')
   };
   return labels[warning] || warning;
+}
+
+function WorkflowContextFact({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="min-w-0 rounded-lg border border-border bg-background/60 p-3">
+      <p className="text-xs text-text-secondary">{label}</p>
+      <p className="mt-1 break-words text-sm font-medium text-text-primary">{value}</p>
+    </div>
+  );
 }
 
 function preflightReasonText(reason: string, t: ReturnType<typeof useLocale>['t']) {
