@@ -4,6 +4,7 @@ const apiBase = (process.env.API_BASE || 'http://127.0.0.1:3001').replace(/\/$/,
 const username = process.env.SMOKE_USERNAME || 'admin';
 const password = process.env.SMOKE_PASSWORD;
 const requireActiveRelease = process.env.REQUIRE_ACTIVE_RELEASE === 'true';
+const runClosedLoopSmoke = process.env.CLOSED_LOOP_SMOKE === 'true';
 
 if (!password) {
   throw new Error('SMOKE_PASSWORD is required');
@@ -65,6 +66,26 @@ async function request(path, token) {
   return { response, body };
 }
 
+async function postJson(path, token, payload = {}) {
+  const response = await fetch(`${apiBase}${path}`, {
+    method: 'POST',
+    headers: {
+      accept: 'application/json',
+      'content-type': 'application/json',
+      ...(token ? { authorization: `Bearer ${token}` } : {})
+    },
+    body: JSON.stringify(payload)
+  });
+  const text = await response.text();
+  let body;
+  try {
+    body = text ? JSON.parse(text) : null;
+  } catch {
+    body = text;
+  }
+  return { response, body };
+}
+
 async function login() {
   const response = await fetch(`${apiBase}/api/auth/login`, {
     method: 'POST',
@@ -112,6 +133,41 @@ for (const check of checks) {
     results.push({
       name: check.name,
       path: check.path,
+      ok: false,
+      status: 0,
+      durationMs: Date.now() - started,
+      size: 0,
+      error: error instanceof Error ? error.message : String(error)
+    });
+  }
+}
+
+if (runClosedLoopSmoke) {
+  const started = Date.now();
+  try {
+    const { response, body } = await postJson('/api/ops-readiness/closed-loop-smoke', token, { retainEvidence: false });
+    const data = body?.data || {};
+    const ok = response.ok
+      && body?.success !== false
+      && data.success === true
+      && data.finalCaseStatus === 'reviewing'
+      && data.verificationPassed === true
+      && data.cleanedUp === true
+      && Array.isArray(data.eventTypes)
+      && data.eventTypes.includes('remediation_verification_passed');
+    results.push({
+      name: 'closed-loop-smoke',
+      path: '/api/ops-readiness/closed-loop-smoke',
+      ok,
+      status: response.status,
+      durationMs: Date.now() - started,
+      size: getPayloadSize(body),
+      error: ok ? undefined : body?.message || body?.error || body
+    });
+  } catch (error) {
+    results.push({
+      name: 'closed-loop-smoke',
+      path: '/api/ops-readiness/closed-loop-smoke',
       ok: false,
       status: 0,
       durationMs: Date.now() - started,

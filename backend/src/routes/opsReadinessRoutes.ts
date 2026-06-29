@@ -11,6 +11,7 @@ import {
   listKiteBackupDrills,
   listKiteBackups
 } from '../services/kiteBackupService';
+import { runClosedLoopSmoke } from '../services/closedLoopSmokeService';
 
 interface AuthenticatedRequest extends Request {
   user?: {
@@ -57,6 +58,21 @@ router.post('/container-drills', requireRole('admin'), async (req: Authenticated
     res.status(400).json({
       success: false,
       error: error instanceof Error ? error.message : 'Failed to create container rebuild drill'
+    });
+  }
+});
+
+router.post('/closed-loop-smoke', requireRole('admin'), async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const result = await runClosedLoopSmoke({
+      createdBy: req.user?.id || null,
+      retainEvidence: req.body?.retainEvidence === true
+    });
+    res.status(result.success ? 201 : 500).json({ success: result.success, data: result });
+  } catch (error) {
+    res.status(400).json({
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to run closed-loop smoke'
     });
   }
 });
