@@ -136,6 +136,17 @@ export default function Tasks() {
   const [taskLogs, setTaskLogs] = useState<any[]>([]);
   const [activeTab, setActiveTab] = useState<'logs' | 'nodes' | 'related_reports'>('logs');
   const [showReportDetail, setShowReportDetail] = useState<any>(null);
+  const handoffCaseId = searchParams.get('caseId');
+  const handoffCorrelationId = searchParams.get('correlationId');
+  const handoffAssetName = searchParams.get('assetName');
+  const handoffAssetType = searchParams.get('assetType');
+  const handoffServerIds = (searchParams.get('serverIds') || '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+  const hasHandoffContext = Boolean(
+    handoffCaseId || handoffCorrelationId || handoffAssetName || handoffAssetType || handoffServerIds.length > 0
+  );
 
   const { data: tasks, refetch: refetchTasks } = useQuery({
     queryKey: ['tasks'],
@@ -214,7 +225,7 @@ export default function Tasks() {
   });
 
   const skillNameById = new Map((skills || []).map((skill) => [skill.id, skill.name]));
-  const selectedCorrelationId = selectedTask ? readString(selectedTask.context?.correlationId) : null;
+  const selectedCorrelationId = selectedTask ? readString(selectedTask.context?.correlationId) || handoffCorrelationId : handoffCorrelationId;
   const { data: selectedCaseTrace } = useQuery({
     queryKey: ['task-case-trace', selectedCorrelationId],
     enabled: Boolean(selectedCorrelationId),
@@ -413,9 +424,10 @@ export default function Tasks() {
   }, [searchParams, tasks, selectedTask?.id, selectedTask?.workflow_id]);
 
   const setTaskSearchParams = (task: Task) => {
-    const next: Record<string, string> = { taskId: task.id };
+    const next = new URLSearchParams(searchParams);
+    next.set('taskId', task.id);
     const workflowId = searchParams.get('workflowId');
-    if (workflowId) next.workflowId = workflowId;
+    if (workflowId) next.set('workflowId', workflowId);
     setSearchParams(next);
   };
 
@@ -519,6 +531,43 @@ export default function Tasks() {
             <h1 className="text-2xl font-bold text-text-primary mb-2">{t('tasks.title')}</h1>
             <p className="text-text-secondary">{t('tasks.subtitle')}</p>
           </div>
+
+          {hasHandoffContext && (
+            <section className="mb-4 rounded-xl border border-primary/20 bg-primary/5 p-4">
+              <p className="text-sm font-semibold text-text-primary">{t('tasks.handoff.title')}</p>
+              <p className="mt-1 text-xs text-text-secondary">{t('tasks.handoff.subtitle')}</p>
+              <div className="mt-3 space-y-2">
+                <TaskContextFact label={t('tasks.handoff.case')} value={handoffCaseId || '-'} />
+                <TaskContextFact label={t('tasks.handoff.correlation')} value={handoffCorrelationId || '-'} />
+                <TaskContextFact label={t('tasks.handoff.asset')} value={handoffAssetName || '-'} />
+                <TaskContextFact label={t('tasks.handoff.assetType')} value={handoffAssetType || '-'} />
+                <TaskContextFact
+                  label={t('tasks.handoff.relatedServers')}
+                  value={handoffServerIds.length > 0 ? handoffServerIds.join(', ') : '-'}
+                />
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {handoffCaseId && (
+                  <button
+                    onClick={() => navigate(`/operation-cases?caseId=${encodeURIComponent(handoffCaseId)}`)}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-background px-2.5 py-1.5 text-xs text-text-primary hover:bg-surface-hover"
+                  >
+                    <ClipboardList className="w-3.5 h-3.5" />
+                    {t('tasks.handoff.openCase')}
+                  </button>
+                )}
+                {handoffCorrelationId && (
+                  <button
+                    onClick={() => navigate(`/hermes-dashboard?correlationId=${encodeURIComponent(handoffCorrelationId)}`)}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-background px-2.5 py-1.5 text-xs text-text-primary hover:bg-surface-hover"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" />
+                    {t('tasks.handoff.openTrace')}
+                  </button>
+                )}
+              </div>
+            </section>
+          )}
 
           <div className="flex-1 overflow-y-auto space-y-3 scrollbar-thin">
             {visibleTasks?.map((task) => (
@@ -1851,6 +1900,15 @@ function TaskStatusBadge({ status, t }: { status: string; t: (key: MessageKey) =
     )}>
       {t(taskStatusKeys[status] || 'common.unknown')}
     </span>
+  );
+}
+
+function TaskContextFact({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="min-w-0 rounded-lg border border-border bg-background/60 px-3 py-2">
+      <p className="text-[11px] text-text-secondary">{label}</p>
+      <p className="mt-1 break-words text-xs font-medium text-text-primary">{value}</p>
+    </div>
   );
 }
 

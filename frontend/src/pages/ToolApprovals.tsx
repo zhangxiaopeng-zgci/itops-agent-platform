@@ -105,6 +105,17 @@ export default function ToolApprovals() {
   const [status, setStatus] = useState('pending');
   const [selectedApproval, setSelectedApproval] = useState<ToolApproval | null>(null);
   const [comment, setComment] = useState('');
+  const handoffCaseId = searchParams.get('caseId');
+  const handoffCorrelationId = searchParams.get('correlationId');
+  const handoffAssetName = searchParams.get('assetName');
+  const handoffAssetType = searchParams.get('assetType');
+  const handoffServerIds = (searchParams.get('serverIds') || '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+  const hasHandoffContext = Boolean(
+    handoffCaseId || handoffCorrelationId || handoffAssetName || handoffAssetType || handoffServerIds.length > 0
+  );
 
   const { data, isLoading, refetch } = useQuery({
     queryKey: ['tool-approvals', status],
@@ -216,6 +227,47 @@ export default function ToolApprovals() {
             {t('common.refresh')}
           </button>
         </div>
+
+        {hasHandoffContext && (
+          <section className="rounded-xl border border-primary/20 bg-primary/5 p-4">
+            <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-text-primary">{t('toolApprovals.handoff.title')}</p>
+                <p className="mt-1 text-xs text-text-secondary">{t('toolApprovals.handoff.subtitle')}</p>
+                <div className="mt-3 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-3">
+                  <ContextFact label={t('toolApprovals.handoff.case')} value={handoffCaseId || '-'} />
+                  <ContextFact label={t('toolApprovals.handoff.correlation')} value={handoffCorrelationId || '-'} />
+                  <ContextFact label={t('toolApprovals.handoff.asset')} value={handoffAssetName || '-'} />
+                  <ContextFact label={t('toolApprovals.handoff.assetType')} value={handoffAssetType || '-'} />
+                  <ContextFact
+                    label={t('toolApprovals.handoff.relatedServers')}
+                    value={handoffServerIds.length > 0 ? handoffServerIds.join(', ') : '-'}
+                  />
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-2 xl:justify-end">
+                {handoffCaseId && (
+                  <button
+                    onClick={() => navigate(`/operation-cases?caseId=${encodeURIComponent(handoffCaseId)}`)}
+                    className="inline-flex items-center gap-2 rounded-lg border border-border bg-background px-3 py-2 text-sm text-text-primary hover:bg-surface-hover"
+                  >
+                    <ClipboardList className="w-4 h-4" />
+                    {t('toolApprovals.handoff.openCase')}
+                  </button>
+                )}
+                {handoffCorrelationId && (
+                  <button
+                    onClick={() => navigate(`/hermes-dashboard?correlationId=${encodeURIComponent(handoffCorrelationId)}`)}
+                    className="inline-flex items-center gap-2 rounded-lg border border-border bg-background px-3 py-2 text-sm text-text-primary hover:bg-surface-hover"
+                  >
+                    <ExternalLink className="w-4 h-4" />
+                    {t('toolApprovals.handoff.openTrace')}
+                  </button>
+                )}
+              </div>
+            </div>
+          </section>
+        )}
 
         <div className="flex flex-wrap gap-2">
           {['pending', 'approved', 'executed', 'failed', 'rejected', ''].map((item) => (
@@ -518,6 +570,15 @@ function DetailRow({ label, value }: { label: string; value: string }) {
     <div>
       <p className="text-xs text-text-secondary">{label}</p>
       <p className="text-sm text-text-primary break-words">{value}</p>
+    </div>
+  );
+}
+
+function ContextFact({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="min-w-0 rounded-lg border border-border bg-background/50 p-3">
+      <p className="text-xs text-text-secondary">{label}</p>
+      <p className="mt-1 break-words text-sm font-medium text-text-primary">{value}</p>
     </div>
   );
 }
