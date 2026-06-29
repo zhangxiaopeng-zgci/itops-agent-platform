@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import api from '../lib/api';
 import { useLocale, type MessageKey } from '../contexts/LocaleContext';
 import { 
@@ -11,17 +12,30 @@ import {
   AlertTriangle,
   Eye,
   RotateCcw,
-  Shield
+  Shield,
+  ClipboardList,
+  ExternalLink
 } from 'lucide-react';
 
 export default function RemediationWorkbench() {
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { locale, t } = useLocale();
   const [page, setPage] = useState(1);
   const [selectedAuditId, setSelectedAuditId] = useState<string | null>(null);
   const [showDetailModal, setShowDetailModal] = useState(false);
   const limit = 20;
   const browserLocale = locale === 'zh-CN' ? 'zh-CN' : 'en-US';
+  const caseId = searchParams.get('caseId');
+  const correlationId = searchParams.get('correlationId');
+  const assetName = searchParams.get('assetName');
+  const assetType = searchParams.get('assetType');
+  const serverIds = (searchParams.get('serverIds') || '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+  const hasHandoffContext = Boolean(caseId || correlationId || assetName || assetType || serverIds.length > 0);
 
   const { data, isLoading } = useQuery({
     queryKey: ['remediation-audits', page],
@@ -182,6 +196,44 @@ export default function RemediationWorkbench() {
             {t('common.refresh')}
           </button>
         </div>
+
+        {hasHandoffContext && (
+          <div className="mb-6 rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-4">
+            <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-white">{t('remediationWorkbench.handoff.title')}</p>
+                <p className="mt-1 text-xs text-slate-300">{t('remediationWorkbench.handoff.subtitle')}</p>
+                <div className="mt-3 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-3">
+                  <HandoffFact label={t('remediationWorkbench.handoff.case')} value={caseId || '-'} />
+                  <HandoffFact label={t('remediationWorkbench.handoff.correlation')} value={correlationId || '-'} />
+                  <HandoffFact label={t('remediationWorkbench.handoff.asset')} value={assetName || '-'} />
+                  <HandoffFact label={t('remediationWorkbench.handoff.assetType')} value={assetType || '-'} />
+                  <HandoffFact label={t('remediationWorkbench.handoff.relatedServers')} value={serverIds.length > 0 ? serverIds.join(', ') : '-'} />
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-2 xl:justify-end">
+                {caseId && (
+                  <button
+                    onClick={() => navigate(`/operation-cases?caseId=${encodeURIComponent(caseId)}`)}
+                    className="inline-flex items-center gap-2 rounded-lg border border-slate-600 bg-slate-900/40 px-3 py-2 text-sm text-white hover:bg-slate-800"
+                  >
+                    <ClipboardList className="w-4 h-4" />
+                    {t('remediationWorkbench.handoff.openCase')}
+                  </button>
+                )}
+                {correlationId && (
+                  <button
+                    onClick={() => navigate(`/hermes-dashboard?correlationId=${encodeURIComponent(correlationId)}`)}
+                    className="inline-flex items-center gap-2 rounded-lg border border-slate-600 bg-slate-900/40 px-3 py-2 text-sm text-white hover:bg-slate-800"
+                  >
+                    <ExternalLink className="w-4 h-4" />
+                    {t('remediationWorkbench.handoff.openTrace')}
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
 
         {pendingAudits.length > 0 && (
           <div className="mb-8">
@@ -467,6 +519,15 @@ export default function RemediationWorkbench() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function HandoffFact({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="min-w-0 rounded-lg border border-slate-700/70 bg-slate-900/40 p-3">
+      <p className="text-xs text-slate-400">{label}</p>
+      <p className="mt-1 break-words text-sm font-medium text-white">{value}</p>
     </div>
   );
 }
