@@ -209,6 +209,39 @@ if (runClosedLoopSmoke) {
       error: error instanceof Error ? error.message : String(error)
     });
   }
+
+  const readinessStarted = Date.now();
+  try {
+    const { response, body } = await request('/api/ops-readiness/summary', token);
+    const data = body?.data || {};
+    const closedLoopCheck = Array.isArray(data.checks)
+      ? data.checks.find((item) => item?.key === 'closed_loop_smoke_recorded')
+      : null;
+    const ok = response.ok
+      && body?.success !== false
+      && data.operations?.lastClosedLoopSmokeStatus === 'passed'
+      && data.operations?.lastClosedLoopSmokeVerificationStatus === 'closed_loop_ready'
+      && closedLoopCheck?.status === 'ready';
+    results.push({
+      name: 'closed-loop-smoke-readiness',
+      path: '/api/ops-readiness/summary',
+      ok,
+      status: response.status,
+      durationMs: Date.now() - readinessStarted,
+      size: getPayloadSize(body),
+      error: ok ? undefined : body?.message || body?.error || body
+    });
+  } catch (error) {
+    results.push({
+      name: 'closed-loop-smoke-readiness',
+      path: '/api/ops-readiness/summary',
+      ok: false,
+      status: 0,
+      durationMs: Date.now() - readinessStarted,
+      size: 0,
+      error: error instanceof Error ? error.message : String(error)
+    });
+  }
 }
 
 const readiness = results.find((item) => item.name === 'ops-readiness');
