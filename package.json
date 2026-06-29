@@ -19,6 +19,7 @@
     "docker:status": "docker-compose ps",
     "docker:clean": "docker system prune -f",
     "smoke:api": "node scripts/smoke-api.mjs",
+    "acceptance:production": "node scripts/run-production-acceptance.mjs",
     "cleanup:e2e": "node scripts/cleanup-pilot-test-data.mjs",
     "cleanup:e2e:execute": "node scripts/cleanup-pilot-test-data.mjs --execute",
     "test:e2e": "playwright test",
