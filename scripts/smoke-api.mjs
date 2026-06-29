@@ -27,6 +27,7 @@ const checks = [
   { name: 'users', path: '/api/users', auth: true },
   { name: 'settings', path: '/api/settings', auth: true },
   { name: 'ops-readiness', path: '/api/ops-readiness/summary', auth: true },
+  { name: 'closed-loop-smoke-drills', path: '/api/ops-readiness/closed-loop-smoke-drills?limit=5', auth: true },
   { name: 'kite-backups', path: '/api/ops-readiness/kite-backups?limit=5', auth: true },
   { name: 'kite-restore-drills', path: '/api/ops-readiness/kite-restore-drills?limit=5', auth: true },
   { name: 'hermes-channels', path: '/api/hermes-channels', auth: true },
@@ -144,9 +145,11 @@ for (const check of checks) {
 
 if (runClosedLoopSmoke) {
   const started = Date.now();
+  let smokeCorrelationId = null;
   try {
     const { response, body } = await postJson('/api/ops-readiness/closed-loop-smoke', token, { retainEvidence: false });
     const data = body?.data || {};
+    smokeCorrelationId = data.correlationId || null;
     const ok = response.ok
       && body?.success !== false
       && data.success === true
@@ -171,6 +174,37 @@ if (runClosedLoopSmoke) {
       ok: false,
       status: 0,
       durationMs: Date.now() - started,
+      size: 0,
+      error: error instanceof Error ? error.message : String(error)
+    });
+  }
+
+  const drillStarted = Date.now();
+  try {
+    const { response, body } = await request('/api/ops-readiness/closed-loop-smoke-drills?limit=5', token);
+    const latest = Array.isArray(body?.data) ? body.data[0] : null;
+    const ok = response.ok
+      && body?.success !== false
+      && latest?.status === 'passed'
+      && latest?.verification_passed === true
+      && latest?.cleaned_up === true
+      && (!smokeCorrelationId || latest?.correlation_id === smokeCorrelationId);
+    results.push({
+      name: 'closed-loop-smoke-drill-record',
+      path: '/api/ops-readiness/closed-loop-smoke-drills?limit=5',
+      ok,
+      status: response.status,
+      durationMs: Date.now() - drillStarted,
+      size: getPayloadSize(body),
+      error: ok ? undefined : body?.message || body?.error || body
+    });
+  } catch (error) {
+    results.push({
+      name: 'closed-loop-smoke-drill-record',
+      path: '/api/ops-readiness/closed-loop-smoke-drills?limit=5',
+      ok: false,
+      status: 0,
+      durationMs: Date.now() - drillStarted,
       size: 0,
       error: error instanceof Error ? error.message : String(error)
     });
