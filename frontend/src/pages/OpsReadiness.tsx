@@ -1,5 +1,6 @@
+import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Activity, Archive, Boxes, CheckCircle2, Database, PlayCircle, RefreshCw, RotateCcw, ServerCog, ShieldCheck, XCircle } from 'lucide-react';
+import { Activity, Archive, Boxes, CheckCircle2, Database, GitPullRequest, PlayCircle, RefreshCw, RotateCcw, ServerCog, ShieldCheck, XCircle } from 'lucide-react';
 import clsx from 'clsx';
 import api from '../lib/api';
 import { useLocale, type MessageKey } from '../contexts/LocaleContext';
@@ -144,6 +145,23 @@ interface KiteRestoreDrill {
   completed_at?: string | null;
 }
 
+interface ClosedLoopSmokeResult {
+  success: boolean;
+  correlationId: string;
+  caseId: string;
+  taskId: string;
+  finalCaseStatus: string | null;
+  verificationPassed: boolean;
+  eventTypes: string[];
+  traceCounts: {
+    operationCases: number;
+    tasks: number;
+    approvals: number;
+  };
+  cleanedUp: boolean;
+  error?: string;
+}
+
 const panelClass = 'rounded-xl border border-border bg-surface/95 shadow-sm';
 const categories: CheckCategory[] = ['deployment', 'runtime', 'data', 'release', 'security'];
 
@@ -155,6 +173,8 @@ export default function OpsReadiness() {
   const canRunRestoreDrill = user?.role === 'admin';
   const canRunContainerDrill = user?.role === 'admin';
   const canManageKiteBackups = user?.role === 'admin';
+  const canRunClosedLoopSmoke = user?.role === 'admin';
+  const [closedLoopSmokeResult, setClosedLoopSmokeResult] = useState<ClosedLoopSmokeResult | null>(null);
   const { data, isLoading, refetch, isFetching } = useQuery({
     queryKey: ['ops-readiness-summary'],
     queryFn: async () => {
@@ -278,6 +298,22 @@ export default function OpsReadiness() {
       toast.error(error instanceof Error ? error.message : t('opsReadiness.kite.drillFailed'));
     }
   });
+  const closedLoopSmokeMutation = useMutation({
+    mutationFn: async () => {
+      const res = await api.post('/api/ops-readiness/closed-loop-smoke', {
+        retainEvidence: false
+      });
+      return res.data.data as ClosedLoopSmokeResult;
+    },
+    onSuccess: (result) => {
+      setClosedLoopSmokeResult(result);
+      toast.success(result.success ? t('opsReadiness.closedLoopSmoke.completed') : t('opsReadiness.closedLoopSmoke.failed'));
+      queryClient.invalidateQueries({ queryKey: ['ops-readiness-summary'] });
+    },
+    onError: (error: unknown) => {
+      toast.error(error instanceof Error ? error.message : t('opsReadiness.closedLoopSmoke.failed'));
+    }
+  });
 
   return (
     <div className="space-y-5">
@@ -331,6 +367,13 @@ export default function OpsReadiness() {
             ))}
           </section>
 
+          <ClosedLoopSmokePanel
+            result={closedLoopSmokeResult}
+            canRun={canRunClosedLoopSmoke}
+            isRunning={closedLoopSmokeMutation.isPending}
+            onRun={() => closedLoopSmokeMutation.mutate()}
+          />
+
           <section className="grid grid-cols-1 xl:grid-cols-5 gap-4">
             <WorkersPanel workers={data.hermesWorkers} />
             <DataPanel
@@ -363,6 +406,77 @@ export default function OpsReadiness() {
         </>
       )}
     </div>
+  );
+}
+
+function ClosedLoopSmokePanel({
+  result,
+  canRun,
+  isRunning,
+  onRun
+}: {
+  result: ClosedLoopSmokeResult | null;
+  canRun: boolean;
+  isRunning: boolean;
+  onRun: () => void;
+}) {
+  const { t } = useLocale();
+  const status: ReadinessStatus = result
+    ? result.success && result.verificationPassed && result.finalCaseStatus === 'reviewing'
+      ? 'ready'
+      : 'blocked'
+    : 'warning';
+  return (
+    <section className={`${panelClass} p-4`}>
+      <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <GitPullRequest className="w-4 h-4 text-primary" />
+            <h2 className="text-sm font-semibold text-text-primary">{t('opsReadiness.closedLoopSmoke.title')}</h2>
+            {result && <StatusPill status={status} />}
+          </div>
+          <p className="text-sm text-text-secondary mt-2">{t('opsReadiness.closedLoopSmoke.desc')}</p>
+        </div>
+        {canRun && (
+          <button
+            disabled={isRunning}
+            onClick={onRun}
+            className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-primary text-primary-foreground text-xs hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
+          >
+            <PlayCircle className="w-4 h-4" />
+            {isRunning ? t('opsReadiness.closedLoopSmoke.running') : t('opsReadiness.closedLoopSmoke.run')}
+          </button>
+        )}
+      </div>
+      {result ? (
+        <div className="mt-4 grid grid-cols-2 lg:grid-cols-6 gap-2">
+          <Metric label={t('opsReadiness.closedLoopSmoke.caseStatus')} value={result.finalCaseStatus || '-'} />
+          <Metric label={t('opsReadiness.closedLoopSmoke.verification')} value={result.verificationPassed ? t('common.yes') : t('common.no')} />
+          <Metric label={t('opsReadiness.closedLoopSmoke.cleanedUp')} value={result.cleanedUp ? t('common.yes') : t('common.no')} />
+          <Metric label={t('opsReadiness.closedLoopSmoke.caseTrace')} value={String(result.traceCounts.operationCases)} />
+          <Metric label={t('opsReadiness.closedLoopSmoke.taskTrace')} value={String(result.traceCounts.tasks)} />
+          <Metric label={t('opsReadiness.closedLoopSmoke.approvalTrace')} value={String(result.traceCounts.approvals)} />
+        </div>
+      ) : (
+        <div className="mt-4 rounded-lg bg-background border border-border px-3 py-3 text-sm text-text-tertiary">
+          {t('opsReadiness.closedLoopSmoke.empty')}
+        </div>
+      )}
+      {result && (
+        <div className="mt-3 rounded-lg bg-background border border-border px-3 py-2">
+          <div className="text-xs text-text-tertiary">{t('opsReadiness.closedLoopSmoke.correlation')}</div>
+          <div className="text-sm text-text-primary font-mono truncate mt-1">{result.correlationId}</div>
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {result.eventTypes.map((eventType) => (
+              <span key={eventType} className="rounded-md border border-border bg-surface px-2 py-0.5 text-xs text-text-secondary">
+                {eventType}
+              </span>
+            ))}
+          </div>
+          {result.error && <div className="mt-2 text-xs text-status-failed">{result.error}</div>}
+        </div>
+      )}
+    </section>
   );
 }
 
