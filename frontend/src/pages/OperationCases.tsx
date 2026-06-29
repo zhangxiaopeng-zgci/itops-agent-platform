@@ -257,6 +257,15 @@ function buildHermesPath(operationCase: OperationCase, mode: 'diagnose' | 'remed
   return `/hermes?${params.toString()}`;
 }
 
+function buildExecutionPath(operationCase: OperationCase) {
+  const params = new URLSearchParams();
+  if (operationCase.asset_id) params.set('assetId', operationCase.asset_id);
+  if (operationCase.asset_type) params.set('assetType', operationCase.asset_type);
+  if (operationCase.asset_name) params.set('assetName', operationCase.asset_name);
+  if (operationCase.server_ids.length > 0) params.set('serverIds', operationCase.server_ids.join(','));
+  return params.toString() ? `/execution-center?${params.toString()}` : '/execution-center';
+}
+
 function buildNextAction(
   operationCase: OperationCase,
   trace: CorrelationTrace | undefined,
@@ -427,12 +436,10 @@ export default function OperationCases() {
   const currentStatusIndex = selectedCase ? statusOrder.indexOf(selectedCase.status) : -1;
   const nextAction = selectedCase ? buildNextAction(selectedCase, trace, t) : null;
   const closureSteps = [
-    { labelKey: 'operationCases.flow.detect', helperKey: 'operationCases.flow.detectHelper', path: '/diagnosis-center', icon: AlertTriangle },
+    { labelKey: 'operationCases.flow.resource', helperKey: 'operationCases.flow.resourceHelper', path: '/assets-center', icon: TerminalSquare },
+    { labelKey: 'operationCases.flow.diagnosis', helperKey: 'operationCases.flow.diagnosisHelper', path: '/diagnosis-center', icon: AlertTriangle },
     { labelKey: 'operationCases.flow.case', helperKey: 'operationCases.flow.caseHelper', path: '/operation-cases', icon: ClipboardList },
-    { labelKey: 'operationCases.flow.hermes', helperKey: 'operationCases.flow.hermesHelper', path: selectedCase ? buildHermesPath(selectedCase, 'diagnose') : '/hermes?mode=diagnose', icon: Bot },
-    { labelKey: 'operationCases.flow.execute', helperKey: 'operationCases.flow.executeHelper', path: '/execution-center', icon: ShieldAlert },
-    { labelKey: 'operationCases.flow.verify', helperKey: 'operationCases.flow.verifyHelper', path: '/tasks', icon: CheckCircle2 },
-    { labelKey: 'operationCases.flow.evolve', helperKey: 'operationCases.flow.evolveHelper', path: '/evolution-governance', icon: Lightbulb },
+    { labelKey: 'operationCases.flow.execution', helperKey: 'operationCases.flow.executionHelper', path: selectedCase ? buildExecutionPath(selectedCase) : '/execution-center', icon: ShieldAlert },
   ];
 
   const openHermes = () => {
@@ -589,6 +596,13 @@ export default function OperationCases() {
                   >
                     <Bot className="w-4 h-4" />
                     {t('operationCases.action.openHermes')}
+                  </button>
+                  <button
+                    onClick={() => navigate(buildExecutionPath(selectedCase))}
+                    className="inline-flex items-center gap-2 rounded-lg border border-border bg-background px-3 py-2 text-sm font-medium text-text-primary hover:bg-surface-hover"
+                  >
+                    <ShieldAlert className="w-4 h-4" />
+                    {t('operationCases.action.openExecution')}
                   </button>
                   {selectedCase.correlation_id && (
                     <button
