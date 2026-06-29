@@ -84,6 +84,7 @@ const navigationGroups: Array<{
     labelKey: 'nav.platformControl',
     icon: Cog,
     items: [
+      { labelKey: 'nav.platformOverview', href: '/platform-control', icon: Gauge },
       { labelKey: 'nav.hermesConsole', href: '/hermes-console', icon: Brain },
       { labelKey: 'nav.evolutionGovernance', href: '/evolution-governance', icon: Sparkles },
       { labelKey: 'nav.platformOperations', href: '/platform-operations', icon: Gauge },

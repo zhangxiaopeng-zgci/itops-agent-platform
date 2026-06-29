@@ -14,6 +14,7 @@ import DiagnosisCenter from './pages/DiagnosisCenter';
 import OperationCases from './pages/OperationCases';
 import ExecutionCenter from './pages/ExecutionCenter';
 import AssetsCenter from './pages/AssetsCenter';
+import PlatformControl from './pages/PlatformControl';
 import HermesConsole from './pages/HermesConsole';
 import EvolutionGovernance from './pages/EvolutionGovernance';
 import PlatformOperations from './pages/PlatformOperations';
@@ -98,6 +99,7 @@ function App() {
               <Route path="operation-cases" element={<ProtectedRoute><OperationCases /></ProtectedRoute>} />
               <Route path="execution-center" element={<ProtectedRoute><ExecutionCenter /></ProtectedRoute>} />
               <Route path="assets-center" element={<ProtectedRoute><AssetsCenter /></ProtectedRoute>} />
+              <Route path="platform-control" element={<ProtectedRoute><PlatformControl /></ProtectedRoute>} />
               <Route path="hermes-console" element={<ProtectedRoute><HermesConsole /></ProtectedRoute>} />
               <Route path="evolution-governance" element={<ProtectedRoute><EvolutionGovernance /></ProtectedRoute>} />
               <Route path="platform-operations" element={<ProtectedRoute><PlatformOperations /></ProtectedRoute>} />
