@@ -24,7 +24,6 @@ import {
   LogOut,
   User as UserIcon,
   Terminal,
-  Monitor,
   MonitorPlay,
   Wrench,
   ListChecks,
@@ -75,7 +74,6 @@ const navigationGroups: Array<{
     icon: ServerCog,
     items: [
       { labelKey: 'nav.assetsCenter', href: '/assets-center', icon: Cable },
-      { labelKey: 'nav.kubernetesConsole', href: '/kubernetes-console', icon: Monitor },
       { labelKey: 'nav.diagnosisCenter', href: '/diagnosis-center', icon: AlertTriangle },
       { labelKey: 'nav.operationCases', href: '/operation-cases', icon: ListChecks },
       { labelKey: 'nav.executionCenter', href: '/execution-center', icon: Workflow },

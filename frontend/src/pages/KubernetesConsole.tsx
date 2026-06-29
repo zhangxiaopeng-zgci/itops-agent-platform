@@ -77,6 +77,7 @@ export default function KubernetesConsole() {
   const [kiteFrameNonce, setKiteFrameNonce] = useState(0);
   const [embeddedClusterName, setEmbeddedClusterName] = useState(requestedClusterName);
   const autoSessionAttemptedRef = useRef(false);
+  const previewRef = useRef<HTMLDivElement>(null);
 
   const { data: bridgeStatus, isLoading } = useQuery({
     queryKey: ['kite-bridge-status'],
@@ -156,7 +157,11 @@ export default function KubernetesConsole() {
       writeKiteClusterSelection(nextClusterName);
       setEmbeddedClusterName(nextClusterName);
       setSearchParams({ cluster: nextClusterName });
+      toast.success(t('kubernetesConsole.bridge.embeddedOpened', { name: nextClusterName }));
     }
+    window.setTimeout(() => {
+      previewRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 80);
 
     if (!canCreateKiteSession || !bridgeStatus?.kite.sessionBridgeConfigured) {
       setKiteFrameNonce(Date.now());
@@ -270,44 +275,64 @@ export default function KubernetesConsole() {
               )}
             </div>
             <div className="mt-3 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-              {(bridgeStatus?.clusters.items || []).map((cluster) => (
-                <div key={cluster.id} className="rounded-lg border border-border bg-surface p-3">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="text-sm font-semibold text-text-primary truncate">{cluster.name}</p>
-                      <p className="mt-1 text-xs text-text-secondary">{cluster.node_count} nodes / {cluster.pod_count} pods</p>
+              {(bridgeStatus?.clusters.items || []).map((cluster) => {
+                const isEmbeddedCluster = cluster.name === embeddedClusterName;
+
+                return (
+                  <div
+                    key={cluster.id}
+                    className={`rounded-lg border bg-surface p-3 transition-colors ${
+                      isEmbeddedCluster ? 'border-primary/70 bg-primary/5' : 'border-border'
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="text-sm font-semibold text-text-primary truncate">{cluster.name}</p>
+                          {isEmbeddedCluster && (
+                            <span className="rounded-md border border-primary/30 bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary">
+                              {t('kubernetesConsole.bridge.currentEmbedded')}
+                            </span>
+                          )}
+                        </div>
+                        <p className="mt-1 text-xs text-text-secondary">{cluster.node_count} nodes / {cluster.pod_count} pods</p>
+                      </div>
+                      {cluster.id === bridgeStatus?.bridge.syncedClusterId ? (
+                        <CheckCircle2 className="w-4 h-4 text-status-success flex-shrink-0" />
+                      ) : (
+                        <XCircle className="w-4 h-4 text-text-tertiary flex-shrink-0" />
+                      )}
                     </div>
-                    {cluster.id === bridgeStatus?.bridge.syncedClusterId ? (
-                      <CheckCircle2 className="w-4 h-4 text-status-success flex-shrink-0" />
-                    ) : (
-                      <XCircle className="w-4 h-4 text-text-tertiary flex-shrink-0" />
+                    <p className="mt-2 text-xs text-text-tertiary">
+                      {cluster.auth_type} · {cluster.has_kubeconfig ? t('kubernetesConsole.bridge.hasKubeconfig') : t('kubernetesConsole.bridge.noKubeconfig')}
+                    </p>
+                    {canSyncKite && cluster.enabled === 1 && cluster.auth_type === 'kubeconfig' && cluster.has_kubeconfig === 1 && (
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <button
+                          onClick={() => syncMutation.mutate(cluster.id)}
+                          disabled={syncMutation.isPending}
+                          className="inline-flex items-center gap-2 rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-text-primary hover:bg-background disabled:opacity-50"
+                        >
+                          <RefreshCw className="w-3 h-3" />
+                          {t('kubernetesConsole.bridge.syncThis')}
+                        </button>
+                        <button
+                          onClick={() => showEmbeddedKite(cluster.name)}
+                          disabled={sessionMutation.isPending}
+                          className={`inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-xs font-medium disabled:opacity-50 ${
+                            isEmbeddedCluster
+                              ? 'border-status-success/30 bg-status-success/10 text-status-success hover:bg-status-success/15'
+                              : 'border-primary/30 bg-primary/10 text-primary hover:bg-primary/15'
+                          }`}
+                        >
+                          <Monitor className="w-3 h-3" />
+                          {isEmbeddedCluster ? t('kubernetesConsole.bridge.currentButton') : t('kubernetesConsole.bridge.openThis')}
+                        </button>
+                      </div>
                     )}
                   </div>
-                  <p className="mt-2 text-xs text-text-tertiary">
-                    {cluster.auth_type} · {cluster.has_kubeconfig ? t('kubernetesConsole.bridge.hasKubeconfig') : t('kubernetesConsole.bridge.noKubeconfig')}
-                  </p>
-                  {canSyncKite && cluster.enabled === 1 && cluster.auth_type === 'kubeconfig' && cluster.has_kubeconfig === 1 && (
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      <button
-                        onClick={() => syncMutation.mutate(cluster.id)}
-                        disabled={syncMutation.isPending}
-                        className="inline-flex items-center gap-2 rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-text-primary hover:bg-background disabled:opacity-50"
-                      >
-                        <RefreshCw className="w-3 h-3" />
-                        {t('kubernetesConsole.bridge.syncThis')}
-                      </button>
-                      <button
-                        onClick={() => showEmbeddedKite(cluster.name)}
-                        disabled={sessionMutation.isPending}
-                        className="inline-flex items-center gap-2 rounded-lg border border-primary/30 bg-primary/10 px-3 py-1.5 text-xs font-medium text-primary hover:bg-primary/15 disabled:opacity-50"
-                      >
-                        <Monitor className="w-3 h-3" />
-                        {t('kubernetesConsole.bridge.openThis')}
-                      </button>
-                    </div>
-                  )}
-                </div>
-              ))}
+                );
+              })}
               {!isLoading && (bridgeStatus?.clusters.items || []).length === 0 && (
                 <div className="rounded-lg border border-border bg-surface p-4 text-sm text-text-secondary">
                   {t('kubernetesConsole.bridge.noClusters')}
@@ -335,13 +360,20 @@ export default function KubernetesConsole() {
           />
         </div>
 
-        <div className="bg-surface border border-border rounded-lg overflow-hidden">
+        <div ref={previewRef} className="bg-surface border border-border rounded-lg overflow-hidden scroll-mt-4">
           <div className="p-4 border-b border-border flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
             <div>
               <h2 className="text-base font-semibold text-text-primary">{t('kubernetesConsole.preview.title')}</h2>
               <p className="text-sm text-text-secondary mt-1">{t('kubernetesConsole.preview.desc')}</p>
             </div>
-            <span className="text-xs text-text-secondary break-all">{kiteUrl}</span>
+            <div className="flex flex-col items-start gap-1 md:items-end">
+              {embeddedClusterName && (
+                <span className="rounded-md border border-primary/30 bg-primary/10 px-2 py-1 text-xs font-medium text-primary">
+                  {t('kubernetesConsole.bridge.currentEmbedded')}: {embeddedClusterName}
+                </span>
+              )}
+              <span className="text-xs text-text-secondary break-all">{kiteUrl}</span>
+            </div>
           </div>
           <iframe
             title="Kite Kubernetes Console"
