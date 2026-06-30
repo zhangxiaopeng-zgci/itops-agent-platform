@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate } from 'react-router-dom';
 import {
@@ -24,6 +25,7 @@ import {
 import api from '../lib/api';
 import { safeFormatDistance } from '../lib/date';
 import { useLocale, type MessageKey } from '../contexts/LocaleContext';
+import { useToast } from '../contexts/ToastContext';
 
 interface Agent {
   id: string;
@@ -181,7 +183,9 @@ function toArray<T>(value: unknown, keys: string[] = []): T[] {
 export default function Dashboard() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const toast = useToast();
   const { t } = useLocale();
+  const [lastActiveInspectionRun, setLastActiveInspectionRun] = useState<ActiveInspectionSummary | null>(null);
 
   const { data: agents = [], isLoading: agentsLoading } = useQuery({
     queryKey: ['workbench', 'agents'],
@@ -269,11 +273,20 @@ export default function Dashboard() {
       const res = await api.post('/api/active-inspection/run');
       return res.data.data as ActiveInspectionSummary;
     },
-    onSuccess: () => {
+    onSuccess: (result) => {
+      setLastActiveInspectionRun(result);
+      const linkedCases = result.findings.filter((finding) => finding.caseId).length;
+      toast.success(t('dashboard.activeInspection.toast.completed', {
+        total: result.summary.total,
+        cases: linkedCases,
+      }));
       queryClient.invalidateQueries({ queryKey: ['active-inspection', 'summary'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard', 'ops-overview'] });
       queryClient.invalidateQueries({ queryKey: ['workbench', 'alerts'] });
       queryClient.invalidateQueries({ queryKey: ['operation-cases'] });
+    },
+    onError: (error) => {
+      toast.error(error instanceof Error ? error.message : t('dashboard.activeInspection.toast.failed'));
     },
   });
 
@@ -473,6 +486,7 @@ export default function Dashboard() {
 
         <ActiveInspectionPanel
           data={activeInspection}
+          lastRun={lastActiveInspectionRun}
           loading={activeInspectionLoading}
           running={runActiveInspection.isPending}
           onRun={() => runActiveInspection.mutate()}
@@ -837,11 +851,13 @@ function OperationsWallboardSummary({ overview, loading }: { overview?: OpsOverv
 
 function ActiveInspectionPanel({
   data,
+  lastRun,
   loading,
   running,
   onRun,
 }: {
   data?: ActiveInspectionSummary;
+  lastRun?: ActiveInspectionSummary | null;
   loading: boolean;
   running: boolean;
   onRun: () => void;
@@ -850,6 +866,7 @@ function ActiveInspectionPanel({
   const topFindings = data?.findings.slice(0, 3) || [];
   const actionableCount = (data?.summary.critical || 0) + (data?.summary.high || 0) + (data?.summary.medium || 0);
   const hasFindings = Boolean(data && data.summary.total > 0);
+  const lastRunLinkedCases = lastRun?.findings.filter((finding) => finding.caseId).length || 0;
 
   if (loading || !data) {
     return (
@@ -893,6 +910,17 @@ function ActiveInspectionPanel({
           </Link>
         </div>
       </div>
+
+      {lastRun && (
+        <div className="mt-4 rounded-lg border border-primary/20 bg-primary/5 px-4 py-3 text-sm text-text-secondary">
+          {t('dashboard.activeInspection.lastRun', {
+            total: lastRun.summary.total,
+            cases: lastRunLinkedCases,
+            created: lastRun.summary.casesCreated,
+            updated: lastRun.summary.casesUpdated,
+          })}
+        </div>
+      )}
 
       <div className="mt-5 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
         {data.flow.map((step) => (
