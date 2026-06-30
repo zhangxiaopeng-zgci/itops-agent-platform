@@ -82,7 +82,7 @@ API_BASE=http://127.0.0.1:3001 \
 E2E_BASE_URL=http://10.1.132.58:3000 \
 E2E_API_BASE=http://10.1.132.58:3001 \
 E2E_KITE_BASE=http://10.1.132.58:3002 \
-E2E_CLEANUP_SUDO=true \
+E2E_CLEANUP_DOCKER_SERVICE=backend \
 npm run acceptance:production
 ```
 

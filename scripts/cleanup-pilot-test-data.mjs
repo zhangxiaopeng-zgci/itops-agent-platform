@@ -4,7 +4,7 @@ import path from 'path';
 import { createRequire } from 'module';
 
 const require = createRequire(import.meta.url);
-const Database = require('../backend/node_modules/better-sqlite3');
+const Database = loadBetterSqlite3();
 
 const execute = process.argv.includes('--execute');
 const cwd = process.cwd();
@@ -15,6 +15,7 @@ function resolveDatabasePath() {
   }
 
   const candidates = [
+    '/app/data/app.db',
     path.basename(cwd) === 'backend' ? path.join(cwd, 'data/app.db') : null,
     path.join(cwd, 'data/app.db'),
     path.join(cwd, '../data/app.db'),
@@ -127,6 +128,16 @@ const cleanupTargets = [
     `
   },
   {
+    table: 'remediation_audits',
+    condition: `
+      approved_by IN (
+        SELECT username FROM users
+        WHERE username LIKE 'e2e_%'
+           OR email LIKE 'e2e_%@example.test'
+      )
+    `
+  },
+  {
     table: 'audit_logs',
     condition: `
       resource_id LIKE 'e2e-%'
@@ -141,6 +152,24 @@ const cleanupTargets = [
     `
   }
 ];
+
+function loadBetterSqlite3() {
+  const candidates = [
+    '../backend/node_modules/better-sqlite3',
+    '../node_modules/better-sqlite3',
+    'better-sqlite3'
+  ];
+
+  for (const candidate of candidates) {
+    try {
+      return require(candidate);
+    } catch {
+      // Try the next runtime layout.
+    }
+  }
+
+  throw new Error('Unable to load better-sqlite3 from known runtime locations.');
+}
 
 function tableExists(table) {
   const row = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?").get(table);

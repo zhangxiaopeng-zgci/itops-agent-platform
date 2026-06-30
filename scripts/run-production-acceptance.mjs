@@ -287,22 +287,48 @@ if (token) {
   });
 }
 
-const cleanupCommand = process.env.E2E_CLEANUP_SUDO === 'true'
-  ? {
+function buildCleanupCommand({ execute = false } = {}) {
+  if (process.env.E2E_CLEANUP_DOCKER_SERVICE) {
+    return {
+      command: 'docker',
+      args: [
+        'exec',
+        process.env.E2E_CLEANUP_DOCKER_SERVICE,
+        'node',
+        '/app/scripts/cleanup-pilot-test-data.mjs',
+        ...(execute ? ['--execute'] : [])
+      ]
+    };
+  }
+
+  const args = [
+    process.execPath,
+    'scripts/cleanup-pilot-test-data.mjs',
+    ...(execute ? ['--execute'] : [])
+  ];
+
+  if (process.env.E2E_CLEANUP_SUDO === 'true') {
+    return {
       command: 'sudo',
       args: [
         'env',
         `PATH=${process.env.PATH || ''}`,
         ...(process.env.DATABASE_PATH ? [`DATABASE_PATH=${process.env.DATABASE_PATH}`] : []),
-        process.execPath,
-        'scripts/cleanup-pilot-test-data.mjs'
+        ...args
       ]
-    }
-  : {
-      command: process.execPath,
-      args: ['scripts/cleanup-pilot-test-data.mjs']
     };
+  }
 
+  return {
+    command: args[0],
+    args: args.slice(1)
+  };
+}
+
+const finalCleanupCommand = buildCleanupCommand({ execute: true });
+runCommand('final-e2e-cleanup', finalCleanupCommand.command, finalCleanupCommand.args);
+
+const cleanupCommand = buildCleanupCommand();
 const cleanupStep = runCommand('e2e-cleanup-dry-run', cleanupCommand.command, cleanupCommand.args);
 if (cleanupStep.ok && !cleanupStep.stdoutTail.includes('No pilot E2E test data found')) {
   cleanupStep.ok = false;

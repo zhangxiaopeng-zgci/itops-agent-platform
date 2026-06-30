@@ -65,6 +65,9 @@ COPY --from=builder /app/node_modules ./node_modules
 # Copy package.json for reference
 COPY backend/package.json ./
 
+# Copy operational scripts used by single-node acceptance checks
+COPY scripts/cleanup-pilot-test-data.mjs ./scripts/cleanup-pilot-test-data.mjs
+
 # Copy entrypoint script
 COPY docker/docker-entrypoint-backend.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh

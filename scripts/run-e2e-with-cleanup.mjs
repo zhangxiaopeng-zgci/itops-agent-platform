@@ -16,6 +16,16 @@ function run(command, args, options = {}) {
 function cleanup(label) {
   console.log(`\n[${label}] Cleaning E2E pilot test data...`);
 
+  if (process.env.E2E_CLEANUP_DOCKER_SERVICE) {
+    return run('docker', [
+      'exec',
+      process.env.E2E_CLEANUP_DOCKER_SERVICE,
+      'node',
+      '/app/scripts/cleanup-pilot-test-data.mjs',
+      '--execute'
+    ]);
+  }
+
   if (process.env.E2E_CLEANUP_SUDO === 'true') {
     const sudoEnv = [`PATH=${process.env.PATH || ''}`];
     if (process.env.DATABASE_PATH) {

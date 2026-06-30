@@ -259,11 +259,13 @@ API_BASE=http://127.0.0.1:3001 \
 E2E_BASE_URL=http://10.1.132.58:3000 \
 E2E_API_BASE=http://10.1.132.58:3001 \
 E2E_KITE_BASE=http://10.1.132.58:3002 \
-E2E_CLEANUP_SUDO=true \
+E2E_CLEANUP_DOCKER_SERVICE=backend \
 npm run acceptance:production
 ```
 
 完整验收会创建新的主库备份、Kite 备份、恢复演练记录，并运行 Playwright E2E。日常巡检优先使用 `ops:single-node-check`，避免频繁制造验收数据。
+
+生产单机环境的 E2E 清理必须通过 `E2E_CLEANUP_DOCKER_SERVICE=backend` 在 backend 容器内执行。不要从宿主机用 Node 直接打开 `/opt/itops-agent-platform/data/app.db` 做写入清理，避免跨用户和 WAL 状态下的 SQLite 风险。
 
 每日：
 
