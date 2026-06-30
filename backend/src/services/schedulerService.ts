@@ -5,6 +5,7 @@ import { logger } from '../utils/logger';
 import { executeWorkflow } from './workflowExecutor';
 import { WorkflowParsed, WorkflowNode, WorkflowEdge } from '../types';
 import { serverInfoCollector } from './serverInfoCollector';
+import { activeInspectionService } from './activeInspectionService';
 
 interface ScheduledTaskRecord {
   id: string;
@@ -98,6 +99,17 @@ class SchedulerService {
         logger.info(`✅ Scheduled metrics collection completed: ${result.success} success, ${result.failed} failed`);
         if (result.failed > 0) {
           logger.warn(`️ Failed metrics collection: ${JSON.stringify(result.errors)}`);
+        }
+
+        if (process.env.ACTIVE_INSPECTION_SCHEDULER_ENABLED !== 'false') {
+          const inspection = activeInspectionService.runActiveInspection({
+            createCases: true,
+            createdBy: 'system',
+            source: 'active_inspection_scheduled'
+          });
+          logger.info(
+            `✅ Active inspection completed: ${inspection.summary.total} findings, ${inspection.summary.casesCreated} cases created, ${inspection.summary.casesUpdated} cases updated`
+          );
         }
       } catch (error) {
         logger.error('❌ Scheduled metrics collection failed', error as Error);

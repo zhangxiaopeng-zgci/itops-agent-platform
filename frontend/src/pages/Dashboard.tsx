@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate } from 'react-router-dom';
 import {
   Activity,
@@ -130,6 +130,43 @@ interface OpsOverview {
   };
 }
 
+interface ActiveInspectionFinding {
+  id: string;
+  domain: 'host' | 'kubernetes' | 'network' | 'alert';
+  severity: 'critical' | 'high' | 'medium' | 'low';
+  title: string;
+  description: string;
+  assetId?: string | null;
+  assetType?: string | null;
+  assetName?: string | null;
+  alertId?: string | null;
+  recommendedAction: string;
+  caseId?: string | null;
+  status: 'detected' | 'case_created' | 'case_updated' | 'case_exists';
+}
+
+interface ActiveInspectionSummary {
+  generatedAt: string;
+  mode: 'preview' | 'active';
+  summary: {
+    total: number;
+    critical: number;
+    high: number;
+    medium: number;
+    low: number;
+    casesCreated: number;
+    casesUpdated: number;
+    alertsCreated: number;
+  };
+  flow: Array<{
+    key: string;
+    label: string;
+    status: 'done' | 'attention' | 'idle';
+    count: number;
+  }>;
+  findings: ActiveInspectionFinding[];
+}
+
 function toArray<T>(value: unknown, keys: string[] = []): T[] {
   if (Array.isArray(value)) return value as T[];
   if (value && typeof value === 'object') {
@@ -143,6 +180,7 @@ function toArray<T>(value: unknown, keys: string[] = []): T[] {
 
 export default function Dashboard() {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const { t } = useLocale();
 
   const { data: agents = [], isLoading: agentsLoading } = useQuery({
@@ -215,6 +253,28 @@ export default function Dashboard() {
       return res.data.data as OpsOverview;
     },
     staleTime: 30000,
+  });
+
+  const { data: activeInspection, isLoading: activeInspectionLoading } = useQuery({
+    queryKey: ['active-inspection', 'summary'],
+    queryFn: async () => {
+      const res = await api.get('/api/active-inspection/summary');
+      return res.data.data as ActiveInspectionSummary;
+    },
+    staleTime: 30000,
+  });
+
+  const runActiveInspection = useMutation({
+    mutationFn: async () => {
+      const res = await api.post('/api/active-inspection/run');
+      return res.data.data as ActiveInspectionSummary;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['active-inspection', 'summary'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard', 'ops-overview'] });
+      queryClient.invalidateQueries({ queryKey: ['workbench', 'alerts'] });
+      queryClient.invalidateQueries({ queryKey: ['operation-cases'] });
+    },
   });
 
   const isLoading = agentsLoading
@@ -410,6 +470,13 @@ export default function Dashboard() {
         </div>
 
         <OperationsWallboardSummary overview={opsOverview} loading={opsOverviewLoading} />
+
+        <ActiveInspectionPanel
+          data={activeInspection}
+          loading={activeInspectionLoading}
+          running={runActiveInspection.isPending}
+          onRun={() => runActiveInspection.mutate()}
+        />
 
         <section className="space-y-4">
           <div>
@@ -766,6 +833,153 @@ function OperationsWallboardSummary({ overview, loading }: { overview?: OpsOverv
       </div>
     </section>
   );
+}
+
+function ActiveInspectionPanel({
+  data,
+  loading,
+  running,
+  onRun,
+}: {
+  data?: ActiveInspectionSummary;
+  loading: boolean;
+  running: boolean;
+  onRun: () => void;
+}) {
+  const { t } = useLocale();
+  const topFindings = data?.findings.slice(0, 3) || [];
+  const actionableCount = (data?.summary.critical || 0) + (data?.summary.high || 0) + (data?.summary.medium || 0);
+  const hasFindings = Boolean(data && data.summary.total > 0);
+
+  if (loading || !data) {
+    return (
+      <section className="rounded-lg border border-border bg-surface p-5 animate-pulse">
+        <div className="h-5 w-44 rounded bg-border/60" />
+        <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-4">
+          {Array.from({ length: 4 }).map((_, index) => (
+            <div key={index} className="h-20 rounded-lg bg-background/70 border border-border" />
+          ))}
+        </div>
+      </section>
+    );
+  }
+
+  return (
+    <section className="rounded-lg border border-border bg-surface p-5">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <div className="flex items-center gap-2">
+            <Radar className="h-5 w-5 text-primary" />
+            <h2 className="text-lg font-semibold text-text-primary">{t('dashboard.activeInspection.title')}</h2>
+          </div>
+          <p className="mt-1 text-sm text-text-secondary">{t('dashboard.activeInspection.subtitle')}</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={onRun}
+            disabled={running}
+            className="inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-medium text-white hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <Activity className="h-4 w-4" />
+            {running ? t('dashboard.activeInspection.running') : t('dashboard.activeInspection.run')}
+          </button>
+          <Link
+            to="/operation-cases"
+            className="inline-flex items-center justify-center gap-2 rounded-lg border border-border px-3 py-2 text-sm font-medium text-text-primary hover:bg-background"
+          >
+            <ClipboardList className="h-4 w-4" />
+            {t('dashboard.activeInspection.openCases')}
+          </Link>
+        </div>
+      </div>
+
+      <div className="mt-5 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+        {data.flow.map((step) => (
+          <div key={step.key} className="rounded-lg border border-border bg-background p-4">
+            <div className="flex items-center justify-between gap-3">
+              <span className={`inline-flex h-8 w-8 items-center justify-center rounded-lg ${step.status === 'attention' ? 'bg-amber-500/10 text-amber-600' : step.status === 'done' ? 'bg-emerald-500/10 text-emerald-600' : 'bg-slate-500/10 text-text-tertiary'}`}>
+                {step.status === 'attention' ? <AlertTriangle className="h-4 w-4" /> : <CheckCircle2 className="h-4 w-4" />}
+              </span>
+              <span className="text-xl font-semibold text-text-primary">{step.count}</span>
+            </div>
+            <p className="mt-3 text-sm font-medium text-text-primary">{translateActiveInspectionStep(step.key, step.label, t)}</p>
+            <p className="mt-1 text-xs text-text-secondary">{t(`dashboard.activeInspection.step.${step.key}.desc` as MessageKey)}</p>
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-[0.9fr_1.6fr]">
+        <div className="rounded-lg border border-border bg-background p-4">
+          <p className="text-sm font-semibold text-text-primary">{t('dashboard.activeInspection.summary')}</p>
+          <div className="mt-3 grid grid-cols-2 gap-2">
+            <InspectionMetric label={t('dashboard.activeInspection.total')} value={data.summary.total} />
+            <InspectionMetric label={t('dashboard.activeInspection.actionable')} value={actionableCount} tone={actionableCount > 0 ? 'text-amber-600' : 'text-emerald-600'} />
+            <InspectionMetric label={t('dashboard.activeInspection.casesCreated')} value={data.summary.casesCreated} />
+            <InspectionMetric label={t('dashboard.activeInspection.casesUpdated')} value={data.summary.casesUpdated} />
+          </div>
+        </div>
+
+        <div className="rounded-lg border border-border bg-background p-4">
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-sm font-semibold text-text-primary">{t('dashboard.activeInspection.findings')}</p>
+            <span className="text-xs text-text-tertiary">{safeFormatDistance(data.generatedAt)}</span>
+          </div>
+          <div className="mt-3 space-y-2">
+            {!hasFindings && (
+              <div className="rounded-lg border border-border bg-surface px-3 py-4 text-sm text-text-secondary">
+                {t('dashboard.activeInspection.empty')}
+              </div>
+            )}
+            {topFindings.map((finding) => (
+              <Link
+                key={finding.id}
+                to={finding.caseId ? `/operation-cases?caseId=${encodeURIComponent(finding.caseId)}` : '/diagnosis-center'}
+                className="block rounded-lg border border-border bg-surface p-3 transition-colors hover:border-primary/50 hover:bg-primary/5"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="line-clamp-1 text-sm font-medium text-text-primary">{finding.title}</p>
+                    <p className="mt-1 line-clamp-1 text-xs text-text-secondary">{finding.recommendedAction}</p>
+                  </div>
+                  <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${getFindingSeverityTone(finding.severity)}`}>
+                    {t(`dashboard.activeInspection.severity.${finding.severity}` as MessageKey)}
+                  </span>
+                </div>
+              </Link>
+            ))}
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function InspectionMetric({ label, value, tone = 'text-text-primary' }: { label: string; value: number; tone?: string }) {
+  return (
+    <div className="rounded-lg border border-border bg-surface px-3 py-2">
+      <p className={`text-lg font-semibold ${tone}`}>{value}</p>
+      <p className="text-xs text-text-secondary">{label}</p>
+    </div>
+  );
+}
+
+function translateActiveInspectionStep(key: string, fallback: string, t: (key: MessageKey, values?: Record<string, string | number>) => string): string {
+  const translated = t(`dashboard.activeInspection.step.${key}` as MessageKey);
+  return translated === `dashboard.activeInspection.step.${key}` ? fallback : translated;
+}
+
+function getFindingSeverityTone(severity: ActiveInspectionFinding['severity']): string {
+  switch (severity) {
+    case 'critical':
+      return 'bg-red-500/10 text-red-600';
+    case 'high':
+      return 'bg-orange-500/10 text-orange-600';
+    case 'medium':
+      return 'bg-amber-500/10 text-amber-600';
+    default:
+      return 'bg-slate-500/10 text-text-secondary';
+  }
 }
 
 function formatMetric(value: number | null): string {
