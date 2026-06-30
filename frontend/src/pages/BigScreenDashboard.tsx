@@ -159,7 +159,7 @@ interface DomainStatusCardProps {
   label: string;
   value: string | number;
   detail: string;
-  color: string;
+  tone: string;
   onClick?: () => void;
 }
 
@@ -168,25 +168,25 @@ const DomainStatusCard = ({
   label,
   value,
   detail,
-  color,
+  tone,
   onClick,
 }: DomainStatusCardProps) => (
   <button
     type="button"
     onClick={onClick}
-    className="min-h-[104px] rounded-2xl border border-slate-700/50 bg-slate-800/35 p-4 text-left backdrop-blur-md transition-all hover:border-slate-500/70 hover:bg-slate-800/55"
+    className="min-h-[104px] rounded-lg border border-border bg-background p-4 text-left shadow-sm transition-all hover:border-primary hover:bg-secondary"
   >
     <div className="flex items-start justify-between gap-3">
-      <div className={`flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br ${color}`}>
-        <Icon className="h-5 w-5 text-white" />
+      <div className={`flex h-10 w-10 items-center justify-center rounded-lg border ${tone}`}>
+        <Icon className="h-5 w-5" />
       </div>
-      <ChevronRight className="h-4 w-4 shrink-0 text-slate-500" />
+      <ChevronRight className="h-4 w-4 shrink-0 text-text-tertiary" />
     </div>
     <div className="mt-3 flex items-baseline justify-between gap-2">
-      <span className="truncate text-sm font-medium text-slate-300">{label}</span>
-      <span className="shrink-0 text-xl font-bold text-white">{value}</span>
+      <span className="truncate text-sm font-medium text-text-secondary">{label}</span>
+      <span className="shrink-0 text-xl font-semibold text-text-primary">{value}</span>
     </div>
-    <p className="mt-1 line-clamp-2 text-xs leading-5 text-slate-500">{detail}</p>
+    <p className="mt-1 line-clamp-2 text-xs leading-5 text-text-tertiary">{detail}</p>
   </button>
 );
 
@@ -729,7 +729,7 @@ export default function BigScreenDashboard() {
         online: opsOverview?.hosts.online || 0,
         stale: opsOverview?.hosts.stale || 0,
       }),
-      color: 'from-sky-600 to-cyan-700',
+      tone: 'border-sky-500/20 bg-sky-500/10 text-sky-500',
       href: '/servers',
     },
     {
@@ -740,7 +740,7 @@ export default function BigScreenDashboard() {
         nodes: opsOverview?.kubernetes.nodes || 0,
         notReady: opsOverview?.kubernetes.notReadyPods || 0,
       }),
-      color: (opsOverview?.kubernetes.notReadyPods || 0) > 0 ? 'from-amber-600 to-orange-700' : 'from-emerald-600 to-teal-700',
+      tone: (opsOverview?.kubernetes.notReadyPods || 0) > 0 ? 'border-amber-500/25 bg-amber-500/10 text-amber-500' : 'border-emerald-500/20 bg-emerald-500/10 text-emerald-500',
       href: '/kubernetes-console',
     },
     {
@@ -752,7 +752,7 @@ export default function BigScreenDashboard() {
         warning: opsOverview?.network.warning || 0,
         offline: opsOverview?.network.offline || 0,
       }),
-      color: (opsOverview?.network.warning || 0) + (opsOverview?.network.offline || 0) > 0 ? 'from-amber-600 to-yellow-700' : 'from-teal-600 to-emerald-700',
+      tone: (opsOverview?.network.warning || 0) + (opsOverview?.network.offline || 0) > 0 ? 'border-amber-500/25 bg-amber-500/10 text-amber-500' : 'border-teal-500/20 bg-teal-500/10 text-teal-500',
       href: '/network-devices',
     },
     {
@@ -764,7 +764,7 @@ export default function BigScreenDashboard() {
         approvals: opsOverview?.closedLoop.pendingApprovals || 0,
         tasks: (opsOverview?.closedLoop.runningTasks || 0) + (opsOverview?.closedLoop.failedTasks || 0),
       }),
-      color: (opsOverview?.closedLoop.criticalAlerts || 0) > 0 ? 'from-red-600 to-rose-800' : 'from-indigo-600 to-blue-800',
+      tone: (opsOverview?.closedLoop.criticalAlerts || 0) > 0 ? 'border-red-500/25 bg-red-500/10 text-red-500' : 'border-indigo-500/20 bg-indigo-500/10 text-indigo-500',
       href: '/operation-cases',
     },
     {
@@ -775,7 +775,7 @@ export default function BigScreenDashboard() {
         stale: opsOverview?.topology.staleEdges || 0,
         unbound: opsOverview?.topology.unboundKubernetesNodes || 0,
       }),
-      color: (opsOverview?.topology.accuracyScore ?? 100) < 80 ? 'from-amber-600 to-orange-700' : 'from-violet-600 to-indigo-800',
+      tone: (opsOverview?.topology.accuracyScore ?? 100) < 80 ? 'border-amber-500/25 bg-amber-500/10 text-amber-500' : 'border-teal-500/20 bg-teal-500/10 text-teal-500',
       href: '/topology',
     },
     {
@@ -786,7 +786,7 @@ export default function BigScreenDashboard() {
         actions: opsOverview?.automation.pendingHumanActions || 0,
         topology: opsOverview?.automation.topologyVerificationNeeded || 0,
       }),
-      color: (opsOverview?.automation.pendingHumanActions || 0) > 0 ? 'from-amber-600 to-orange-700' : 'from-green-600 to-emerald-800',
+      tone: (opsOverview?.automation.pendingHumanActions || 0) > 0 ? 'border-amber-500/25 bg-amber-500/10 text-amber-500' : 'border-emerald-500/20 bg-emerald-500/10 text-emerald-500',
       href: '/execution-center',
     },
   ];
@@ -999,16 +999,16 @@ export default function BigScreenDashboard() {
           </div>
         </header>
 
-        <section className="mb-4 rounded-2xl border border-slate-700/50 bg-slate-900/35 p-4 backdrop-blur-md">
+        <section className="mb-4 rounded-lg border border-border bg-surface p-4 shadow-sm">
           <div className="mb-3 flex items-center justify-between gap-3">
             <div>
-              <h2 className="text-lg font-semibold text-white">{t('bigScreen.stack.title')}</h2>
-              <p className="mt-1 text-xs text-slate-500">{t('bigScreen.stack.subtitle')}</p>
+              <h2 className="text-lg font-semibold text-text-primary">{t('bigScreen.stack.title')}</h2>
+              <p className="mt-1 text-xs text-text-secondary">{t('bigScreen.stack.subtitle')}</p>
             </div>
             <button
               type="button"
               onClick={() => navigate('/diagnosis-center')}
-              className="inline-flex items-center gap-2 rounded-lg border border-slate-700/60 px-3 py-2 text-xs font-medium text-slate-300 transition-all hover:border-cyan-500/40 hover:bg-cyan-500/10 hover:text-cyan-200"
+              className="inline-flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-xs font-medium text-text-secondary transition-all hover:border-primary hover:bg-secondary hover:text-text-primary"
             >
               {t('bigScreen.stack.openDiagnosis')}
               <ChevronRight className="h-3.5 w-3.5" />
@@ -1022,7 +1022,7 @@ export default function BigScreenDashboard() {
                 label={item.label}
                 value={item.value}
                 detail={item.detail}
-                color={item.color}
+                tone={item.tone}
                 onClick={() => navigate(item.href)}
               />
             ))}
