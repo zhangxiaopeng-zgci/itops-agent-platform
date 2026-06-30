@@ -33,6 +33,8 @@ if (!fs.existsSync(dbPath)) {
   process.exit(1);
 }
 
+guardProductionHostWrites(dbPath);
+
 const db = new Database(dbPath, execute ? {} : { readonly: true });
 if (execute) {
   db.pragma('foreign_keys = ON');
@@ -169,6 +171,34 @@ function loadBetterSqlite3() {
   }
 
   throw new Error('Unable to load better-sqlite3 from known runtime locations.');
+}
+
+function guardProductionHostWrites(databasePath) {
+  const inContainer =
+    fs.existsSync('/.dockerenv') ||
+    databasePath.startsWith('/app/data/') ||
+    process.env.RUNNING_IN_CONTAINER === 'true';
+  const isProductionInstall =
+    cwd.startsWith('/opt/itops-agent-platform/app') ||
+    databasePath.startsWith('/opt/itops-agent-platform/data/');
+
+  if (!isProductionInstall || inContainer) {
+    return;
+  }
+
+  const message = [
+    'Production SQLite cleanup must run inside the backend container.',
+    `Refusing to ${execute ? 'write' : 'open'} production database from the host: ${databasePath}`,
+    'Use: docker exec backend node /app/scripts/cleanup-pilot-test-data.mjs --execute'
+  ];
+
+  if (execute && process.env.ALLOW_HOST_SQLITE_WRITE !== 'true') {
+    console.error(message.join('\n'));
+    console.error('Set ALLOW_HOST_SQLITE_WRITE=true only for an intentional emergency recovery.');
+    process.exit(1);
+  }
+
+  console.warn(message.join('\n'));
 }
 
 function tableExists(table) {
