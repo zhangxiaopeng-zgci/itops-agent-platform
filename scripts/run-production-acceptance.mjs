@@ -133,6 +133,56 @@ function assert(condition, message) {
   if (!condition) throw new Error(message);
 }
 
+function resolveLocalDatabasePath() {
+  const candidates = [
+    process.env.DATABASE_PATH,
+    path.join(process.cwd(), 'data/app.db'),
+    path.join(process.cwd(), 'backend/data/app.db')
+  ].filter(Boolean);
+
+  return candidates.find((candidate) => fs.existsSync(candidate)) || null;
+}
+
+function buildDatabaseIntegrityCommand() {
+  const dockerService = process.env.E2E_CLEANUP_DOCKER_SERVICE || (
+    process.cwd().startsWith('/opt/itops-agent-platform/app') ? 'backend' : ''
+  );
+  const script = `
+    const Database = require('better-sqlite3');
+    const dbPath = process.env.DATABASE_PATH || '/app/data/app.db';
+    const db = new Database(dbPath, { readonly: true, fileMustExist: true });
+    const integrity = db.prepare('PRAGMA integrity_check').all();
+    const ok = integrity.length === 1 && integrity[0]?.integrity_check === 'ok';
+    console.log(JSON.stringify({ ok, dbPath, integrity }));
+    db.close();
+    if (!ok) process.exit(1);
+  `;
+
+  if (dockerService) {
+    return {
+      command: 'docker',
+      args: ['exec', dockerService, 'node', '-e', script],
+      env: {}
+    };
+  }
+
+  const localDbPath = resolveLocalDatabasePath();
+  if (!localDbPath) return null;
+
+  return {
+    command: process.execPath,
+    args: ['-e', script],
+    env: {
+      DATABASE_PATH: localDbPath,
+      NODE_PATH: [
+        path.join(process.cwd(), 'backend/node_modules'),
+        path.join(process.cwd(), 'node_modules'),
+        process.env.NODE_PATH || ''
+      ].filter(Boolean).join(path.delimiter)
+    }
+  };
+}
+
 function writeReport() {
   report.finishedAt = new Date().toISOString();
   report.failed = report.steps.filter((step) => !step.ok).length;
@@ -145,6 +195,16 @@ function writeReport() {
   fs.writeFileSync(reportPath, `${JSON.stringify(report, null, 2)}\n`);
   console.log(`\n[acceptance] report: ${reportPath}`);
   console.log(`[acceptance] status: ${report.status}, passed=${report.passed}, failed=${report.failed}`);
+}
+
+const preflightDbIntegrity = buildDatabaseIntegrityCommand();
+if (preflightDbIntegrity) {
+  runCommand(
+    'database-integrity-preflight',
+    preflightDbIntegrity.command,
+    preflightDbIntegrity.args,
+    preflightDbIntegrity.env
+  );
 }
 
 const smokeStep = runCommand('api-smoke-and-closed-loop', process.execPath, ['scripts/smoke-api.mjs'], {
@@ -337,6 +397,16 @@ const cleanupStep = runCommand('e2e-cleanup-dry-run', cleanupCommand.command, cl
 if (cleanupStep.ok && !cleanupStep.stdoutTail.includes('No pilot E2E test data found')) {
   cleanupStep.ok = false;
   cleanupStep.error = 'E2E cleanup dry-run still found test data';
+}
+
+const postflightDbIntegrity = buildDatabaseIntegrityCommand();
+if (postflightDbIntegrity) {
+  runCommand(
+    'database-integrity-postflight',
+    postflightDbIntegrity.command,
+    postflightDbIntegrity.args,
+    postflightDbIntegrity.env
+  );
 }
 
 writeReport();
