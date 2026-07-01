@@ -68,6 +68,23 @@ test.describe('information architecture', () => {
     await expect(page.locator('body')).toContainText(/诊断资产|Diagnose Asset/);
     await expect(page.locator('body')).toContainText(/运维工作台使用路径|Ops Workspace Usage Flow/);
 
+    await page.goto('/servers');
+    const serverItems = await page.evaluate(async () => {
+      const token = window.localStorage.getItem('token');
+      const response = await fetch('/api/servers', {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      const body = await response.json();
+      return Array.isArray(body.data) ? body.data : [];
+    });
+    const hasPendingDiscoveredHosts = serverItems.some((server: { enabled?: number; tags?: string[]; cloud_provider?: string }) =>
+      server.enabled !== 1 && (server.cloud_provider === 'kubernetes' || (server.tags || []).includes('auto-discovered'))
+    );
+    if (hasPendingDiscoveredHosts) {
+      await expect(page.locator('body')).toContainText(/待确认自动发现主机|Pending Auto-discovered Hosts/);
+      await expect(page.locator('body')).toContainText(/待接入主机|Pending Host/);
+    }
+
     await page.goto('/kubernetes-clusters');
     await expect(page.locator('body')).toContainText(/节点背后主机关联|Node Backing Host Binding/);
     await expect(page.locator('body')).toContainText(/绑定率|Binding Rate/);

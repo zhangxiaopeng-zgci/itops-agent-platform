@@ -5,6 +5,7 @@ import { createEvolutionProposal, updateEvolutionProposalStatus } from './evolut
 import { createHermesSession } from './hermesSessionService';
 import {
   addOperationCaseEvent,
+  buildOperationCasePipeline,
   createOperationCase,
   getOperationCase,
   listOperationCaseEvents,
@@ -75,6 +76,12 @@ describe('operationCaseService', () => {
     const trace = getCorrelationTrace(correlationId);
     expect(trace.operationCases.map(item => item.id)).toContain(operationCase.id);
     expect(trace.executionEvidenceSummary.caseIds).toContain(operationCase.id);
+
+    const pipeline = buildOperationCasePipeline(operationCase, events, trace);
+    expect(pipeline.map(step => step.key)).toEqual(['detect', 'diagnose', 'approval', 'execute', 'verify', 'review']);
+    expect(pipeline[0].status).toBe('done');
+    expect(pipeline[1].outputs).toMatchObject({ sessions: 0 });
+    expect(pipeline[1].recommendedNextAction.type).toBe('continue_diagnosis');
 
     db.prepare('DELETE FROM operation_case_events WHERE case_id = ?').run(operationCase.id);
     db.prepare('DELETE FROM operation_cases WHERE id = ?').run(operationCase.id);

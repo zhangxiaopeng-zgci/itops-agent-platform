@@ -22,6 +22,9 @@ interface ServerItem {
   hostname: string;
   enabled: number;
   os_type?: string;
+  tags?: string[];
+  cloud_provider?: string | null;
+  cloud_instance_id?: string | null;
 }
 
 interface NetworkDevice {
@@ -96,6 +99,13 @@ function buildAssetContextPath(basePath: string, asset: AssetOption | null): str
   return `${basePath}?${params.toString()}`;
 }
 
+function isPendingDiscoveredHost(server: ServerItem) {
+  return server.enabled !== 1 && (
+    server.cloud_provider === 'kubernetes' ||
+    (server.tags || []).includes('auto-discovered')
+  );
+}
+
 export default function AssetsCenter() {
   const navigate = useNavigate();
   const { t } = useLocale();
@@ -157,6 +167,7 @@ export default function AssetsCenter() {
   });
 
   const enabledServers = servers.filter((server) => server.enabled === 1);
+  const pendingDiscoveredServers = servers.filter(isPendingDiscoveredHost);
   const onlineNetworkDevices = networkDevices.filter((device) => ['online', 'active', 'success'].includes(String(device.status || '').toLowerCase()));
   const passwordCredentials = credentials.filter((credential) => credential.auth_type === 'password').length;
   const keyCredentials = credentials.filter((credential) => credential.auth_type === 'key').length;
@@ -167,7 +178,7 @@ export default function AssetsCenter() {
       titleKey: 'assetsCenter.family.hosts.title',
       descriptionKey: 'assetsCenter.family.hosts.desc',
       count: servers.length,
-      helper: t('assetsCenter.family.hosts.helper', { count: enabledServers.length }),
+      helper: t('assetsCenter.family.hosts.helper', { count: enabledServers.length, pending: pendingDiscoveredServers.length }),
       icon: Server,
       href: '/servers',
       tone: 'text-blue-500 bg-blue-500/10',

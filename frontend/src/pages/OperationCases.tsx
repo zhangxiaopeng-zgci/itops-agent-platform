@@ -93,6 +93,7 @@ interface OperationCaseDetailResponse {
   case: OperationCase;
   events: OperationCaseEvent[];
   trace?: CorrelationTrace;
+  pipeline?: OperationCasePipelineStepResponse[];
 }
 
 interface CaseNextAction {
@@ -115,6 +116,21 @@ interface CasePipelineStep {
   output: string;
   time?: string | null;
   path?: string;
+}
+
+interface OperationCasePipelineStepResponse {
+  key: string;
+  status: PipelineStatus;
+  startedAt?: string | null;
+  finishedAt?: string | null;
+  inputs?: Record<string, unknown>;
+  outputs?: Record<string, unknown>;
+  evidence?: Array<Record<string, unknown>>;
+  recommendedNextAction?: {
+    type?: string;
+    target?: string | null;
+    reason?: string;
+  };
 }
 
 const statusOrder: CaseStatus[] = [
@@ -304,8 +320,10 @@ function buildCasePipeline(
   operationCase: OperationCase,
   events: OperationCaseEvent[],
   trace: CorrelationTrace | undefined,
-  t: (key: MessageKey, values?: Record<string, string | number>) => string
+  t: (key: MessageKey, values?: Record<string, string | number>) => string,
+  serverPipeline: OperationCasePipelineStepResponse[] = []
 ): CasePipelineStep[] {
+  const pipelineByKey = new Map(serverPipeline.map((step) => [step.key, step]));
   const hermesSessions = toArray<Record<string, unknown>>(trace?.hermesSessions);
   const approvals = toArray<Record<string, unknown>>(trace?.approvals);
   const tasks = toArray<Record<string, unknown>>(trace?.tasks);
@@ -329,6 +347,16 @@ function buildCasePipeline(
   const reviewDone = anyEvent((event) => event.event_type === 'hermes_retrospective_completed');
   const currentIndex = statusOrder.indexOf(operationCase.status);
   const stagePassed = (status: CaseStatus) => currentIndex >= statusOrder.indexOf(status) && currentIndex >= 0;
+  const stepStatus = (key: string, fallback: PipelineStatus): PipelineStatus => pipelineByKey.get(key)?.status || fallback;
+  const stepTime = (key: string, fallback?: string | null): string | null => {
+    const serverStep = pipelineByKey.get(key);
+    return serverStep?.finishedAt || serverStep?.startedAt || fallback || null;
+  };
+  const stepOutput = (key: string): Record<string, unknown> => pipelineByKey.get(key)?.outputs || {};
+  const outputNumber = (key: string, field: string, fallback: number): number => {
+    const value = stepOutput(key)[field];
+    return typeof value === 'number' ? value : fallback;
+  };
 
   return [
     {
@@ -336,11 +364,11 @@ function buildCasePipeline(
       icon: AlertTriangle,
       label: t('operationCases.pipeline.detect'),
       helper: t('operationCases.pipeline.detect.helper'),
-      status: 'done',
+      status: stepStatus('detect', 'done'),
       output: t('operationCases.pipeline.detect.output', {
-        asset: operationCase.asset_name || operationCase.asset_id || operationCase.source || '-',
+        asset: String(stepOutput('detect').assetName || operationCase.asset_name || operationCase.asset_id || operationCase.source || '-'),
       }),
-      time: operationCase.created_at,
+      time: stepTime('detect', operationCase.created_at),
       path: operationCase.asset_id ? '/assets-center' : '/diagnosis-center',
     },
     {
@@ -348,15 +376,15 @@ function buildCasePipeline(
       icon: Bot,
       label: t('operationCases.pipeline.diagnose'),
       helper: t('operationCases.pipeline.diagnose.helper'),
-      status: hermesFailed ? 'failed' : hermesDone || stagePassed('diagnosis_ready') ? 'done' : operationCase.status === 'diagnosing' ? 'active' : 'waiting',
+      status: stepStatus('diagnose', hermesFailed ? 'failed' : hermesDone || stagePassed('diagnosis_ready') ? 'done' : operationCase.status === 'diagnosing' ? 'active' : 'waiting'),
       output: t('operationCases.pipeline.diagnose.output', {
-        sessions: hermesSessions.length,
-        evidence: evidence.length,
+        sessions: outputNumber('diagnose', 'sessions', hermesSessions.length),
+        evidence: outputNumber('diagnose', 'evidence', evidence.length),
       }),
-      time: latestTime([
+      time: stepTime('diagnose', latestTime([
         latestEventTime((event) => event.event_type.includes('hermes')),
         ...hermesSessions.map(readRecordTime),
-      ]),
+      ])),
       path: buildHermesPath(operationCase, 'diagnose'),
     },
     {
@@ -364,15 +392,15 @@ function buildCasePipeline(
       icon: ShieldAlert,
       label: t('operationCases.pipeline.approval'),
       helper: t('operationCases.pipeline.approval.helper'),
-      status: failedApprovals.length > 0 ? 'failed' : pendingApprovals.length > 0 ? 'active' : completedApprovals.length > 0 ? 'done' : 'waiting',
+      status: stepStatus('approval', failedApprovals.length > 0 ? 'failed' : pendingApprovals.length > 0 ? 'active' : completedApprovals.length > 0 ? 'done' : 'waiting'),
       output: t('operationCases.pipeline.approval.output', {
-        pending: pendingApprovals.length,
-        total: approvals.length,
+        pending: outputNumber('approval', 'pending', pendingApprovals.length),
+        total: outputNumber('approval', 'total', approvals.length),
       }),
-      time: latestTime([
+      time: stepTime('approval', latestTime([
         latestEventTime((event) => event.event_type.includes('approval')),
         ...approvals.map(readRecordTime),
-      ]),
+      ])),
       path: pendingApprovals[0]?.id ? `/tool-approvals?approvalId=${encodeURIComponent(String(pendingApprovals[0].id))}` : '/tool-approvals',
     },
     {
@@ -380,16 +408,16 @@ function buildCasePipeline(
       icon: GitBranch,
       label: t('operationCases.pipeline.execute'),
       helper: t('operationCases.pipeline.execute.helper'),
-      status: failedTasks.length > 0 ? 'failed' : activeTasks.length > 0 ? 'active' : completedTasks.length > 0 ? 'done' : operationCase.status === 'executing' ? 'active' : 'waiting',
+      status: stepStatus('execute', failedTasks.length > 0 ? 'failed' : activeTasks.length > 0 ? 'active' : completedTasks.length > 0 ? 'done' : operationCase.status === 'executing' ? 'active' : 'waiting'),
       output: t('operationCases.pipeline.execute.output', {
-        active: activeTasks.length,
-        completed: completedTasks.length,
-        failed: failedTasks.length,
+        active: outputNumber('execute', 'active', activeTasks.length),
+        completed: outputNumber('execute', 'completed', completedTasks.length),
+        failed: outputNumber('execute', 'failed', failedTasks.length),
       }),
-      time: latestTime([
+      time: stepTime('execute', latestTime([
         latestEventTime((event) => event.event_type.includes('task') || event.event_type.includes('workflow')),
         ...tasks.map(readRecordTime),
-      ]),
+      ])),
       path: activeTasks[0]?.id || failedTasks[0]?.id
         ? `/tasks?taskId=${encodeURIComponent(String((activeTasks[0] || failedTasks[0]).id))}`
         : buildExecutionPath(operationCase),
@@ -399,13 +427,13 @@ function buildCasePipeline(
       icon: CheckCircle2,
       label: t('operationCases.pipeline.verify'),
       helper: t('operationCases.pipeline.verify.helper'),
-      status: verificationFailed ? 'failed' : verificationPassed ? 'done' : operationCase.status === 'verifying' ? 'active' : 'waiting',
+      status: stepStatus('verify', verificationFailed ? 'failed' : verificationPassed ? 'done' : operationCase.status === 'verifying' ? 'active' : 'waiting'),
       output: verificationPassed
         ? t('operationCases.pipeline.verify.outputPassed')
         : verificationFailed
           ? t('operationCases.pipeline.verify.outputFailed')
           : t('operationCases.pipeline.verify.outputWaiting'),
-      time: latestEventTime((event) => event.event_type.includes('verification')),
+      time: stepTime('verify', latestEventTime((event) => event.event_type.includes('verification'))),
       path: buildExecutionPath(operationCase),
     },
     {
@@ -413,14 +441,14 @@ function buildCasePipeline(
       icon: History,
       label: t('operationCases.pipeline.review'),
       helper: t('operationCases.pipeline.review.helper'),
-      status: reviewDone ? 'done' : ['reviewing', 'evolving'].includes(operationCase.status) ? 'active' : operationCase.status === 'closed' ? 'done' : 'waiting',
+      status: stepStatus('review', reviewDone ? 'done' : ['reviewing', 'evolving'].includes(operationCase.status) ? 'active' : operationCase.status === 'closed' ? 'done' : 'waiting'),
       output: t('operationCases.pipeline.review.output', {
-        proposals: proposals.length,
+        proposals: outputNumber('review', 'proposals', proposals.length),
       }),
-      time: latestTime([
+      time: stepTime('review', latestTime([
         latestEventTime((event) => event.event_type.includes('retrospective') || event.event_type.includes('evolution')),
         ...proposals.map(readRecordTime),
-      ]),
+      ])),
       path: buildHermesPath(operationCase, 'review'),
     },
   ];
@@ -595,7 +623,7 @@ export default function OperationCases() {
 
   const currentStatusIndex = selectedCase ? statusOrder.indexOf(selectedCase.status) : -1;
   const nextAction = selectedCase ? buildNextAction(selectedCase, trace, t) : null;
-  const pipelineSteps = selectedCase ? buildCasePipeline(selectedCase, events, trace, t) : [];
+  const pipelineSteps = selectedCase ? buildCasePipeline(selectedCase, events, trace, t, detail?.pipeline) : [];
   const closureSteps = [
     { labelKey: 'operationCases.flow.resource', helperKey: 'operationCases.flow.resourceHelper', path: '/assets-center', icon: TerminalSquare },
     { labelKey: 'operationCases.flow.diagnosis', helperKey: 'operationCases.flow.diagnosisHelper', path: '/diagnosis-center', icon: AlertTriangle },

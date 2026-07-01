@@ -288,12 +288,16 @@ if (token) {
 }
 
 function buildCleanupCommand({ execute = false } = {}) {
-  if (process.env.E2E_CLEANUP_DOCKER_SERVICE) {
+  const cleanupDockerService = process.env.E2E_CLEANUP_DOCKER_SERVICE || (
+    process.cwd().startsWith('/opt/itops-agent-platform/app') ? 'backend' : ''
+  );
+
+  if (cleanupDockerService) {
     return {
       command: 'docker',
       args: [
         'exec',
-        process.env.E2E_CLEANUP_DOCKER_SERVICE,
+        cleanupDockerService,
         'node',
         '/app/scripts/cleanup-pilot-test-data.mjs',
         ...(execute ? ['--execute'] : [])

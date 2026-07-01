@@ -46,6 +46,31 @@ export interface OperationCaseEvent {
   created_at: string;
 }
 
+export type OperationCasePipelineStatus = 'waiting' | 'active' | 'done' | 'failed';
+
+export interface OperationCasePipelineStep {
+  key: 'detect' | 'diagnose' | 'approval' | 'execute' | 'verify' | 'review';
+  status: OperationCasePipelineStatus;
+  startedAt: string | null;
+  finishedAt: string | null;
+  inputs: Record<string, unknown>;
+  outputs: Record<string, unknown>;
+  evidence: Array<Record<string, unknown>>;
+  recommendedNextAction: {
+    type: string;
+    target?: string | null;
+    reason: string;
+  };
+}
+
+interface CorrelationTraceLike {
+  hermesSessions?: Array<Record<string, unknown>>;
+  approvals?: Array<Record<string, unknown>>;
+  tasks?: Array<Record<string, unknown>>;
+  proposals?: Array<Record<string, unknown>>;
+  executionEvidence?: Array<Record<string, unknown>>;
+}
+
 export interface CreateOperationCaseInput {
   title?: string;
   caseType?: string;
@@ -322,6 +347,159 @@ export function recordOperationCaseEvent(input: RecordOperationCaseEventInput): 
   });
 }
 
+export function buildOperationCasePipeline(
+  operationCase: OperationCaseRecord,
+  events: OperationCaseEvent[],
+  trace?: CorrelationTraceLike
+): OperationCasePipelineStep[] {
+  const hermesSessions = toRecordArray(trace?.hermesSessions);
+  const approvals = toRecordArray(trace?.approvals);
+  const tasks = toRecordArray(trace?.tasks);
+  const proposals = toRecordArray(trace?.proposals);
+  const executionEvidence = toRecordArray(trace?.executionEvidence);
+
+  const eventMatches = (matcher: (event: OperationCaseEvent) => boolean) => events.filter(matcher);
+  const hasEvent = (matcher: (event: OperationCaseEvent) => boolean) => eventMatches(matcher).length > 0;
+  const latestEventTime = (matcher: (event: OperationCaseEvent) => boolean) => latestTime(eventMatches(matcher).map((event) => event.created_at));
+  const latestRecordTime = (records: Array<Record<string, unknown>>) => latestTime(records.map(readRecordTime));
+  const statusIndex = statusOrderForPipeline.indexOf(operationCase.status);
+  const hasReached = (status: OperationCaseStatus) => statusIndex >= statusOrderForPipeline.indexOf(status) && statusIndex >= 0;
+
+  const pendingApprovals = approvals.filter((item) => readRecordString(item, 'status') === 'pending');
+  const failedApprovals = approvals.filter((item) => ['failed', 'rejected'].includes(readRecordString(item, 'status') || ''));
+  const completedApprovals = approvals.filter((item) => ['approved', 'executed'].includes(readRecordString(item, 'status') || ''));
+  const activeTasks = tasks.filter((item) => ['pending', 'running', 'paused'].includes(readRecordString(item, 'status') || ''));
+  const failedTasks = tasks.filter((item) => readRecordString(item, 'status') === 'failed');
+  const completedTasks = tasks.filter((item) => readRecordString(item, 'status') === 'completed');
+  const hermesFailed = hasEvent((event) => event.event_type === 'hermes_session_failed');
+  const hermesDone = hasEvent((event) => event.event_type.includes('hermes') && event.event_type !== 'hermes_session_failed') || hermesSessions.length > 0;
+  const verificationFailed = hasEvent((event) => event.event_type === 'remediation_verification_failed');
+  const verificationPassed = hasEvent((event) => event.event_type === 'remediation_verification_passed');
+  const reviewDone = hasEvent((event) => event.event_type === 'hermes_retrospective_completed');
+
+  return [
+    {
+      key: 'detect',
+      status: 'done',
+      startedAt: operationCase.created_at,
+      finishedAt: operationCase.created_at,
+      inputs: {
+        source: operationCase.source,
+        assetId: operationCase.asset_id,
+        assetType: operationCase.asset_type,
+        alertId: operationCase.alert_id,
+      },
+      outputs: {
+        assetName: operationCase.asset_name || operationCase.asset_id || operationCase.source,
+        correlationId: operationCase.correlation_id,
+      },
+      evidence: eventEvidence(events.filter((event) => event.event_type === 'case_created')),
+      recommendedNextAction: {
+        type: 'diagnose',
+        target: operationCase.id,
+        reason: 'Case exists and can continue into Hermes diagnosis.',
+      },
+    },
+    {
+      key: 'diagnose',
+      status: hermesFailed ? 'failed' : hermesDone || hasReached('diagnosis_ready') ? 'done' : operationCase.status === 'diagnosing' ? 'active' : 'waiting',
+      startedAt: latestTime([latestEventTime((event) => event.event_type.includes('hermes')), latestRecordTime(hermesSessions)]),
+      finishedAt: hermesDone ? latestTime([latestEventTime((event) => event.event_type.includes('hermes')), latestRecordTime(hermesSessions)]) : null,
+      inputs: {
+        hermesSessions: hermesSessions.length,
+      },
+      outputs: {
+        sessions: hermesSessions.length,
+        evidence: executionEvidence.length,
+      },
+      evidence: eventEvidence(eventMatches((event) => event.event_type.includes('hermes'))).concat(recordEvidence('hermes_session', hermesSessions)),
+      recommendedNextAction: {
+        type: hermesFailed ? 'inspect_hermes_failure' : 'continue_diagnosis',
+        target: operationCase.id,
+        reason: hermesDone ? 'Diagnosis evidence is available.' : 'Hermes diagnosis should collect evidence and risk.',
+      },
+    },
+    {
+      key: 'approval',
+      status: failedApprovals.length > 0 ? 'failed' : pendingApprovals.length > 0 ? 'active' : completedApprovals.length > 0 ? 'done' : 'waiting',
+      startedAt: latestTime([latestEventTime((event) => event.event_type.includes('approval')), latestRecordTime(approvals)]),
+      finishedAt: completedApprovals.length > 0 ? latestTime([latestEventTime((event) => event.event_type.includes('approval')), latestRecordTime(completedApprovals)]) : null,
+      inputs: {
+        approvalRequired: approvals.length > 0,
+      },
+      outputs: {
+        pending: pendingApprovals.length,
+        failed: failedApprovals.length,
+        total: approvals.length,
+      },
+      evidence: eventEvidence(eventMatches((event) => event.event_type.includes('approval'))).concat(recordEvidence('approval', approvals)),
+      recommendedNextAction: {
+        type: pendingApprovals.length > 0 ? 'handle_approval' : 'review_approval_state',
+        target: readRecordString(pendingApprovals[0] || {}, 'id'),
+        reason: pendingApprovals.length > 0 ? 'A tool approval is waiting for human confirmation.' : 'No pending approval is blocking execution.',
+      },
+    },
+    {
+      key: 'execute',
+      status: failedTasks.length > 0 ? 'failed' : activeTasks.length > 0 ? 'active' : completedTasks.length > 0 ? 'done' : operationCase.status === 'executing' ? 'active' : 'waiting',
+      startedAt: latestTime([latestEventTime((event) => event.event_type.includes('task') || event.event_type.includes('workflow')), latestRecordTime(tasks)]),
+      finishedAt: completedTasks.length > 0 ? latestTime([latestEventTime((event) => event.event_type.includes('task') || event.event_type.includes('workflow')), latestRecordTime(completedTasks)]) : null,
+      inputs: {
+        taskCount: tasks.length,
+      },
+      outputs: {
+        active: activeTasks.length,
+        completed: completedTasks.length,
+        failed: failedTasks.length,
+      },
+      evidence: eventEvidence(eventMatches((event) => event.event_type.includes('task') || event.event_type.includes('workflow'))).concat(recordEvidence('task', tasks)),
+      recommendedNextAction: {
+        type: failedTasks.length > 0 ? 'inspect_failed_task' : activeTasks.length > 0 ? 'track_task' : 'prepare_execution',
+        target: readRecordString((failedTasks[0] || activeTasks[0] || {}), 'id'),
+        reason: failedTasks.length > 0 ? 'A linked task failed.' : activeTasks.length > 0 ? 'A linked task is still active.' : 'No execution task is currently active.',
+      },
+    },
+    {
+      key: 'verify',
+      status: verificationFailed ? 'failed' : verificationPassed ? 'done' : operationCase.status === 'verifying' ? 'active' : 'waiting',
+      startedAt: latestEventTime((event) => event.event_type.includes('verification')),
+      finishedAt: verificationPassed || verificationFailed ? latestEventTime((event) => event.event_type.includes('verification')) : null,
+      inputs: {
+        completedTasks: completedTasks.length,
+      },
+      outputs: {
+        passed: verificationPassed,
+        failed: verificationFailed,
+      },
+      evidence: eventEvidence(eventMatches((event) => event.event_type.includes('verification'))),
+      recommendedNextAction: {
+        type: verificationFailed ? 'rerun_diagnosis_or_execution' : verificationPassed ? 'start_review' : 'verify_remediation',
+        target: operationCase.id,
+        reason: verificationPassed ? 'Recovery has been verified.' : 'Verification evidence is not complete yet.',
+      },
+    },
+    {
+      key: 'review',
+      status: reviewDone || operationCase.status === 'closed' ? 'done' : ['reviewing', 'evolving'].includes(operationCase.status) ? 'active' : 'waiting',
+      startedAt: latestTime([latestEventTime((event) => event.event_type.includes('retrospective') || event.event_type.includes('evolution')), latestRecordTime(proposals)]),
+      finishedAt: operationCase.status === 'closed' ? operationCase.closed_at : null,
+      inputs: {
+        proposals: proposals.length,
+      },
+      outputs: {
+        proposals: proposals.length,
+        closed: operationCase.status === 'closed',
+      },
+      evidence: eventEvidence(eventMatches((event) => event.event_type.includes('retrospective') || event.event_type.includes('evolution'))).concat(recordEvidence('proposal', proposals)),
+      recommendedNextAction: {
+        type: operationCase.status === 'closed' ? 'view_trace' : 'run_retrospective',
+        target: operationCase.correlation_id,
+        reason: operationCase.status === 'closed' ? 'Case is closed and ready for audit.' : 'Review should capture lessons and improvement proposals.',
+      },
+    },
+  ];
+}
+
 function inferNextStatus(eventType: string, payload?: Record<string, unknown>): OperationCaseStatus | null {
   switch (eventType) {
     case 'hermes_diagnosis_completed':
@@ -351,6 +529,63 @@ function inferNextStatus(eventType: string, payload?: Record<string, unknown>): 
     default:
       return null;
   }
+}
+
+const statusOrderForPipeline: OperationCaseStatus[] = [
+  'diagnosing',
+  'diagnosis_ready',
+  'approval_pending',
+  'executing',
+  'verifying',
+  'reviewing',
+  'evolving',
+  'closed'
+];
+
+function toRecordArray(value: unknown): Array<Record<string, unknown>> {
+  return Array.isArray(value) ? value.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object' && !Array.isArray(item)) : [];
+}
+
+function readRecordString(record: Record<string, unknown>, key: string): string | null {
+  const value = record[key];
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
+}
+
+function readRecordTime(record: Record<string, unknown>): string | null {
+  return readRecordString(record, 'updated_at')
+    || readRecordString(record, 'completed_at')
+    || readRecordString(record, 'finished_at')
+    || readRecordString(record, 'reviewed_at')
+    || readRecordString(record, 'requested_at')
+    || readRecordString(record, 'started_at')
+    || readRecordString(record, 'created_at');
+}
+
+function latestTime(values: Array<string | null | undefined>): string | null {
+  const timestamps = values
+    .filter((value): value is string => Boolean(value))
+    .map((value) => ({ value, time: new Date(value).getTime() }))
+    .filter((item) => !Number.isNaN(item.time))
+    .sort((a, b) => b.time - a.time);
+  return timestamps[0]?.value || null;
+}
+
+function eventEvidence(events: OperationCaseEvent[]): Array<Record<string, unknown>> {
+  return events.slice(0, 20).map((event) => ({
+    sourceType: event.source_type || 'operation_case_event',
+    sourceId: event.source_id || event.id,
+    eventType: event.event_type,
+    createdAt: event.created_at,
+  }));
+}
+
+function recordEvidence(sourceType: string, records: Array<Record<string, unknown>>): Array<Record<string, unknown>> {
+  return records.slice(0, 20).map((record) => ({
+    sourceType,
+    sourceId: readRecordString(record, 'id') || null,
+    status: readRecordString(record, 'status'),
+    createdAt: readRecordTime(record),
+  }));
 }
 
 function parseOperationCase(row: Record<string, unknown>): OperationCaseRecord {

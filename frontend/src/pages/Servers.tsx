@@ -36,6 +36,8 @@ interface Server {
   disk_gb?: number;
   ip_address?: string;
   private_ip?: string;
+  cloud_provider?: string | null;
+  cloud_instance_id?: string | null;
   groups?: Array<{ id: string; name: string }>;
 }
 
@@ -101,6 +103,13 @@ const AI_AGENT_MATCHERS = {
 function matchesAny(value: string | undefined, keywords: string[]) {
   const normalized = value?.toLowerCase() || '';
   return keywords.some(keyword => normalized.includes(keyword.toLowerCase()));
+}
+
+function isPendingDiscoveredHost(server: Server) {
+  return server.enabled !== 1 && (
+    server.cloud_provider === 'kubernetes' ||
+    (server.tags || []).includes('auto-discovered')
+  );
 }
 
 export default function Servers() {
@@ -325,6 +334,7 @@ export default function Servers() {
 
   // 根据选中的标签或分组筛选服务器
   const safeServers = Array.isArray(servers) ? servers : [];
+  const pendingDiscoveredServers = safeServers.filter(isPendingDiscoveredHost);
   const filteredServers = selectedGroupId
     ? safeServers.filter((server: Server) => (server.groups || []).some((g: any) => g.id === selectedGroupId))
     : selectedTag
@@ -1037,6 +1047,30 @@ export default function Servers() {
                 </div>
               )}
 
+              {pendingDiscoveredServers.length > 0 && (
+                <div className="mb-4 rounded-lg border border-amber-500/30 bg-amber-500/10 p-4">
+                  <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                    <div className="flex items-start gap-3">
+                      <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-500" />
+                      <div>
+                        <h3 className="text-sm font-semibold text-text-primary">{t('servers.discovered.title')}</h3>
+                        <p className="mt-1 text-xs leading-relaxed text-text-secondary">
+                          {t('servers.discovered.desc', { count: pendingDiscoveredServers.length })}
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => { setSelectedTag('auto-discovered'); setSelectedGroupId(null); }}
+                      className="inline-flex items-center justify-center gap-2 rounded-lg border border-amber-500/30 bg-surface px-3 py-2 text-xs font-semibold text-amber-600 hover:bg-amber-500/10"
+                    >
+                      <Search className="h-3.5 w-3.5" />
+                      {t('servers.discovered.viewPending')}
+                    </button>
+                  </div>
+                </div>
+              )}
+
               <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                 {isLoading ? (
                   Array.from({ length: 6 }).map((_, i) => (
@@ -1056,10 +1090,14 @@ export default function Servers() {
                           : t('servers.empty.default')}
                     </p>
                   </div>
-                ) : filteredServers.map((server) => (
+                ) : filteredServers.map((server) => {
+                  const pendingDiscovered = isPendingDiscoveredHost(server);
+                  return (
                   <div key={server.id} className={clsx(
                     'relative bg-surface border rounded-lg p-4 min-w-0 overflow-hidden',
-                    server.os_type === 'linux' 
+                    pendingDiscovered
+                      ? 'border-amber-500/40'
+                      : server.os_type === 'linux'
                       ? 'border-yellow-500/30' 
                       : server.os_type === 'windows' 
                         ? 'border-blue-500/30' 
@@ -1102,7 +1140,8 @@ export default function Servers() {
                         {server.os_type === 'windows' && (
                           <button
                             onClick={() => navigate(`/remote-desktop/${server.id}`)}
-                            className="p-1 hover:bg-background rounded transition-colors"
+                            disabled={pendingDiscovered}
+                            className="p-1 hover:bg-background rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                             title={t('servers.actions.remoteDesktop')}
                           >
                             <MonitorPlay className="w-4 h-4 text-text-secondary" />
@@ -1110,14 +1149,15 @@ export default function Servers() {
                         )}
                         <button
                           onClick={() => handleTestConnection(server)}
-                          className="p-1 hover:bg-background rounded transition-colors"
+                          disabled={pendingDiscovered}
+                          className="p-1 hover:bg-background rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                           title={t('servers.actions.testConnection')}
                         >
                           <Wifi className="w-4 h-4 text-text-secondary" />
                         </button>
                         <button
                           onClick={() => handleCollectInfo(server)}
-                          disabled={isCollecting}
+                          disabled={isCollecting || pendingDiscovered}
                           className="p-1 hover:bg-background rounded transition-colors disabled:opacity-50"
                           title={t('servers.actions.collectInfo')}
                         >
@@ -1125,7 +1165,7 @@ export default function Servers() {
                         </button>
                         <button
                           onClick={() => handleCollectMetrics(server)}
-                          disabled={isCollectingMetrics}
+                          disabled={isCollectingMetrics || pendingDiscovered}
                           className="p-1 hover:bg-background rounded transition-colors disabled:opacity-50"
                           title={t('servers.actions.collectMetrics')}
                         >
@@ -1152,6 +1192,18 @@ export default function Servers() {
                     </div>
                     {server.description && (
                       <p className="text-xs text-text-secondary mb-3">{server.description}</p>
+                    )}
+
+                    {pendingDiscovered && (
+                      <div className="mb-3 rounded-lg border border-amber-500/25 bg-amber-500/10 p-3">
+                        <div className="flex items-start gap-2">
+                          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
+                          <div>
+                            <p className="text-xs font-semibold text-amber-600">{t('servers.discovered.badge')}</p>
+                            <p className="mt-1 text-[11px] leading-relaxed text-text-secondary">{t('servers.discovered.cardHelp')}</p>
+                          </div>
+                        </div>
+                      </div>
                     )}
                     
                     {/* 主机扩展信息 */}
@@ -1254,7 +1306,8 @@ export default function Servers() {
                           }
                           setIsAiCommandModalOpen(true);
                         }}
-                        className="flex flex-col items-center justify-center gap-1 px-2 py-2.5 bg-gradient-to-r from-purple-600/20 to-blue-600/20 border border-purple-500/30 rounded-lg text-xs font-medium text-purple-300 whitespace-nowrap hover:from-purple-600/30 hover:to-blue-600/30 transition-colors"
+                        disabled={pendingDiscovered}
+                        className="flex flex-col items-center justify-center gap-1 px-2 py-2.5 bg-gradient-to-r from-purple-600/20 to-blue-600/20 border border-purple-500/30 rounded-lg text-xs font-medium text-purple-300 whitespace-nowrap hover:from-purple-600/30 hover:to-blue-600/30 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                       >
                         <Sparkles className="w-4 h-4" />
                         <span>{t('servers.actions.aiExecute')}</span>
@@ -1264,14 +1317,16 @@ export default function Servers() {
                           setSelectedServer(server);
                           setCommandResult(null);
                         }}
-                        className="flex flex-col items-center justify-center gap-1 px-2 py-2.5 bg-surface border border-border rounded-lg text-xs text-text-primary whitespace-nowrap hover:bg-background transition-colors"
+                        disabled={pendingDiscovered}
+                        className="flex flex-col items-center justify-center gap-1 px-2 py-2.5 bg-surface border border-border rounded-lg text-xs text-text-primary whitespace-nowrap hover:bg-background transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                       >
                         <Terminal className="w-4 h-4" />
                         <span>{t('servers.actions.executeCommand')}</span>
                       </button>
                       <button
                         onClick={() => handleRunCompliance(server)}
-                        className="flex flex-col items-center justify-center gap-1 px-2 py-2.5 bg-surface border border-border rounded-lg text-xs text-text-primary whitespace-nowrap hover:bg-background transition-colors"
+                        disabled={pendingDiscovered}
+                        className="flex flex-col items-center justify-center gap-1 px-2 py-2.5 bg-surface border border-border rounded-lg text-xs text-text-primary whitespace-nowrap hover:bg-background transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                       >
                         <ShieldCheck className="w-4 h-4" />
                         <span>{t('servers.actions.complianceCheck')}</span>
@@ -1300,7 +1355,8 @@ export default function Servers() {
                       </button>
                     </div>
                   </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           </div>

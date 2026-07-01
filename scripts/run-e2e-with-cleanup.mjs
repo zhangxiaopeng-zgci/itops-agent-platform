@@ -3,6 +3,13 @@ import { spawnSync } from 'node:child_process';
 
 const passthroughArgs = process.argv.slice(2);
 
+function shouldUseDockerCleanup() {
+  return (
+    Boolean(process.env.E2E_CLEANUP_DOCKER_SERVICE) ||
+    process.cwd().startsWith('/opt/itops-agent-platform/app')
+  );
+}
+
 function run(command, args, options = {}) {
   const result = spawnSync(command, args, {
     stdio: 'inherit',
@@ -16,10 +23,10 @@ function run(command, args, options = {}) {
 function cleanup(label) {
   console.log(`\n[${label}] Cleaning E2E pilot test data...`);
 
-  if (process.env.E2E_CLEANUP_DOCKER_SERVICE) {
+  if (shouldUseDockerCleanup()) {
     return run('docker', [
       'exec',
-      process.env.E2E_CLEANUP_DOCKER_SERVICE,
+      process.env.E2E_CLEANUP_DOCKER_SERVICE || 'backend',
       'node',
       '/app/scripts/cleanup-pilot-test-data.mjs',
       '--execute'

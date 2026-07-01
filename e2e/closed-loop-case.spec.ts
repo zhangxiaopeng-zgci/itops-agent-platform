@@ -100,6 +100,15 @@ test.describe('closed-loop Case evidence', () => {
     expect(caseDetailResponse.ok()).toBeTruthy();
     const caseDetailBody = await caseDetailResponse.json();
     expect(caseDetailBody.data.events.some((event: { event_type: string }) => event.event_type === 'hermes_downstream_refs_detected')).toBeTruthy();
+    expect(caseDetailBody.data.pipeline.map((step: { key: string }) => step.key)).toEqual([
+      'detect',
+      'diagnose',
+      'approval',
+      'execute',
+      'verify',
+      'review'
+    ]);
+    expect(caseDetailBody.data.pipeline.find((step: { key: string }) => step.key === 'approval')?.outputs.total).toBeGreaterThan(0);
     await api.dispose();
 
     await loginInBrowser(page);

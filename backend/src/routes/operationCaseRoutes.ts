@@ -5,6 +5,7 @@ import { validateBody } from '../middleware/validation';
 import { getCorrelationTrace } from '../services/correlationTraceService';
 import {
   addOperationCaseEvent,
+  buildOperationCasePipeline,
   createOperationCase,
   getOperationCase,
   listOperationCaseEvents,
@@ -94,13 +95,16 @@ router.get('/:id', requireRole('admin', 'operator', 'viewer'), (req: Request, re
     if (!operationCase) {
       return res.status(404).json({ success: false, error: 'Operation case not found' });
     }
+    const events = listOperationCaseEvents(operationCase.id);
+    const trace = getCorrelationTrace(operationCase.correlation_id);
 
     return res.json({
       success: true,
       data: {
         case: operationCase,
-        events: listOperationCaseEvents(operationCase.id),
-        trace: getCorrelationTrace(operationCase.correlation_id)
+        events,
+        trace,
+        pipeline: buildOperationCasePipeline(operationCase, events, trace)
       }
     });
   } catch (error) {
