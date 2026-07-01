@@ -73,8 +73,9 @@ function createDatabaseInstance(dbPath: string): Database.Database {
   // 临时表存储：使用内存提升排序/临时查询性能
   database.pragma('temp_store = MEMORY');
   
-  // 内存映射：允许直接内存访问大文件（2GB）
-  database.pragma('mmap_size = 2147483648');
+  // 内存映射：生产单机默认关闭，避免与外部检查/备份进程共享 SQLite 文件时引入额外风险。
+  // 如需优化超大只读查询，可通过 SQLITE_MMAP_SIZE 显式开启。
+  database.pragma(`mmap_size = ${parseNonNegativeInteger(process.env.SQLITE_MMAP_SIZE, 0)}`);
   
   // 页面缓存：128MB 缓存，减少磁盘 IO
   database.pragma('cache_size = -128000');
@@ -335,7 +336,17 @@ export async function initializeDatabase(): Promise<void> {
 
   logger.info('✅ Database initialized successfully with preset configurations');
   
-  startDatabaseMaintenance();
+  if (process.env.DATABASE_MAINTENANCE_SCHEDULER_ENABLED === 'true') {
+    startDatabaseMaintenance();
+  } else {
+    logger.info('Database maintenance scheduler disabled; use schedulerService maintenance jobs instead');
+  }
+}
+
+function parseNonNegativeInteger(value: string | undefined, fallback: number): number {
+  if (value === undefined || value === '') return fallback;
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
 }
 
 function initializeDefaultData(): void {
