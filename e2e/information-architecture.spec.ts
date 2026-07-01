@@ -48,6 +48,10 @@ test.describe('information architecture', () => {
     await expect(page.locator('body')).toContainText(/Open Execution Center|打开执行中心|Execution Center/);
     const hasCaseSnapshot = await page.getByText(/Case 快照|Case Snapshot/).count();
     if (hasCaseSnapshot > 0) {
+      await expect(page.locator('body')).toContainText(/处理流水线|Handling Pipeline/);
+      await expect(page.locator('body')).toContainText(/Hermes 诊断|Hermes Diagnosis/);
+      await expect(page.locator('body')).toContainText(/执行任务|Task Execution/);
+      await expect(page.locator('body')).toContainText(/步骤产出|Step Output|当前产出|Current Output|预期产出|Expected Output/);
       await expect(page.locator('body')).toContainText(/闭环证据|Closure Evidence/);
     } else {
       await expect(page.locator('body')).toContainText(/暂无 Case|No cases yet/);

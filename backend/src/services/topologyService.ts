@@ -601,7 +601,7 @@ class TopologyService {
     if (enabled === 0) return 'offline';
     const value = String(status || '').toLowerCase();
     if (!value || value === 'unknown' || value === 'pending') return 'warning';
-    if (['online', 'active', 'healthy', 'ready', 'running', 'succeeded'].includes(value)) return 'online';
+    if (['online', 'active', 'healthy', 'ready', 'running', 'succeeded', 'synced'].includes(value)) return 'online';
     if (['offline', 'disabled', 'stopped', 'terminated'].includes(value)) return 'offline';
     if (['failed', 'error', 'unhealthy', 'notready', 'crashloopbackoff'].includes(value)) return 'error';
     return 'warning';

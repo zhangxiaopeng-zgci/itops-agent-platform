@@ -104,6 +104,19 @@ interface CaseNextAction {
   tone: 'primary' | 'warning' | 'danger' | 'success';
 }
 
+type PipelineStatus = 'waiting' | 'active' | 'done' | 'failed';
+
+interface CasePipelineStep {
+  key: string;
+  icon: LucideIcon;
+  label: string;
+  helper: string;
+  status: PipelineStatus;
+  output: string;
+  time?: string | null;
+  path?: string;
+}
+
 const statusOrder: CaseStatus[] = [
   'diagnosing',
   'diagnosis_ready',
@@ -249,6 +262,25 @@ function readRecordString(record: Record<string, unknown>, key: string): string 
   return readString(record[key]);
 }
 
+function readRecordTime(record: Record<string, unknown>): string | null {
+  return readRecordString(record, 'updated_at')
+    || readRecordString(record, 'completed_at')
+    || readRecordString(record, 'finished_at')
+    || readRecordString(record, 'reviewed_at')
+    || readRecordString(record, 'requested_at')
+    || readRecordString(record, 'started_at')
+    || readRecordString(record, 'created_at');
+}
+
+function latestTime(values: Array<string | null | undefined>): string | null {
+  const timestamps = values
+    .filter((value): value is string => Boolean(value))
+    .map((value) => ({ value, time: new Date(value).getTime() }))
+    .filter((item) => !Number.isNaN(item.time))
+    .sort((a, b) => b.time - a.time);
+  return timestamps[0]?.value || null;
+}
+
 function buildHermesPath(operationCase: OperationCase, mode: 'diagnose' | 'remediate' | 'review') {
   const params = new URLSearchParams();
   params.set('mode', mode);
@@ -266,6 +298,132 @@ function buildExecutionPath(operationCase: OperationCase) {
   if (operationCase.asset_name) params.set('assetName', operationCase.asset_name);
   if (operationCase.server_ids.length > 0) params.set('serverIds', operationCase.server_ids.join(','));
   return params.toString() ? `/execution-center?${params.toString()}` : '/execution-center';
+}
+
+function buildCasePipeline(
+  operationCase: OperationCase,
+  events: OperationCaseEvent[],
+  trace: CorrelationTrace | undefined,
+  t: (key: MessageKey, values?: Record<string, string | number>) => string
+): CasePipelineStep[] {
+  const hermesSessions = toArray<Record<string, unknown>>(trace?.hermesSessions);
+  const approvals = toArray<Record<string, unknown>>(trace?.approvals);
+  const tasks = toArray<Record<string, unknown>>(trace?.tasks);
+  const proposals = toArray<Record<string, unknown>>(trace?.proposals);
+  const evidence = toArray<Record<string, unknown>>(trace?.executionEvidence);
+
+  const eventBy = (matcher: (event: OperationCaseEvent) => boolean) => events.find(matcher);
+  const anyEvent = (matcher: (event: OperationCaseEvent) => boolean) => Boolean(eventBy(matcher));
+  const latestEventTime = (matcher: (event: OperationCaseEvent) => boolean) => latestTime(events.filter(matcher).map((event) => event.created_at));
+
+  const pendingApprovals = approvals.filter((item) => readRecordString(item, 'status') === 'pending');
+  const failedApprovals = approvals.filter((item) => ['failed', 'rejected'].includes(readRecordString(item, 'status') || ''));
+  const completedApprovals = approvals.filter((item) => ['approved', 'executed'].includes(readRecordString(item, 'status') || ''));
+  const activeTasks = tasks.filter((item) => ['pending', 'running', 'paused'].includes(readRecordString(item, 'status') || ''));
+  const failedTasks = tasks.filter((item) => readRecordString(item, 'status') === 'failed');
+  const completedTasks = tasks.filter((item) => readRecordString(item, 'status') === 'completed');
+  const verificationFailed = anyEvent((event) => event.event_type === 'remediation_verification_failed');
+  const verificationPassed = anyEvent((event) => event.event_type === 'remediation_verification_passed');
+  const hermesFailed = anyEvent((event) => event.event_type === 'hermes_session_failed');
+  const hermesDone = anyEvent((event) => event.event_type.includes('hermes') && event.event_type !== 'hermes_session_failed') || hermesSessions.length > 0;
+  const reviewDone = anyEvent((event) => event.event_type === 'hermes_retrospective_completed');
+  const currentIndex = statusOrder.indexOf(operationCase.status);
+  const stagePassed = (status: CaseStatus) => currentIndex >= statusOrder.indexOf(status) && currentIndex >= 0;
+
+  return [
+    {
+      key: 'detect',
+      icon: AlertTriangle,
+      label: t('operationCases.pipeline.detect'),
+      helper: t('operationCases.pipeline.detect.helper'),
+      status: 'done',
+      output: t('operationCases.pipeline.detect.output', {
+        asset: operationCase.asset_name || operationCase.asset_id || operationCase.source || '-',
+      }),
+      time: operationCase.created_at,
+      path: operationCase.asset_id ? '/assets-center' : '/diagnosis-center',
+    },
+    {
+      key: 'diagnose',
+      icon: Bot,
+      label: t('operationCases.pipeline.diagnose'),
+      helper: t('operationCases.pipeline.diagnose.helper'),
+      status: hermesFailed ? 'failed' : hermesDone || stagePassed('diagnosis_ready') ? 'done' : operationCase.status === 'diagnosing' ? 'active' : 'waiting',
+      output: t('operationCases.pipeline.diagnose.output', {
+        sessions: hermesSessions.length,
+        evidence: evidence.length,
+      }),
+      time: latestTime([
+        latestEventTime((event) => event.event_type.includes('hermes')),
+        ...hermesSessions.map(readRecordTime),
+      ]),
+      path: buildHermesPath(operationCase, 'diagnose'),
+    },
+    {
+      key: 'approval',
+      icon: ShieldAlert,
+      label: t('operationCases.pipeline.approval'),
+      helper: t('operationCases.pipeline.approval.helper'),
+      status: failedApprovals.length > 0 ? 'failed' : pendingApprovals.length > 0 ? 'active' : completedApprovals.length > 0 ? 'done' : 'waiting',
+      output: t('operationCases.pipeline.approval.output', {
+        pending: pendingApprovals.length,
+        total: approvals.length,
+      }),
+      time: latestTime([
+        latestEventTime((event) => event.event_type.includes('approval')),
+        ...approvals.map(readRecordTime),
+      ]),
+      path: pendingApprovals[0]?.id ? `/tool-approvals?approvalId=${encodeURIComponent(String(pendingApprovals[0].id))}` : '/tool-approvals',
+    },
+    {
+      key: 'execute',
+      icon: GitBranch,
+      label: t('operationCases.pipeline.execute'),
+      helper: t('operationCases.pipeline.execute.helper'),
+      status: failedTasks.length > 0 ? 'failed' : activeTasks.length > 0 ? 'active' : completedTasks.length > 0 ? 'done' : operationCase.status === 'executing' ? 'active' : 'waiting',
+      output: t('operationCases.pipeline.execute.output', {
+        active: activeTasks.length,
+        completed: completedTasks.length,
+        failed: failedTasks.length,
+      }),
+      time: latestTime([
+        latestEventTime((event) => event.event_type.includes('task') || event.event_type.includes('workflow')),
+        ...tasks.map(readRecordTime),
+      ]),
+      path: activeTasks[0]?.id || failedTasks[0]?.id
+        ? `/tasks?taskId=${encodeURIComponent(String((activeTasks[0] || failedTasks[0]).id))}`
+        : buildExecutionPath(operationCase),
+    },
+    {
+      key: 'verify',
+      icon: CheckCircle2,
+      label: t('operationCases.pipeline.verify'),
+      helper: t('operationCases.pipeline.verify.helper'),
+      status: verificationFailed ? 'failed' : verificationPassed ? 'done' : operationCase.status === 'verifying' ? 'active' : 'waiting',
+      output: verificationPassed
+        ? t('operationCases.pipeline.verify.outputPassed')
+        : verificationFailed
+          ? t('operationCases.pipeline.verify.outputFailed')
+          : t('operationCases.pipeline.verify.outputWaiting'),
+      time: latestEventTime((event) => event.event_type.includes('verification')),
+      path: buildExecutionPath(operationCase),
+    },
+    {
+      key: 'review',
+      icon: History,
+      label: t('operationCases.pipeline.review'),
+      helper: t('operationCases.pipeline.review.helper'),
+      status: reviewDone ? 'done' : ['reviewing', 'evolving'].includes(operationCase.status) ? 'active' : operationCase.status === 'closed' ? 'done' : 'waiting',
+      output: t('operationCases.pipeline.review.output', {
+        proposals: proposals.length,
+      }),
+      time: latestTime([
+        latestEventTime((event) => event.event_type.includes('retrospective') || event.event_type.includes('evolution')),
+        ...proposals.map(readRecordTime),
+      ]),
+      path: buildHermesPath(operationCase, 'review'),
+    },
+  ];
 }
 
 function buildNextAction(
@@ -437,6 +595,7 @@ export default function OperationCases() {
 
   const currentStatusIndex = selectedCase ? statusOrder.indexOf(selectedCase.status) : -1;
   const nextAction = selectedCase ? buildNextAction(selectedCase, trace, t) : null;
+  const pipelineSteps = selectedCase ? buildCasePipeline(selectedCase, events, trace, t) : [];
   const closureSteps = [
     { labelKey: 'operationCases.flow.resource', helperKey: 'operationCases.flow.resourceHelper', path: '/assets-center', icon: TerminalSquare },
     { labelKey: 'operationCases.flow.diagnosis', helperKey: 'operationCases.flow.diagnosisHelper', path: '/diagnosis-center', icon: AlertTriangle },
@@ -618,6 +777,15 @@ export default function OperationCases() {
                 </div>
               </div>
 
+              <CasePipelinePanel
+                title={t('operationCases.pipeline.title')}
+                subtitle={t('operationCases.pipeline.subtitle')}
+                steps={pipelineSteps}
+                locale={browserLocale}
+                t={t}
+                onNavigate={(path) => navigate(path)}
+              />
+
               {nextAction && (
                 <NextActionPanel action={nextAction} onNavigate={(path) => navigate(path)} title={t('operationCases.next.title')} helper={t('operationCases.next.helper')} />
               )}
@@ -752,6 +920,148 @@ export default function OperationCases() {
       </div>
     </div>
   );
+}
+
+function CasePipelinePanel({
+  title,
+  subtitle,
+  steps,
+  locale,
+  t,
+  onNavigate,
+}: {
+  title: string;
+  subtitle: string;
+  steps: CasePipelineStep[];
+  locale: string;
+  t: (key: MessageKey, values?: Record<string, string | number>) => string;
+  onNavigate: (path: string) => void;
+}) {
+  return (
+    <section className="rounded-lg border border-border bg-background/35 p-4">
+      <div className="flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
+        <div>
+          <h3 className="text-sm font-semibold text-text-primary">{title}</h3>
+          <p className="mt-1 text-xs text-text-secondary">{subtitle}</p>
+        </div>
+      </div>
+      <div className="mt-4 grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-3">
+        {steps.map((step, index) => (
+          <PipelineStepCard
+            key={step.key}
+            step={step}
+            index={index}
+            isLast={index === steps.length - 1}
+            locale={locale}
+            t={t}
+            onNavigate={onNavigate}
+          />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function PipelineStepCard({
+  step,
+  index,
+  isLast,
+  locale,
+  t,
+  onNavigate,
+}: {
+  step: CasePipelineStep;
+  index: number;
+  isLast: boolean;
+  locale: string;
+  t: (key: MessageKey, values?: Record<string, string | number>) => string;
+  onNavigate: (path: string) => void;
+}) {
+  const Icon = step.icon;
+  const statusMeta = pipelineStatusMeta(step.status, t);
+  return (
+    <div className={clsx(
+      'relative rounded-lg border bg-surface p-4 min-h-[168px]',
+      step.status === 'active' && 'border-primary/60 ring-1 ring-primary/20',
+      step.status === 'done' && 'border-emerald-500/30',
+      step.status === 'failed' && 'border-red-500/35',
+      step.status === 'waiting' && 'border-border'
+    )}>
+      {!isLast && (
+        <div className="hidden 2xl:block absolute top-1/2 -right-3 h-px w-3 bg-border" />
+      )}
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-start gap-3 min-w-0">
+          <div className={clsx('flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border', statusMeta.iconClass)}>
+            <Icon className="h-5 w-5" />
+          </div>
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs font-semibold text-text-tertiary">{String(index + 1).padStart(2, '0')}</span>
+              <span className={clsx('rounded-md border px-2 py-0.5 text-[11px] font-semibold', statusMeta.badgeClass)}>
+                {statusMeta.label}
+              </span>
+            </div>
+            <h4 className="mt-2 text-sm font-semibold text-text-primary">{step.label}</h4>
+          </div>
+        </div>
+      </div>
+      <p className="mt-3 text-xs leading-relaxed text-text-secondary">{step.helper}</p>
+      <div className="mt-3 rounded-lg border border-border bg-background/40 p-3">
+        <p className="text-[11px] font-semibold uppercase tracking-wide text-text-tertiary">{statusMeta.outputLabel}</p>
+        <p className="mt-1 text-sm leading-relaxed text-text-primary">{step.output}</p>
+        {step.time && (
+          <p className="mt-2 text-xs text-text-tertiary">{formatDate(step.time, locale)}</p>
+        )}
+      </div>
+      {step.path && (
+        <button
+          onClick={() => onNavigate(step.path!)}
+          className="mt-3 inline-flex items-center gap-1 rounded-md border border-border bg-background px-2 py-1 text-xs font-medium text-text-primary hover:bg-surface-hover"
+        >
+          {statusMeta.actionLabel}
+          <ArrowRight className="h-3 w-3" />
+        </button>
+      )}
+    </div>
+  );
+}
+
+function pipelineStatusMeta(status: PipelineStatus, t: (key: MessageKey, values?: Record<string, string | number>) => string) {
+  switch (status) {
+    case 'done':
+      return {
+        label: t('operationCases.pipeline.status.done'),
+        outputLabel: t('operationCases.pipeline.output'),
+        actionLabel: t('operationCases.pipeline.action.open'),
+        iconClass: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-500',
+        badgeClass: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-500',
+      };
+    case 'active':
+      return {
+        label: t('operationCases.pipeline.status.active'),
+        outputLabel: t('operationCases.pipeline.output.current'),
+        actionLabel: t('operationCases.pipeline.action.continue'),
+        iconClass: 'border-primary/30 bg-primary/10 text-primary',
+        badgeClass: 'border-primary/30 bg-primary/10 text-primary',
+      };
+    case 'failed':
+      return {
+        label: t('operationCases.pipeline.status.failed'),
+        outputLabel: t('operationCases.pipeline.output.blocking'),
+        actionLabel: t('operationCases.pipeline.action.inspect'),
+        iconClass: 'border-red-500/30 bg-red-500/10 text-red-500',
+        badgeClass: 'border-red-500/30 bg-red-500/10 text-red-500',
+      };
+    default:
+      return {
+        label: t('operationCases.pipeline.status.waiting'),
+        outputLabel: t('operationCases.pipeline.output.expected'),
+        actionLabel: t('operationCases.pipeline.action.open'),
+        iconClass: 'border-border bg-background text-text-tertiary',
+        badgeClass: 'border-border bg-background text-text-secondary',
+      };
+  }
 }
 
 function NextActionPanel({
